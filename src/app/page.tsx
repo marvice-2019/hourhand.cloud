@@ -52,7 +52,7 @@ const plans = [
     for: "For a coach, tutor or therapist",
     price: "₹399",
     note: "+ 18% GST, or ₹3,990 a year",
-    items: ["Every calendar you want checked", "Payment at booking through your Razorpay account", "No Hourhand line on your page"],
+    items: ["Every calendar you want checked", "Payment at booking through your Razorpay account", "300 automatic WhatsApp messages a month", "No Hourhand line on your page"],
     recommended: true,
   },
   {
@@ -60,7 +60,7 @@ const plans = [
     for: "For you and an assistant",
     price: "₹599",
     note: "+ 18% GST, or ₹5,990 a year",
-    items: ["Everything in Solo", "A second person at no extra cost: an assistant who runs your bookings, or a co-host with their own page"],
+    items: ["Everything in Solo", "600 automatic WhatsApp messages a month", "A second person at no extra cost: an assistant who runs your bookings, or a co-host with their own page"],
     recommended: false,
   },
 ];
@@ -71,7 +71,7 @@ const faqs = [
     a: "The sync light shows it, your booking page stops offering times until we can check again, and we email you a link to reconnect. Nobody can book a time we can't check.",
   },
   { q: "Which calendars work?", a: "Google Calendar, Outlook, Office 365 and iCloud." },
-  { q: "Do you send WhatsApp reminders?", a: "Emails go out on their own. For WhatsApp, one tap on a booking opens a ready confirmation or reminder to send from your own number; sending automatically is coming later." },
+  { q: "Do you send WhatsApp reminders?", a: "Yes, on Solo and Duo. Guests who tick WhatsApp at booking get the confirmation, a reminder the day before, and a message if the time changes. Replying STOP turns them off. Emails always go too." },
   { q: "How do I cancel?", a: "Dashboard, then Plan, then Cancel. You keep your plan until the end of the period you've paid for." },
   { q: "Who answers support?", a: "A person, within one working day." },
   { q: "Is GST included?", a: "No. Prices are shown before GST, and 18% GST is added at checkout." },
@@ -186,15 +186,15 @@ export default async function Home() {
             ))}
           </div>
           <p className="mt-6 text-text-muted">
-            Also included: Google Meet and Teams links created for you; weekly repeat bookings, session packages and refundable no-show deposits; GST invoices to guests; a waitlist for full days; private client notes; a monthly earnings report; booking pages in Hindi, Tamil, Telugu and Kannada; and from your dashboard you can cancel a booking, move it to another free time, or mark a no-show.
+            Also included: Google Meet and Teams links created for you; weekly repeat bookings, session packages and refundable no-show deposits; GST invoices to guests; group classes with a seat limit; a waitlist for full days; private client notes; a monthly earnings report; booking pages in Hindi, Tamil, Telugu and Kannada; an app you can install on your phone from the browser; and from your dashboard you can cancel a booking, move it to another free time, or mark a no-show.
           </p>
           <div className="mt-6 rounded-lg border border-border p-5">
             <h3 className="text-lg text-text">
               On the way {comingSoon}
             </h3>
             <ul className="mt-2 list-disc pl-5 text-text-muted">
-              <li>WhatsApp reminders sent automatically, and WhatsApp sync alerts</li>
-              <li>A mobile app</li>
+              <li>WhatsApp alerts to you when a calendar stops syncing</li>
+              <li>Apps in the App Store and Google Play</li>
               <li>An importer for links you already have</li>
             </ul>
           </div>
