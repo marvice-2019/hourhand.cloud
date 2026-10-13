@@ -14,8 +14,8 @@ The repo is ready to deploy as a **public beta**. Five must-have features are st
 | Production build with no env vars (as Docker builds it) | **passes** |
 | Container start command, production mode, fresh database | migrations 0001–0007 applied; `/api/health` 200, `/icon.svg` 200, `/opengraph-image` 200, `/sign-in` 200; job runner started. Second start: "Nothing to apply" |
 | Missing required env var | server refuses to start with a named error (e.g. `RESEND_API_KEY is not set`), so the healthcheck fails and Coolify keeps the previous version live |
-| Brand sweep (`sweep.py hourhand --config replica/brand.json`) | **Clean** |
-| Parity (`parity.py replica/features.csv`) | **70.1 / 100, must-haves 17 of 22** (was 42.0 because the list hadn't been updated since B2; every row changed was checked against the code) |
+| Brand sweep (`sweep.py hourhand --config docs/brand.json`) | **Clean** |
+| Parity (`parity.py docs/features.csv`) | **70.1 / 100, must-haves 17 of 22** (was 42.0 because the list hadn't been updated since B2; every row changed was checked against the code) |
 | Privacy policy and terms | `/privacy` and `/terms`, working drafts under Indian law: **have a lawyer review before public launch** |
 | Public home page | `/` shows the landing page to visitors (needed for Google verification); signed-in hosts go to the dashboard |
 | Cookie banner | not needed: only the sign-in session cookie, no analytics or ad cookies |
@@ -33,14 +33,14 @@ The repo is ready to deploy as a **public beta**. Five must-have features are st
 | --- | --- |
 | Postgres | Coolify → New resource → PostgreSQL 16, separate from anything dev. Turn on scheduled backups (daily, to S3-compatible storage such as Cloudflare R2 or Backblaze B2) and do one restore test a month. Copy its **internal** connection URL for `DATABASE_URL` |
 | Resend | Add domain `hourhand.cloud`, add the SPF, DKIM and DMARC records it shows (section 4), wait for "Verified" |
-| Google Cloud | Redirect URIs, authorised domain and scopes from `replica/backend.md` → "Production addresses for hourhand.cloud". Then submit verification: home page `https://hourhand.cloud`, privacy `https://hourhand.cloud/privacy`, terms `https://hourhand.cloud/terms` |
+| Google Cloud | Redirect URIs, authorised domain and scopes from `docs/backend.md` → "Production addresses for hourhand.cloud". Then submit verification: home page `https://hourhand.cloud`, privacy `https://hourhand.cloud/privacy`, terms `https://hourhand.cloud/terms` |
 | Microsoft Entra | Section 6 |
 | Razorpay | Test mode first: webhook `https://hourhand.cloud/api/webhooks/razorpay` (events `subscription.*`), 4 test Plans, one test payment end to end. Then live keys (the live pair shared in chat on 2026-10-11 must be **regenerated** first) |
 
 ## 3. Coolify application
 
-1. **New resource → Application → GitHub** (Coolify's GitHub App), repo `marvice-2019/marvice---calude`, branch `main`.
-2. **Build pack:** Dockerfile. **Base directory:** `/hourhand`. **Port:** 3000.
+1. **New resource → Application → GitHub** (Coolify's GitHub App), repo `marvice-2019/hourhand.cloud`, branch `main`.
+2. **Build pack:** Dockerfile. **Base directory:** `/`. **Port:** 3000.
 3. **Domains:** `https://hourhand.cloud,https://www.hourhand.cloud`, and turn on the redirect to non-www (apex is the canonical address). Coolify issues the certificates.
 4. **Healthcheck:** the Dockerfile has one (`/api/health`, which also checks the database). If you set it in Coolify's UI instead, use path `/api/health`, port 3000.
 5. **Environment variables** (section 5). Mark all of them "runtime only"; the build needs none.

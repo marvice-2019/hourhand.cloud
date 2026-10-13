@@ -1,4 +1,4 @@
-// Pure validation for the event type editor. Limits mirror the checks on event_types and custom_questions in replica/schema.sql.
+// Pure validation for the event type editor. Limits mirror the checks on event_types and custom_questions in docs/schema.sql.
 import type { Plan } from "./billing/plans";
 import { LOCATION_KINDS, type CustomQuestion, type EventLocation, type EventType, type EventTypeDraft, type LocationKind, type QuestionDraft } from "./data/types";
 import { cleanRedirectUrl } from "./calendar-links";

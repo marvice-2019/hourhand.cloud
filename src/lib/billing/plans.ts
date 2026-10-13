@@ -1,4 +1,4 @@
-// Hourhand's plans, prices and limits (replica/launch/pricing.md). The provider-side ids of each price live in the
+// Hourhand's plans, prices and limits (docs/launch/pricing.md). The provider-side ids of each price live in the
 // environment: Razorpay Plans for INR, Stripe Prices for USD. Prices here are for display; what is charged is
 // whatever the Razorpay Plan or Stripe Price says, so keep the two in step.
 

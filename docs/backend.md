@@ -15,7 +15,7 @@ Status as of 2026-10-11. The backend is built in rounds. Each round lands with t
 
 ## Decisions
 
-- **Plain SQL through `pg`, not Drizzle.** `replica/schema.sql` is already tested on Postgres 16, and the TypeScript types already exist in `src/lib/data/types.ts`. An ORM would mean keeping a second copy of the schema in sync. Migrations are numbered `.sql` files applied by `scripts/migrate.ts` and tracked in `schema_migrations`.
+- **Plain SQL through `pg`, not Drizzle.** `docs/schema.sql` is already tested on Postgres 16, and the TypeScript types already exist in `src/lib/data/types.ts`. An ORM would mean keeping a second copy of the schema in sync. Migrations are numbered `.sql` files applied by `scripts/migrate.ts` and tracked in `schema_migrations`.
 - **Store selection is explicit.** `HOURHAND_DATA=memory|postgres`. If `postgres` is chosen without `DATABASE_URL`, the app refuses to start. It never falls back silently to memory.
 - **Scripts run on Node 22's built-in TypeScript support** (`node scripts/migrate.ts`), not tsx. Scripts use explicit `.ts` relative imports and `import type`, never `@/` aliases.
 - **Rescheduling cancels the old booking, then inserts the new one, in one transaction.** The exclusion constraint is not deferrable, so inserting first would reject moving a booking by less than its own length. If the insert fails, the old booking stays confirmed.
@@ -243,11 +243,11 @@ Set `BETTER_AUTH_URL=https://hourhand.cloud` in Coolify. Register exactly these:
 | Apply to Razorpay's partner programme as a technology partner, so hosts can click "Connect Razorpay" instead of pasting keys (OAuth) | weeks | later |
 | Coolify: a Postgres 16 service with daily backups to S3-compatible storage, and a monthly restore test | 1 hour | deploy |
 
-Claude never creates these accounts or types keys. Put the values in `hourhand/.env.local` on your machine and in Coolify's environment settings.
+Claude never creates these accounts or types keys. Put the values in `.env.local` on your machine and in Coolify's environment settings.
 
 ## Environment variables
 
-`hourhand/.env.example` should contain exactly these names with no values. A hook in this environment blocks Claude from writing `.env*` files, so create it yourself from this list:
+`.env.example` should contain exactly these names with no values. A hook in this environment blocks Claude from writing `.env*` files, so create it yourself from this list:
 
 ```
 HOURHAND_DATA=

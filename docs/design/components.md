@@ -1,11 +1,11 @@
 # Hourhand components
 
-These cover the component list in `replica/recon.md`, plus three that only Hourhand has (the sync light, the time zone label and the plan meter, marked ★).
+These cover the component list in `docs/recon.md`, plus three that only Hourhand has (the sync light, the time zone label and the plan meter, marked ★).
 
 - **Base library:** shadcn/ui (copy-in components on Radix primitives) for focus management, keyboard behaviour and ARIA.
 - **Icons:** [Lucide](https://lucide.dev), ISC licence.
 - **Fonts:** Fraunces and Inter, both OFL. No asset, icon or wording is taken from Calendly.
-- **Tokens:** `replica/design/tokens.css`. In Tailwind, colours are `bg-<role>`, `text-<role>` and `border-<role>`; for example `bg-card text-text border-border-input`. Never use a raw hex value in a component.
+- **Tokens:** `docs/design/tokens.css`. In Tailwind, colours are `bg-<role>`, `text-<role>` and `border-<role>`; for example `bg-card text-text border-border-input`. Never use a raw hex value in a component.
 
 **Rules for every component:**
 
@@ -228,4 +228,4 @@ PlanMeter ★
   used on   S08, S21
 ```
 
-The primitives are built in isolation at `replica/design/primitives.html`. This is a static check page that uses `tokens.css`, not the app's component code. The real components get built in the Next.js app during `/replica-build` (milestone 1).
+The primitives are built in isolation at `docs/design/primitives.html`. This is a static check page that uses `tokens.css`, not the app's component code. The real components get built in the Next.js app during `/replica-build` (milestone 1).

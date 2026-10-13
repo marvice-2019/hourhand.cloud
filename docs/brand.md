@@ -1,6 +1,6 @@
 # Brand: Hourhand
 
-The angle comes from `replica/fixes.md`: *for solo coaches, tutors and service businesses tired of a scheduler that gets more complicated with every update and never puts them through to a person, the booking link that syncs every calendar it touches, and real people answer when it doesn't.*
+The angle comes from `docs/fixes.md`: *for solo coaches, tutors and service businesses tired of a scheduler that gets more complicated with every update and never puts them through to a person, the booking link that syncs every calendar it touches, and real people answer when it doesn't.*
 
 ## 1. Name
 
@@ -68,7 +68,7 @@ Calendly's brand is a saturated blue (`#006bff`). Hourhand uses a warm saffron o
 | danger | `#b42318` | errors |
 | success | `#1b7a4b` | confirmed bookings |
 
-The contrast check ran on `replica/design/tokens.json`: **12 pairs, 0 failing AA**. Fonts are Fraunces for display and Inter for body, both free and open-source (OFL).
+The contrast check ran on `docs/design/tokens.json`: **12 pairs, 0 failing AA**. Fonts are Fraunces for display and Inter for body, both free and open-source (OFL).
 
 ## 3. Logo brief
 
@@ -115,9 +115,9 @@ The contrast check ran on `replica/design/tokens.json`: **12 pairs, 0 failing AA
 
 ## 5. The sweep
 
-`replica/brand.json` lists what the sweep looks for: the names `Calendly` and `Calendly, LLC`, the domain `calendly.com`, and the colours `#006bff` and `#0ae8f0`. The second colour comes from the sweep tool's own example and hasn't been checked against Calendly's brand.
+`docs/brand.json` lists what the sweep looks for: the names `Calendly` and `Calendly, LLC`, the domain `calendly.com`, and the colours `#006bff` and `#0ae8f0`. The second colour comes from the sweep tool's own example and hasn't been checked against Calendly's brand.
 
-The sweep was run on 2026-10-10 with `python3 .claude/skills/replica-brand/sweep.py . --config replica/brand.json` and exited 1 with 10 hits. Every hit is in a file that never ships with the app: the skill pack's own docs and examples (`.claude/skills/replica-*`), local plugin logs (`.claude-designlog-hooks.log`, `.simple-workflow/`), or the `replica/` research folder, which the tool skips. **No clone code exists yet**, so there is nothing real to clean.
+The sweep was run on 2026-10-10 with `python3 .claude/skills/replica-brand/sweep.py . --config docs/brand.json` and exited 1 with 10 hits. Every hit is in a file that never ships with the app: the skill pack's own docs and examples (`.claude/skills/replica-*`), local plugin logs (`.claude-designlog-hooks.log`, `.simple-workflow/`), or the `docs/` research folder, which the tool skips. **No clone code exists yet**, so there is nothing real to clean.
 
 Re-run the sweep against the app folder once `/replica-build` has created it. It must exit 0 before `/replica-deploy`.
 

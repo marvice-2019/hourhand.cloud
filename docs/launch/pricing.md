@@ -15,7 +15,7 @@ None of these pages showed INR prices, so there is no Indian price anchor from t
 
 ## What reviewers said about price and billing
 
-From `replica/feedback.md`, 190 reviews:
+From `docs/feedback.md`, 190 reviews:
 
 | theme | reviews | sources | the point |
 | --- | --- | --- | --- |

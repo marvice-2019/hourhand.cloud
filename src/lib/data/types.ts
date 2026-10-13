@@ -1,4 +1,4 @@
-// Entities mirror replica/schema.sql (snake_case columns -> camelCase fields). Times are UTC Date objects.
+// Entities mirror docs/schema.sql (snake_case columns -> camelCase fields). Times are UTC Date objects.
 
 export type Interval = { from: string; to: string }; // "HH:MM" wall time in the schedule's zone
 

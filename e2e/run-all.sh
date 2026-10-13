@@ -1,6 +1,6 @@
 #!/bin/sh
 # Runs every e2e script against `next start`, each group on a fresh database.
-# Usage (from hourhand/, after `npx next build`): E2E_PG=postgres://user:pass@host:port sh e2e/run-all.sh
+# Usage (from the repo root, after `npx next build`): E2E_PG=postgres://user:pass@host:port sh e2e/run-all.sh
 # E2E_PG is a Postgres server URL with no database name; hourhand_e2e is dropped and recreated on it.
 PG=${E2E_PG:-postgres://postgres@localhost:54331}
 DB=$PG/hourhand_e2e

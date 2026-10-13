@@ -1,4 +1,4 @@
-# Hourhand production image for Coolify (build pack: Dockerfile, base directory: /hourhand).
+# Hourhand production image for Coolify (build pack: Dockerfile, base directory: /).
 # One container runs the web server and the background jobs (emails, calendar sync, payment checks).
 FROM node:22-bookworm-slim AS build
 WORKDIR /app

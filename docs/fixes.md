@@ -1,6 +1,6 @@
 # Calendly: what users hate, and the fix plan
 
-Collected 2026-10-10. The `replica-entrepreneur` ranker (`reviews.py`) scored the reviews using the themes in `replica/themes.json`. Full output is in `replica/feedback.md`.
+Collected 2026-10-10. The `replica-entrepreneur` ranker (`reviews.py`) scored the reviews using the themes in `docs/themes.json`. Full output is in `docs/feedback.md`.
 
 ## Sample
 
@@ -55,7 +55,7 @@ Caveats, so nobody reads more into this than it holds:
 
 ## 4. Fix plan
 
-Ranked by how much evidence there is and how cheap the fix is. Each fix is added to `replica/features.csv` with `original = no`.
+Ranked by how much evidence there is and how cheap the fix is. Each fix is added to `docs/features.csv` with `original = no`.
 
 | # | fix | size | done in | evidence |
 | --- | --- | --- | --- | --- |

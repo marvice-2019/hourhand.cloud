@@ -1,6 +1,6 @@
 # Hourhand build log
 
-One line per screen or unit. "Done" means built and checked: build, types, lint, tests, the rebrand sweep, and an end-to-end run on a local server. No screenshots yet, because browser automation is blocked in this environment, so `replica/clone-screens/` is empty.
+One line per screen or unit. "Done" means built and checked: build, types, lint, tests, the rebrand sweep, and an end-to-end run on a local server. No screenshots yet, because browser automation is blocked in this environment, so `docs/clone-screens/` is empty.
 
 | ID | date | status | what's missing | harder than expected |
 | --- | --- | --- | --- | --- |
@@ -47,7 +47,7 @@ One line per screen or unit. "Done" means built and checked: build, types, lint,
 
 **End-to-end check after round 3** (Node fetch against `next start` on localhost:3120): book 201, reschedule 201 with a new link, retry with the same key 200 and the same booking, cancel 200, unknown link 404; `/dashboard/availability`, `/dashboard/event-types`, `/new` and the coaching editor all 200 with their sections. The save buttons were not clicked in a browser (browser automation is blocked here), so the save round trip is covered by unit tests on the data layer, not by a live run.
 
-**Feature parity after round 2** (`parity.py replica/features.csv`): 33.9 / 100, must-haves 6 of 22 done (up from 24.1 and 4 after the first slice). Not shippable yet.
+**Feature parity after round 2** (`parity.py docs/features.csv`): 33.9 / 100, must-haves 6 of 22 done (up from 24.1 and 4 after the first slice). Not shippable yet.
 
 **End-to-end check, 2026-10-10** (Node fetch against `next start` on localhost):
 

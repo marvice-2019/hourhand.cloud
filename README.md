@@ -2,6 +2,18 @@
 
 Hourhand gives you one link people can use to book time with you. It checks your calendar so nobody lands on a busy slot, and shows each guest times in their own zone.
 
+## Where things are
+
+| Path | What |
+| --- | --- |
+| `src/`, `db/`, `scripts/`, `e2e/` | the app, migrations, migrate/seed scripts, end-to-end scripts |
+| `docs/deploy.md` | production setup: Coolify, DNS, Resend, Google, Microsoft, Razorpay, WhatsApp, monitoring, backups |
+| `docs/backend.md` | every environment variable and the production addresses |
+| `docs/specs/`, `docs/architecture.md` | feature specs and the data model (`docs/schema.sql`) |
+| `docs/launch/` | pricing, launch plan, landing copy |
+
+Live at [hourhand.cloud](https://hourhand.cloud); staging at staging.hourhand.cloud. `main` deploys through Coolify.
+
 ## Run it
 
 ```sh
@@ -91,7 +103,7 @@ Add these as authorized redirect URIs on the OAuth client: `https://<your-domain
 
 ## Outlook and Microsoft
 
-Set `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` (an Entra app; steps in `replica/deploy.md`, section 6). Either Google or Microsoft can be configured without the other; both need `TOKEN_ENCRYPTION_KEY`.
+Set `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` (an Entra app; steps in `docs/deploy.md`, section 6). Either Google or Microsoft can be configured without the other; both need `TOKEN_ENCRYPTION_KEY`.
 
 - **Connect Outlook** (Dashboard → Calendars, and onboarding): work, school and personal Microsoft accounts. Busy times are read every 5 minutes from each checked calendar (events shown as free don't block). Outlook has no instant push yet; Google does.
 - **Teams links**: an event type whose location is Microsoft Teams gets a Teams meeting when the booking goes to a work or school Outlook calendar that allows Teams. The guest's confirmation waits up to 3 minutes for the link. Personal Outlook.com calendars, and Google calendars, get no Teams link; the confirmation goes without one.

@@ -4,10 +4,10 @@ name: Hourhand CI
 
 on:
   pull_request:
-    paths: ["hourhand/**", ".github/workflows/hourhand-ci.yml"]
+    paths-ignore: ["docs/**"]
   push:
     branches: [main]
-    paths: ["hourhand/**", ".github/workflows/hourhand-ci.yml"]
+    paths-ignore: ["docs/**"]
 
 permissions:
   contents: read
@@ -20,9 +20,6 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    defaults:
-      run:
-        working-directory: hourhand
     services:
       postgres:
         image: postgres:16
@@ -40,7 +37,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: hourhand/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
       - name: Types
         run: npx tsc --noEmit -p .
@@ -63,5 +60,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-logs
-          path: hourhand/e2e/.out/
+          path: e2e/.out/
           retention-days: 7

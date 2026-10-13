@@ -47,8 +47,8 @@ Track them in a sheet with these columns: name, profession, current tool, call d
 
 ## Launch-day checklist
 
-- [ ] The sweep (`sweep.py --config replica/brand.json`) exits 0 on the app folder
-- [ ] `listing.py replica/launch/listing.json` exits 0
+- [ ] The sweep (`sweep.py --config docs/brand.json`) exits 0 on the app folder
+- [ ] `listing.py docs/launch/listing.json` exits 0
 - [ ] The billing flow is tested end to end: subscribe, pause, cancel and refund, in Razorpay and Stripe test mode
 - [ ] The sync-failure alert is tested by revoking a Google token by hand
 - [ ] The support inbox has someone assigned, with a reply-time target of 1 working day

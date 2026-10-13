@@ -1,10 +1,10 @@
 # Recon map: Calendly (web app, with the mobile app noted)
 
 - **Scope:** the solo booking loop. The host connects a calendar, sets availability and event types, and shares a link. The guest books, reschedules or cancels. Notifications and reminders go out. Teams, routing, CRM and AI features are left out (see "Out of scope").
-- **For:** Hourhand, a booking link for solo coaches, tutors and therapists, India-first (`replica/brand.md`, `replica/fixes.md`).
+- **For:** Hourhand, a booking link for solo coaches, tutors and therapists, India-first (`docs/brand.md`, `docs/fixes.md`).
 - **Date:** 2026-10-10
 
-**Method: public sources only.** No Calendly account was used. Calendly's terms may forbid using an account to build a competing product, and none was needed for this map. The screens, routes and click counts below are **inferred from help articles and the public API**, not observed in the product. Confirm them against the public booking page and the App Store screenshots before `/replica-design`. `replica/screens/` is empty: this environment can't take screenshots, because browser automation is blocked.
+**Method: public sources only.** No Calendly account was used. Calendly's terms may forbid using an account to build a competing product, and none was needed for this map. The screens, routes and click counts below are **inferred from help articles and the public API**, not observed in the product. Confirm them against the public booking page and the App Store screenshots before `/replica-design`. `docs/screens/` is empty: this environment can't take screenshots, because browser automation is blocked.
 
 ## Sources
 
@@ -22,8 +22,8 @@
 | 10 | help: Automations (14 articles) | https://calendly.com/help/automations-notifications | notifications, reminders by email and text, reconfirmation, text opt-out, templates |
 | 11 | help: connect a calendar | https://calendly.com/help/connect-your-calendar-to-calendly | Google, Office 365/Outlook.com and Exchange; Free plan 1 calendar, paid up to 6; one "add to" calendar; **iCloud not listed** |
 | 12 | pricing page (read 2026-10-10) | https://calendly.com/pricing | what is gated: Free has 1 event type and 1 calendar; Standard has unlimited event types and 6 calendars; Teams adds round robin |
-| 13 | App Store listing | https://itunes.apple.com/search?term=calendly&entity=software&country=us | app 1451094657: 4.85 stars from 55,409 ratings; the 150 reviews in `replica/reviews.csv` |
-| 14 | user reviews | `replica/feedback.md` | where the product fails: sync, availability, mobile parity, support |
+| 13 | App Store listing | https://itunes.apple.com/search?term=calendly&entity=software&country=us | app 1451094657: 4.85 stars from 55,409 ratings; the 150 reviews in `docs/reviews.csv` |
+| 14 | user reviews | `docs/feedback.md` | where the product fails: sync, availability, mobile parity, support |
 
 ## Core loop
 

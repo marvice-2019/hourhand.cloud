@@ -1,6 +1,6 @@
 # Hourhand architecture
 
-This reads `replica/recon.md` (22 screens, 10 flows, 14 entities) and `replica/features.csv` (22 must, 9 should, 3 could, plus 9 Hourhand fixes). The SQL is in `replica/schema.sql`.
+This reads `docs/recon.md` (22 screens, 10 flows, 14 entities) and `docs/features.csv` (22 must, 9 should, 3 could, plus 9 Hourhand fixes). The SQL is in `docs/schema.sql`.
 
 ## 1. Stack
 
@@ -9,7 +9,7 @@ It's built for the stack Marvice already runs: a single 16 GB VPS on Coolify, wi
 | layer | choice | why |
 | --- | --- | --- |
 | web app | **Next.js (App Router) + TypeScript**, one container on Coolify | server actions for the dashboard, server-rendered booking pages that load fast on mobile data, one codebase |
-| styling | **Tailwind**, mapped to `replica/design/tokens.json` | tokens already set by replica-brand; components use roles (`bg-surface`), never raw hex |
+| styling | **Tailwind**, mapped to `docs/design/tokens.json` | tokens already set by replica-brand; components use roles (`bg-surface`), never raw hex |
 | database | **Postgres 16**, a Coolify-managed instance on the same VPS | one database; `btree_gist` exclusion constraints make double-booking impossible at the data layer |
 | ORM | **Drizzle** | SQL-first, types generated from `schema.sql`, migrations checked in |
 | auth | **Better Auth**: email magic link, Google and Microsoft sign-in | actively maintained; Auth.js has been in maintenance mode since Sept 2025 ([LogRocket](https://blog.logrocket.com/best-auth-library-nextjs-2026/), [WorkOS](https://workos.com/blog/top-nextauth-alternatives-secure-authentication-2026)). Sessions in httpOnly cookies, checked in every server action and route, **never in middleware alone** (CVE-2025-29927) |
@@ -29,7 +29,7 @@ Pin every package at the current stable version on the day you install it. These
 
 ## 2. Schema
 
-`replica/schema.sql` has **23 tables**. It was applied to a throwaway Postgres 16.4 on 2026-10-10 with no errors and then deleted.
+`docs/schema.sql` has **23 tables**. It was applied to a throwaway Postgres 16.4 on 2026-10-10 with no errors and then deleted.
 
 | area | tables |
 | --- | --- |

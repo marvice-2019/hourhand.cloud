@@ -1,6 +1,6 @@
 # Hourhand landing page
 
-Written in the voice from `replica/brand.md`: plain, steady, human. The page is built at `replica/launch/landing/index.html`.
+Written in the voice from `docs/brand.md`: plain, steady, human. The page is built at `docs/launch/landing/index.html`.
 
 There are no testimonials, user counts, star ratings or logos, because none exist yet. The proof section stays empty until real beta users agree to be quoted.
 
