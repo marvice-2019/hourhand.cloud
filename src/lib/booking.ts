@@ -298,7 +298,7 @@ export async function handleCreateBooking(
   const bookingInput = {
     eventTypeId: eventType.id, startAt: req.start, idempotencyKey: req.idempotencyKey, ...(req.weeks > 1 ? { weeks: req.weeks } : {}),
     // Used up in the same write as the booking (or its payment hold), so two guests on one link can't both book.
-    ...(found.linkToken ? { bookingLinkToken: found.linkToken } : {}),
+    ...(found.linkToken ? { bookingLinkToken: found.linkToken, now } : {}),
     ...(req.packageToken ? { packageToken: req.packageToken } : {}),
     invitee: {
       name: req.name, email: req.email, timezone: req.timezone, phone: req.phone, guests: req.guests, locale: req.locale, whatsappOptIn: req.whatsappOptIn,
