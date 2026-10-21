@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { publicUrl } from "@/lib/auth/auth";
 import { getSignedInUser } from "@/lib/auth/session";
 import { saveConnection } from "@/lib/calendar/connections";
 import { calendarDeps, calendarRedirectUri } from "@/lib/calendar/env";
@@ -11,9 +12,9 @@ export const dynamic = "force-dynamic";
 /** Google sends the host back here. Only the host who started the handshake, with its state, can finish it. */
 export async function GET(request: NextRequest) {
   const user = await getSignedInUser();
-  if (!user) return NextResponse.redirect(new URL("/sign-in", request.url));
+  if (!user) return NextResponse.redirect(publicUrl("/sign-in", request));
   const done = (query: string) => {
-    const res = NextResponse.redirect(new URL(`/dashboard/calendars?${query}`, request.url));
+    const res = NextResponse.redirect(publicUrl(`/dashboard/calendars?${query}`, request));
     res.cookies.set(OAUTH_COOKIE, "", { path: OAUTH_COOKIE_PATH, maxAge: 0 });
     return res;
   };

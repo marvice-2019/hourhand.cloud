@@ -74,6 +74,14 @@ export function resolveBaseUrl(env: Record<string, string | undefined> = process
   return url;
 }
 
+/**
+ * An absolute URL on this site for redirects. Behind the proxy the request's own URL is the container's
+ * (https://0.0.0.0:3000), so redirects built from it send people nowhere; the public base URL is used instead.
+ */
+export function publicUrl(path: string, request: { nextUrl: { origin: string } }, env: Record<string, string | undefined> = process.env): URL {
+  return new URL(path, resolveBaseUrl(env) ?? request.nextUrl.origin);
+}
+
 
 function createAuth() {
   const url = process.env.DATABASE_URL;
