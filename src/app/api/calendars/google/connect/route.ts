@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { authEnabled } from "@/lib/auth/auth";
+import { authEnabled, publicUrl } from "@/lib/auth/auth";
 import { getSignedInUser } from "@/lib/auth/session";
 import { calendarDeps, calendarRedirectUri } from "@/lib/calendar/env";
 import { OAUTH_COOKIE, OAUTH_COOKIE_PATH, startOAuth } from "@/lib/calendar/oauth";
@@ -9,8 +9,8 @@ export const dynamic = "force-dynamic";
 /** Sends the signed-in host to Google to let Hourhand read their availability and add booked events. */
 export async function GET(request: NextRequest) {
   const user = await getSignedInUser();
-  if (!user) return NextResponse.redirect(new URL("/sign-in", request.url));
-  const back = (error: string) => NextResponse.redirect(new URL(`/dashboard/calendars?error=${error}`, request.url));
+  if (!user) return NextResponse.redirect(publicUrl("/sign-in", request));
+  const back = (error: string) => NextResponse.redirect(publicUrl(`/dashboard/calendars?error=${error}`, request));
   if (!authEnabled()) return back("demo");
   const deps = calendarDeps();
   const google = deps?.providers.google;
