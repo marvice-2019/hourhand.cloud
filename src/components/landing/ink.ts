@@ -19,7 +19,7 @@ export const ink = {
   focus: "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e8743f]",
   // The product frame, lit along its top edge.
   frame:
-    "rounded-[14px] border border-[rgb(244_236_225/0.18)] bg-[#1b1511] shadow-[inset_0_1px_0_rgb(244_236_225/0.07),0_30px_80px_-20px_rgb(0_0_0/0.7),0_12px_24px_-12px_rgb(0_0_0/0.5)]",
+    "rounded-[14px] border border-[rgb(244_236_225/0.18)] bg-[#1b1511] shadow-[inset_0_1px_0_rgb(244_236_225/0.08),0_24px_48px_-28px_rgb(0_0_0/0.35)]",
   pane: "rounded-md border border-[rgb(244_236_225/0.1)] bg-[#120e0b]",
 } as const;
 
@@ -29,3 +29,6 @@ export const heading = "font-display font-semibold tracking-[-0.02em] leading-[1
 
 /** Exponential ease-out for the one authored state change. */
 export const easeOut = "ease-[cubic-bezier(0.16,1,0.3,1)]";
+
+/** Links to this hash scroll to the sync demo and break its calendar, so "See it pause a booking" does what it says. */
+export const BREAK_HASH = "#demo-break";

@@ -13,7 +13,9 @@ User brief (2026-10-21): "make it like linear.app", resolved by the user to Line
 
 ## Direction contract
 
-seed: none (direction pinned by the user)
+seed: none (roll skipped: the user pinned the direction, "Linear's craft, Hourhand's brand")
+
+FORM: Linear-style product marketing page. Product UI is the hero and the proof; sections alternate paper and ink; each showcase pairs a short claim with the real interface doing it; hairline rules over cards.
 
 THESIS: The page is the product working, not a description of it. Refuses the category default of a hero blurb plus a grid of same-size icon cards.
 

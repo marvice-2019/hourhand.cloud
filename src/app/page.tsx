@@ -4,8 +4,9 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { LegalLinks } from "@/components/LegalLinks";
 import { LanguageDemo } from "@/components/landing/LanguageDemo";
+import { Mark } from "@/components/landing/Mark";
 import { SyncDemo } from "@/components/landing/SyncDemo";
-import { display, heading, ink } from "@/components/landing/ink";
+import { BREAK_HASH, display, heading, ink } from "@/components/landing/ink";
 import { buttonClasses } from "@/components/ui/Button";
 import { focusRing } from "@/components/ui/focus";
 import { authEnabled } from "@/lib/auth/auth";
@@ -110,15 +111,6 @@ function Check({ className = "" }: { className?: string }) {
   );
 }
 
-function Mark({ size = "size-7" }: { size?: string }) {
-  return (
-    <span aria-hidden className={`relative ${size} shrink-0 rounded-pill bg-accent`}>
-      <span className="absolute left-1/2 top-1/2 h-[34%] w-[9%] origin-bottom -translate-x-1/2 -translate-y-full rotate-[30deg] rounded-pill bg-bg" />
-      <span className="absolute left-1/2 top-1/2 size-[26%] -translate-x-1/2 -translate-y-1/2 rounded-pill bg-highlight" />
-    </span>
-  );
-}
-
 /** One showcase row on the ink band: words on one side, the product doing it on the other. */
 function Showcase({ id, title, children, visual, flip = false }: { id: string; title: string; children: ReactNode; visual: ReactNode; flip?: boolean }) {
   return (
@@ -167,7 +159,7 @@ export default async function Home() {
             <Link href="/sign-in" className={`${navLink} hidden sm:inline-flex`}>
               Sign in
             </Link>
-            <Link href="/sign-in" className={buttonClasses({ size: "sm" })}>
+            <Link href="/sign-in" className={`${buttonClasses({ size: "sm" })} whitespace-nowrap`}>
               Start free
             </Link>
           </div>
@@ -175,30 +167,26 @@ export default async function Home() {
       </header>
 
       <main>
-        <section aria-labelledby="hero-title" className={`${container} pb-12 pt-14 md:pb-16 md:pt-20`}>
-          <h1 id="hero-title" className={`${display} max-w-[16ch] text-[2.75rem] text-text sm:text-6xl lg:text-[5.25rem]`}>
+        <section aria-labelledby="hero-title" className={`${container} pb-10 pt-12 md:pb-10 md:pt-10`}>
+          <h1 id="hero-title" className={`${display} max-w-[24ch] text-[2.5rem] text-text sm:text-5xl lg:text-[3.5rem]`}>
             Your booking link, kept in sync. <span className="text-text-muted">And a person when it isn&apos;t.</span>
           </h1>
-          <div className="mt-8 grid gap-8 md:mt-10 md:grid-cols-[minmax(0,34rem)_auto] md:items-end md:justify-between">
-            <p className="text-lg leading-relaxed text-text-muted">
-              One link for coaches, tutors and therapists. It offers only the times your calendar says you&apos;re free, and a real person answers if anything goes wrong.
-            </p>
-            <div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Link href="/sign-in" className={buttonClasses({ size: "lg" })}>
-                  Start free
-                </Link>
-                <a href="#demo" className={`${buttonClasses({ variant: "ghost", size: "lg" })} gap-2`}>
-                  See it pause a booking
-                  <Arrow />
-                </a>
-              </div>
-              <p className="mt-3 text-sm text-text-muted">Free for one person. No card needed.</p>
-            </div>
+          <p className="mt-5 max-w-[68ch] text-base font-normal leading-relaxed text-text-muted md:text-lg">
+            One link for coaches, tutors and therapists. It offers only the times your calendar says you&apos;re free, and a real person answers if anything goes wrong.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Link href="/sign-in" className={buttonClasses({ size: "lg" })}>
+              Start free
+            </Link>
+            <a href={BREAK_HASH} className={`${buttonClasses({ variant: "ghost", size: "lg" })} gap-2`}>
+              See it pause a booking
+              <Arrow />
+            </a>
+            <p className="w-full text-sm text-text-muted lg:ml-2 lg:w-auto">Free for one person. No card needed.</p>
           </div>
         </section>
 
-        <section id="demo" aria-label="See it work" className={`${ink.band} scroll-mt-16 border-y border-border pt-10 pb-12 md:pt-14 md:pb-20`}>
+        <section id="demo" aria-label="See it work" className={`${ink.band} scroll-mt-16 border-y border-border pt-8 pb-12 md:pt-8 md:pb-20`}>
           <div className={container}>
             <SyncDemo />
           </div>
@@ -248,7 +236,7 @@ export default async function Home() {
             <h2 id="features" className={`${heading} max-w-[18ch] text-3xl md:text-5xl ${ink.text}`}>
               Built around what goes wrong
             </h2>
-            <p className={`mt-5 max-w-[52ch] text-lg leading-relaxed ${ink.muted}`}>
+            <p className={`mt-5 max-w-[52ch] text-lg font-normal leading-relaxed ${ink.muted}`}>
               A sync light for every calendar. If we can&apos;t check one, your booking page stops offering times, and if the connection drops, we email you.
             </p>
 
@@ -256,38 +244,46 @@ export default async function Home() {
               <Showcase
                 id="zones"
                 title="No time zone guesswork"
-                visual={<LanguageDemo />}
+                visual={
+                  <div>
+                    <LanguageDemo />
+                    <ExampleNote />
+                  </div>
+                }
               >
                 <p>Guests see times in their own zone, and can switch between 12-hour and 24-hour clocks.</p>
                 <p>Booking pages work in Hindi, Tamil, Telugu and Kannada as well as English. Try the switch.</p>
               </Showcase>
 
-              <Showcase
-                id="emails"
-                flip
-                title="Emails that do the chasing"
-                visual={
-                  <div>
-                    <ol className={`${ink.frame} p-2 sm:p-3`}>
-                      {emails.map((e, i) => (
-                        <li key={e.what} className={`${ink.pane} grid gap-1 p-4 sm:grid-cols-[8.5rem_1fr] sm:gap-4 ${i > 0 ? "mt-2" : ""}`}>
-                          <span className={`text-xs ${ink.muted}`}>{e.when}</span>
-                          <span>
-                            <span className={`block text-sm ${ink.text}`}>{e.what}</span>
-                            <span className={`mt-0.5 block text-xs ${ink.muted}`}>{e.who}</span>
-                          </span>
-                        </li>
-                      ))}
-                    </ol>
-                    <ExampleNote />
-                  </div>
-                }
-              >
-                <p>Confirmation, reminder, reschedule and cancellation emails, each with a calendar file your guest can add in one click.</p>
-              </Showcase>
+              <div className={`border-t py-16 md:py-24 ${ink.line}`} aria-labelledby="emails">
+                <div className="grid gap-6 md:grid-cols-2 md:gap-16">
+                  <h3 id="emails" className={`${heading} text-3xl md:text-4xl ${ink.text}`}>
+                    Emails that do the chasing
+                  </h3>
+                  <p className={`max-w-[46ch] text-base leading-relaxed md:pt-2 ${ink.muted}`}>
+                    Confirmation, reminder, reschedule and cancellation emails, each with a calendar file your guest can add in one click.
+                  </p>
+                </div>
+                <ol className={`${ink.frame} mt-12 grid gap-2 p-2 sm:grid-cols-2 sm:p-3 lg:grid-cols-5`}>
+                  {emails.map((e, i) => (
+                    <li key={e.what} className={`${ink.pane} flex flex-col p-4`}>
+                      <span className={`flex items-center gap-2 text-xs ${ink.muted}`}>
+                        <span aria-hidden className={`flex size-5 items-center justify-center rounded-pill border text-[0.6875rem] tabular-nums ${ink.lineStrong} ${ink.text}`}>
+                          {i + 1}
+                        </span>
+                        {e.when}
+                      </span>
+                      <span className={`mt-4 block text-sm ${ink.text}`}>{e.what}</span>
+                      <span className={`mt-auto block pt-3 text-xs ${ink.muted}`}>{e.who}</span>
+                    </li>
+                  ))}
+                </ol>
+                <ExampleNote />
+              </div>
 
               <Showcase
                 id="paid"
+                flip
                 title="Paid sessions"
                 visual={
                   <div>
@@ -325,7 +321,6 @@ export default async function Home() {
 
               <Showcase
                 id="person"
-                flip
                 title="A person, not a bot. And one tap to leave."
                 visual={
                   <div>
@@ -375,7 +370,10 @@ export default async function Home() {
               <div className="md:col-span-4">
                 <h3 className={`flex items-center gap-3 text-lg ${ink.text}`}>
                   On the way
-                  <span className="rounded-pill bg-[rgb(242_169_59/0.14)] px-2.5 py-1 text-xs text-highlight">Coming soon</span>
+                  <span className={`inline-flex items-center gap-2 rounded-pill bg-[rgb(242_169_59/0.14)] px-2.5 py-1 text-xs ${ink.text}`}>
+                    <span aria-hidden className="size-1.5 rounded-pill bg-highlight" />
+                    Coming soon
+                  </span>
                 </h3>
                 <ul className="mt-6">
                   {onTheWay.map((item) => (
@@ -406,7 +404,7 @@ export default async function Home() {
                   {p.recommended && <span aria-hidden className="absolute inset-x-0 top-0 h-0.5 bg-accent" />}
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-lg text-text">{p.name}</h3>
-                    {p.recommended && <span className="rounded-pill bg-accent px-2.5 py-1 text-xs text-on-accent">Most people pick this</span>}
+                    {p.recommended && <span className="rounded-pill bg-accent px-2.5 py-1 text-xs text-on-accent">Recommended</span>}
                   </div>
                   <p className="mt-1 text-sm text-text-muted">{p.for}</p>
                   <p className="mt-8 flex items-baseline gap-2">

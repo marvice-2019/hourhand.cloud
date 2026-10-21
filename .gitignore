@@ -7,3 +7,4 @@ next-env.d.ts
 .scratch/
 e2e/.out/
 .impeccable/review/
+design-log/
