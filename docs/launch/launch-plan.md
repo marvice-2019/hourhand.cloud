@@ -29,7 +29,7 @@ The research reached the App Store, Trustpilot and Hacker News. Reddit could not
 
 **Show HN: Hourhand – booking links that pause themselves when a calendar stops syncing**
 
-> Scheduling tools usually fail quietly: a calendar disconnects, the link keeps offering times, and two clients turn up. Hourhand checks every connected calendar, shows a sync light, and pauses bookings for a calendar it can't verify, with a WhatsApp or email alert. Solo is $7/mo, Duo is $11 for two people (not per seat), and you cancel in one click. Built for coaches and tutors. Happy to talk about the sync design.
+> Scheduling tools usually fail quietly: a calendar disconnects, the link keeps offering times, and two clients turn up. Hourhand checks every connected calendar, shows a sync light, and pauses bookings for a calendar it can't verify, with an email alert. Solo is $7/mo, Duo is $11 for two people (not per seat), and you cancel in one click. Built for coaches and tutors. Happy to talk about the sync design.
 
 **Product Hunt tagline (60 characters max):** "A booking link that knows when your calendar stops syncing" (58 characters)
 

@@ -59,7 +59,7 @@ const plans = [
     for: "For a coach, tutor or therapist",
     price: "₹399",
     note: "+ 18% GST, or ₹3,990 a year",
-    items: ["Every calendar you want checked", "Payment at booking through your Razorpay account", "300 automatic WhatsApp messages a month", "No Hourhand line on your page"],
+    items: ["Every calendar you want checked", "Payment at booking through your Razorpay account", "300 automatic WhatsApp messages to guests a month, once WhatsApp approves our business number", "No Hourhand line on your page"],
     recommended: true,
   },
   {
@@ -67,7 +67,7 @@ const plans = [
     for: "For you and an assistant",
     price: "₹599",
     note: "+ 18% GST, or ₹5,990 a year",
-    items: ["Everything in Solo", "600 automatic WhatsApp messages a month", "A second person at no extra cost: an assistant who runs your bookings, or a co-host with their own page"],
+    items: ["Everything in Solo", "600 automatic WhatsApp messages to guests a month, once WhatsApp approves our business number", "A second person at no extra cost: an assistant who runs your bookings, or a co-host with their own page"],
     recommended: false,
   },
 ];
@@ -80,7 +80,7 @@ const faqs = [
   { q: "Which calendars work?", a: "Google Calendar, Outlook, Office 365 and iCloud." },
   {
     q: "Do you send WhatsApp reminders?",
-    a: "Yes, on Solo and Duo. Guests who tick WhatsApp at booking get the confirmation, a reminder the day before, and a message if the time changes. Replying STOP turns them off. Emails always go too.",
+    a: "Not automatically yet. On Solo and Duo, guests who tick WhatsApp at booking will get the confirmation, a reminder the day before, and a message if the time changes, as soon as WhatsApp approves our business number. Until then, each booking has a button to message your guest on WhatsApp yourself, and emails always go.",
   },
   { q: "How do I cancel?", a: "Dashboard, then Plan, then Cancel. You keep your plan until the end of the period you've paid for." },
   { q: "Who answers support?", a: "A person, within one working day." },
