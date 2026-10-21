@@ -41,11 +41,17 @@ export function SyncDemo() {
       setChanged((n) => n + 1);
       button.current?.focus({ preventScroll: true });
     }
+    // A second click on a link to the hash fires no hashchange, so clicks on those links break the calendar too.
+    function breakFromLink(e: MouseEvent) {
+      if (e.target instanceof Element && e.target.closest(`a[href="${BREAK_HASH}"]`) && window.location.hash === BREAK_HASH) breakFromHash();
+    }
     const id = window.setTimeout(breakFromHash, 0);
     window.addEventListener("hashchange", breakFromHash);
+    document.addEventListener("click", breakFromLink);
     return () => {
       window.clearTimeout(id);
       window.removeEventListener("hashchange", breakFromHash);
+      document.removeEventListener("click", breakFromLink);
     };
   }, []);
 
@@ -101,7 +107,7 @@ export function SyncDemo() {
 
             {/* Times and the paused notice share one grid cell, so the pane grows to whichever is taller. */}
             <div className="mt-3 grid">
-              <div className={`[grid-area:1/1] ${fade} ${paused ? "opacity-[0.28] blur-[1.5px] saturate-0" : ""}`} aria-hidden={paused}>
+              <div className={`[grid-area:1/1] ${fade} ${paused ? "opacity-[0.28] saturate-0" : ""}`} aria-hidden={paused}>
                 <div className="grid grid-cols-3 gap-2">
                   {slots.map((t) => (
                     <span
