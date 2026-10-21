@@ -12,7 +12,14 @@ export const metadata: Metadata = {
   title: "Hourhand",
   description: "Share one link and let people book a time that suits you both.",
   openGraph: { siteName: "Hourhand", type: "website" },
-  icons: { apple: "/icons/180" },
+  // Setting icons here replaces the tag Next would derive from app/icon.svg, so the SVG is listed too; without it browsers fall back to a missing /favicon.ico.
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icons/192", type: "image/png", sizes: "192x192" },
+    ],
+    apple: "/icons/180",
+  },
 };
 
 export const viewport: Viewport = { themeColor: "#b4410e" };
