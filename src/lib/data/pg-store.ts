@@ -170,7 +170,7 @@ export function createPgStore(pool: pg.Pool): DataStore {
     const used = await client.query(`select 1 from bookings b where b.booking_link_id = $1 and ${USES_LINK} and b.idempotency_key <> $2`, [link.id, input.idempotencyKey]);
     if (used.rowCount) throw new LinkUsedError();
     if (link.revoked_at) throw new LinkUnavailableError("revoked");
-    if (link.expires_at && (link.expires_at as Date).getTime() <= Date.now()) throw new LinkUnavailableError("expired");
+    if (link.expires_at && (link.expires_at as Date).getTime() <= (input.now ?? new Date()).getTime()) throw new LinkUnavailableError("expired");
     return link.id as string;
   }
 

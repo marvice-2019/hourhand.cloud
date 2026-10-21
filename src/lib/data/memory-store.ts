@@ -41,10 +41,10 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
   }
 
   /** Checks the link is open and for this event type. Synchronous with the insert that follows, so no race. */
-  function openLink(token: string, eventTypeId: string, idempotencyKey: string): LinkRow {
+  function openLink(token: string, eventTypeId: string, idempotencyKey: string, now: Date): LinkRow {
     const row = links.find((l) => l.tokenHash === hashLinkToken(token));
     if (!row || row.eventTypeId !== eventTypeId) throw new LinkUnavailableError("not_found");
-    const { state } = toLink(row, new Date(), idempotencyKey);
+    const { state } = toLink(row, now, idempotencyKey);
     if (state === "used") throw new LinkUsedError();
     if (state !== "open") throw new LinkUnavailableError(state);
     return row;
@@ -171,7 +171,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       }
       // Packages are paid through Razorpay, which needs Postgres; the demo data has none.
       if (input.packageToken !== undefined) throw new PackageUnavailableError("not_found");
-      const link = input.bookingLinkToken === undefined ? null : openLink(input.bookingLinkToken, input.eventTypeId, input.idempotencyKey);
+      const link = input.bookingLinkToken === undefined ? null : openLink(input.bookingLinkToken, input.eventTypeId, input.idempotencyKey, input.now ?? new Date());
       const booking = build(input, null);
       // A weekly series is built in full before any of it is saved, so a clash in a later week saves nothing.
       const later = Array.from({ length: (input.weeks ?? 1) - 1 }, (_, i) =>

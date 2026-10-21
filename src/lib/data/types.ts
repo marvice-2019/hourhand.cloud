@@ -201,6 +201,8 @@ export interface CreateBookingInput {
   holdUntil?: Date;
   /** Book through a single-use link: it must be open and for this event type, and is used up in the same transaction. */
   bookingLinkToken?: string;
+  /** The request's clock, for checking the link above has not expired. Defaults to the real time. */
+  now?: Date;
   /** Book the same time this many weeks running (2+), all or none. The returned booking is the first week. */
   weeks?: number;
   /** Pay with a session package (its buyer's token): one credit per booking, checked and used in the same write. Postgres only. */

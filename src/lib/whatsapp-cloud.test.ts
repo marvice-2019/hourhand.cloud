@@ -183,7 +183,8 @@ describe.skipIf(!BASE)("WhatsApp sending (Postgres)", () => {
     await run();
     expect((await waRows(b.id))[0]).toMatchObject({ status: "queued", last_error: "WhatsApp 503 (code 1)" });
     reply = () => Response.json({ error: { code: 131026 } }, { status: 400 });
-    await pool.query("update notifications set send_at = now() where booking_id = $1", [b.id]);
+    // A second in the past: Postgres's now() has microseconds and run()'s Date only milliseconds, so plain now() can land just after it.
+    await pool.query("update notifications set send_at = now() - interval '1 second' where booking_id = $1", [b.id]);
     await run();
     expect((await waRows(b.id))[0]).toMatchObject({ status: "failed", last_error: "WhatsApp 400 (code 131026)" });
   });
