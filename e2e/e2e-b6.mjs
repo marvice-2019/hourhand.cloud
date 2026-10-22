@@ -51,7 +51,8 @@ const from = new Date().toISOString(), to = new Date(Date.now() + 14 * 864e5).to
 const slots = async () => (await (await fetch(`${B}/api/slots?slug=priya&event=coaching&from=${from}&to=${to}&tz=Asia/Kolkata`, { signal: t() })).json()).slots ?? [];
 const before = await slots();
 const busySlot = before.find((s) => new Date(s).getTime() > Date.now() + 2 * 864e5);
-const freeSlot = before.find((s) => new Date(s).getTime() > Date.now() + 3 * 864e5);
+// A day after the busy one, not "3 days from now": across a weekend both would land on the same Monday slot.
+const freeSlot = before.find((s) => new Date(s).getTime() >= new Date(busySlot).getTime() + 864e5);
 await fetch(`${M}/__busy`, { method: "POST", body: JSON.stringify([
   { start: busySlot, end: new Date(new Date(busySlot).getTime() + 45 * 60_000).toISOString() },
   { start: freeSlot, end: new Date(new Date(freeSlot).getTime() + 45 * 60_000).toISOString(), showAs: "free" }]) });

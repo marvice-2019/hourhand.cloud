@@ -54,6 +54,18 @@ describe.skipIf(!URL_)("pg store (TEST_DATABASE_URL)", () => {
     expect(await migrate(URL_!)).toEqual([]);
   });
 
+  it("gives a host who signed up without one a default schedule: weekdays 9 to 5 in their own zone, created once", async () => {
+    // Sign-in creates only the users row, as Better Auth does; nothing else seeds a schedule for a real host.
+    const { rows: [fresh] } = await pool.query("insert into users (email, name, slug, timezone) values ('new-host@example.com', 'New Host', 'new-host', 'Europe/London') returning id");
+    const [a, b] = await Promise.all([store.getDefaultSchedule(fresh.id), store.getDefaultSchedule(fresh.id)]);
+    expect(a.schedule).toMatchObject({ userId: fresh.id, timezone: "Europe/London", isDefault: true });
+    expect(b.schedule.id).toBe(a.schedule.id);
+    expect(a.rules.map((r) => [r.weekday, r.intervals])).toEqual([1, 2, 3, 4, 5].map((d) => [d, [{ from: "09:00", to: "17:00" }]]));
+    const { rows } = await pool.query("select count(*)::int as n from availability_schedules where user_id = $1", [fresh.id]);
+    expect(rows[0].n).toBe(1);
+    expect((await store.getDefaultSchedule(fresh.id)).schedule.id).toBe(a.schedule.id);
+  });
+
   describe("createBooking", () => {
     it("books a free slot, rejects the same slot under a new key, and returns the same booking for a repeated key", async () => {
       const input = { eventTypeId: coaching.id, startAt: at("2030-01-07T04:00:00Z"), idempotencyKey: "pg-happy-1", invitee: guest };

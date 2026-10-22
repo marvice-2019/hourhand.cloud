@@ -307,7 +307,23 @@ export function createPgStore(pool: pg.Pool): DataStore {
       return rows.map((r) => ({ id: r.id, eventTypeId: r.event_type_id, label: r.label, kind: r.kind, required: r.required, choices: r.choices, position: r.position }));
     },
     async getDefaultSchedule(userId) {
-      const { rows } = isId(userId) ? await pool.query("select id, user_id, name, timezone, is_default from availability_schedules where user_id = $1 and is_default", [userId]) : { rows: [] };
+      const find = () => pool.query("select id, user_id, name, timezone, is_default from availability_schedules where user_id = $1 and is_default", [userId]);
+      let { rows } = isId(userId) ? await find() : { rows: [] };
+      if (!rows[0] && isId(userId)) {
+        // Sign-up creates only the users row, so a new host's first visit makes their schedule: weekdays 09:00–17:00 in
+        // their own zone. The one-default-per-user index makes a racing second request a no-op.
+        await tx(async (client) => {
+          const made = await client.query(
+            `insert into availability_schedules (user_id, name, timezone, is_default)
+             select id, 'Working hours', timezone, true from users where id = $1
+             on conflict (user_id) where is_default do nothing returning id`, [userId]);
+          if (!made.rows[0]) return;
+          await client.query(
+            `insert into availability_rules (schedule_id, kind, weekday, intervals)
+             select $1, 'weekly', d, '[{"from":"09:00","to":"17:00"}]'::jsonb from generate_series(1, 5) d`, [made.rows[0].id]);
+        });
+        ({ rows } = await find());
+      }
       if (!rows[0]) throw new Error(`No default schedule for ${userId}`);
       const s = rows[0];
       const rules = await pool.query("select id, schedule_id, kind, weekday, on_date::text as on_date, intervals from availability_rules where schedule_id = $1 order by kind desc, weekday, on_date", [s.id]);
