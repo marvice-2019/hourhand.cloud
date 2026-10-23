@@ -5,6 +5,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# Coolify passes the commit when "include source commit in build" is on; otherwise the build reads .git.
+ARG SOURCE_COMMIT
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
