@@ -13,7 +13,8 @@ for (const at of ["2099-01-01T04:00:00Z", "garbage", "<script>x</script>"]) {
   const r = await page(`/priya/coaching?at=${encodeURIComponent(at)}`);
   check(r.status === 200 && !r.html.includes("<script>x</script>"), `?at=${at.slice(0, 12)} renders safely`);
 }
-const home = await page("/");
-check(home.html.includes('"hourhand.theme"'), "theme script on the home page too");
+// "/" is now the static marketing page with its own styling; the app's theme script lives in the app layout.
+const signIn = await page("/sign-in");
+check(signIn.html.includes('"hourhand.theme"'), "theme script on app pages too (sign-in)");
 console.log(fail ? `${fail} FAILED` : "ALL OK");
 process.exit(fail ? 1 : 0);
