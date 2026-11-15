@@ -10,7 +10,7 @@ import { createPgStore } from "./data/pg-store";
 import type { DataStore, EventType, User } from "./data/types";
 import { createRateLimiter } from "./rate-limit";
 import {
-  ASK_HOST, guessZone, hostWaLink, listMessage, MAX_SLOTS, parseInbound, setWhatsAppBooking, slotTitle, slugFromText, WHATSAPP_BOOKING_LIMIT,
+  ASK_HOST, asksToBook, guessZone, hostWaLink, listMessage, MAX_SLOTS, parseInbound, setWhatsAppBooking, slotTitle, slugFromText, WHATSAPP_BOOKING_LIMIT,
 } from "./whatsapp-booking";
 import { STOP_REPLY, type WhatsAppConfig } from "./whatsapp-cloud";
 import { handleWhatsAppWebhook } from "./whatsapp-webhook";
@@ -44,6 +44,11 @@ describe("reading clients' messages", () => {
       { id: "w3", from: "919876543210", at: new Date(at * 1000), text: null, replyId: "et:x" },
     ]);
     expect(parseInbound({})).toEqual([]);
+  });
+
+  it("knows when text asks to book", () => {
+    for (const t of ["I'd like to book a session", "Booking please", "BOOK", "मुझे बुक करना है", "book?"]) expect(asksToBook(t)).toBe(true);
+    for (const t of ["ok thanks", "booked, thanks!", "hi", "see you at the bookshop", "facebook"]) expect(asksToBook(t)).toBe(false);
   });
 
   it("guesses the client's zone from the country code, longest code first", () => {
@@ -201,10 +206,17 @@ describe.skipIf(!BASE)("Book over WhatsApp (Postgres)", () => {
   });
 
   it("no slug: asks which coach or tutor, then matches the slug they reply with", async () => {
-    const [ask] = await say({ text: "Hi" });
+    const [ask] = await say({ text: "Hi, I want to book a session" });
     expect(ask).toMatchObject({ type: "text", text: { body: ASK_HOST } });
     const [types] = await say({ text: "priya" });
     expect(rows(types).map((r) => r.id)).toContain(`et:${coaching.id}`);
+  });
+
+  it("stays quiet on text that doesn't ask to book, like a thank-you to a reminder, and keeps nothing about it", async () => {
+    expect(await say({ text: "ok thanks" })).toEqual([]);
+    expect(await say({ text: "Booked, see you Tuesday!" })).toEqual([]);
+    expect((await pool.query("select phone from whatsapp_booking_sessions")).rows).toEqual([]);
+    expect((await pool.query("select inbound, replies from whatsapp_booking_counts where host_id is null")).rows).toEqual([{ inbound: 2, replies: 0 }]);
   });
 
   it("unknown slug: a polite help message, and nobody else's name is ever listed", async () => {
@@ -280,7 +292,7 @@ describe.skipIf(!BASE)("Book over WhatsApp (Postgres)", () => {
     const { rows: [s] } = await pool.query("select * from whatsapp_booking_sessions");
     expect(Object.values(s).some((v) => typeof v === "string" && v.includes("private"))).toBe(false);
     await pool.query("update whatsapp_booking_sessions set updated_at = now() - interval '2 days'");
-    await say({ text: "hi" }, { from: "919000000002" });
+    await say({ text: "can I book?" }, { from: "919000000002" });
     expect((await pool.query("select phone from whatsapp_booking_sessions")).rows).toEqual([{ phone: "919000000002" }]);
   });
 });

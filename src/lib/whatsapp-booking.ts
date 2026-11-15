@@ -325,7 +325,12 @@ class Conversation {
     }
 
     const host = await this.offeredHostById(s.hostId);
-    if (!host) return ask(); // no host yet, or they've stopped taking WhatsApp bookings
+    if (!host) {
+      // No host yet (or they've stopped taking WhatsApp bookings). Typed text gets the opening question only when it asks
+      // to book: a guest's "ok thanks" to a reminder gets no reply. A tapped row is always answered.
+      if (m.text !== null && !asksToBook(m.text)) return this.turn([], s, null);
+      return ask();
+    }
     const types = await this.types(host);
     const typeById = (id: string | null) => types.find((e) => e.id === id) ?? null;
     const zone = s.timezone ?? this.zoneFor(host);
@@ -364,6 +369,11 @@ class Conversation {
   }
 }
 
+/** Whether text asks to book: "book", "booking" or Hindi "बुक". Not "booked", which is usually a thank-you. */
+export function asksToBook(text: string): boolean {
+  return /(?:^|[^a-z])book(?:ing)?(?![a-z])/i.test(text) || text.includes("बुक");
+}
+
 /** A reply that is just a name, after we asked for one: "priya" or "@priya". */
 function bareSlug(text: string): string | null {
   const t = text.trim().replace(/^@/, "").toLowerCase();
@@ -396,6 +406,10 @@ export async function handleWhatsAppBooking(deps: BookingBotDeps, payload: unkno
     if (session?.lastMessageId === m.id) continue; // Meta delivered this one twice
 
     const turn = await new Conversation(pool, store, m.from, now, baseUrl).reply(m, session);
+    if (turn.bodies.length === 0) { // not for us: no reply, and nothing kept about this phone
+      await count(pool, null, now, { inbound: 1, replies: 0, links: 0 });
+      continue;
+    }
     await saveSession(pool, m.from, { ...turn.session, lastMessageId: m.id }, now);
     let replies = 0;
     for (const body of turn.bodies) {
