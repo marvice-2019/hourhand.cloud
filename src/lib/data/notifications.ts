@@ -1,6 +1,7 @@
 import type pg from "pg";
 import { waNumber } from "../whatsapp";
 import { whatsappConfig } from "../whatsapp-cloud";
+import { queueFollowUp } from "../follow-ups/follow-ups";
 
 // Queueing booking emails. These run inside the same transaction as the booking change, so a booking and its emails
 // commit together or not at all (the outbox pattern). The job runner (src/lib/jobs) sends the due rows.
@@ -17,7 +18,7 @@ export type PackageEmailKind = "package_guest" | "package_host";
 export type InvoiceEmailKind = "invoice_guest";
 /** Last month's earnings, to the host on the 1st. */
 export type EarningsEmailKind = "earnings_host";
-export type NotificationKind = BookingEmailKind | CalendarJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | "calendar_alert_host" | "renewal_reminder_host";
+export type NotificationKind = BookingEmailKind | CalendarJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | "calendar_alert_host" | "renewal_reminder_host" | "follow_up_guest";
 
 /** Guest reminders, in minutes before the start. A reminder whose time has already passed at booking is not queued. */
 export const REMINDER_OFFSETS_MINUTES = [1440, 60] as const;
@@ -108,6 +109,8 @@ export async function queueBookingNotifications(
     }
     const waReminderAt = new Date(start.getTime() - WHATSAPP_REMINDER_MINUTES * MIN);
     if (waReminderAt > now) toWhatsApp("reminder_guest", waReminderAt, `:${WHATSAPP_REMINDER_MINUTES}`);
+    // The after-session follow-up, when the event type has one switched on (src/lib/follow-ups).
+    await queueFollowUp(db, bookingId);
   }
 
   for (const q of queued) {
