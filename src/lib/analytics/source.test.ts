@@ -10,6 +10,7 @@ describe("source classification", () => {
     expect(classify(src({ utmSource: "whatsapp", refDomain: "google.com" })).channel).toBe("whatsapp");
     expect(classify(src({ utmSource: "ig", utmMedium: "bio" })).channel).toBe("instagram");
     expect(classify(src({ utmSource: "Google Business Profile".toLowerCase() })).channel).toBe("google");
+    expect(classify(src({ utmSource: "google_business", utmMedium: "organic" })).channel).toBe("google"); // the Google Business Profile link from /dashboard/get-booked
     expect(classify(src({ utmSource: "newsletter" })).channel).toBe("email");
     expect(classify(src({ utmSource: "partner-blog", utmMedium: "email" })).channel).toBe("email");
     expect(classify(src({ utmSource: "diwali-flyer" })).channel).toBe("campaign");

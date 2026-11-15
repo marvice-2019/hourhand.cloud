@@ -75,7 +75,7 @@ function channelForUtm(source: string, medium: string): Channel | null {
   if (["whatsapp", "wa", "whatsappbusiness", "wabusiness", "whatsappstatus"].includes(s)) return "whatsapp";
   if (["instagram", "ig", "insta", "instagrambio", "igbio"].includes(s)) return "instagram";
   if (["facebook", "fb", "meta", "messenger"].includes(s)) return "facebook";
-  if (["google", "googleads", "adwords", "gbp", "googlebusinessprofile", "googlemaps"].includes(s)) return "google";
+  if (["google", "googleads", "adwords", "gbp", "googlebusiness", "googlebusinessprofile", "googlemaps"].includes(s)) return "google";
   if (["youtube", "yt"].includes(s)) return "youtube";
   if (["linkedin", "li"].includes(s)) return "linkedin";
   if (["x", "twitter"].includes(s)) return "x";
