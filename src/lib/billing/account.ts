@@ -55,7 +55,7 @@ export async function scheduleLimit(db: Db, userId: string): Promise<number> {
   return LIMITS[await hostPlan(db, userId)].schedules;
 }
 
-export type BillingError = "already_subscribed" | "not_configured" | "no_subscription" | "cannot_pause" | "provider";
+export type BillingError = "already_subscribed" | "not_configured" | "no_subscription" | "cannot_pause" | "provider" | "needs_plan";
 
 export class BillingActionError extends Error {
   constructor(readonly code: BillingError, message: string) {
