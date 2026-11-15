@@ -7,6 +7,7 @@ import { formatMoney } from "../billing/plans";
 import { buildIcs } from "./ics";
 import { LOCATION_KEYS, isLocale, t, type Locale } from "../i18n/guest";
 import { mt, type MailKey } from "../i18n/mail";
+import { pt } from "../i18n/poll";
 import type { Attachment } from "./mailer";
 
 export interface BookingMailContext {
@@ -361,6 +362,29 @@ export function renderMagicLink(url: string): RenderedMail {
   return render("Your Hourhand sign-in link", {
     heading: "Sign in to Hourhand", intro: "Use the button below to sign in. The link works once and expires in 15 minutes.",
     rows: [], link: { label: "Sign in", url }, note: "If you didn't ask for this, ignore this email. Nobody can sign in without the link.",
+    footer: "Sent by Hourhand.",
+  });
+}
+
+/** An invitee's answers to a meeting poll are in: their link to change them, in the language they answered in. */
+export function renderPollVoterMail(c: { locale: Locale; voterName: string; hostName: string; title: string; deadline: Date; timezone: string; url: string }): RenderedMail {
+  const l = c.locale;
+  return render(pt(l, "mSubject", { title: c.title }), {
+    heading: pt(l, "mHeading"), intro: pt(l, "mIntro", { name: c.voterName, host: c.hostName, title: c.title }),
+    rows: [[pt(l, "mCloses"), when(c.deadline, c.timezone, "12h", l)]], link: { label: pt(l, "mLink"), url: c.url },
+    note: pt(l, "mNote", { host: c.hostName }), footer: pt(l, "mFooter", { host: c.hostName }),
+  });
+}
+
+/** A poll reached its deadline undecided: the host picks a time. The tally per remaining time, best first marked. */
+export function renderPollClosedMail(c: { title: string; hostTimezone: string; hostTimeFormat: HourCycle; voters: number;
+  options: { startAt: Date; yes: number; ifNeeded: number; no: number; best: boolean }[]; url: string }): RenderedMail {
+  const rows: Row[] = c.options.map((o) => [when(o.startAt, c.hostTimezone, c.hostTimeFormat), `${o.yes} yes, ${o.ifNeeded} if needed, ${o.no} no${o.best ? " (best)" : ""}`]);
+  return render(`Voting closed: pick a time for ${c.title}`, {
+    heading: "Voting has closed",
+    intro: c.voters === 0 ? `Nobody answered your poll for ${c.title}.` : `${c.voters} ${c.voters === 1 ? "person" : "people"} answered your poll for ${c.title}. Pick the time to book it for everyone who can make it.`,
+    rows, link: { label: "Pick a time", url: c.url },
+    note: c.options.length === 0 ? "All the proposed times have passed. Make a new poll to find another time." : "The times are no longer held. Confirming checks your calendar again first.",
     footer: "Sent by Hourhand.",
   });
 }

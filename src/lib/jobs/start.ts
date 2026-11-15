@@ -7,6 +7,8 @@ import { createMailer } from "../mail/mailer";
 import type { PaymentCheckDeps } from "../payments/booking-payments";
 import { loadHostRazorpay } from "../payments/host-razorpay";
 import { razorpayOrders } from "../payments/razorpay-orders";
+import { systemResolver } from "../domains/dns";
+import { traefikFromEnv } from "../domains/traefik";
 import { startJobRunner, type JobRunner } from "./runner";
 import { zoomConfigError, zoomDeps } from "../zoom/connection";
 
@@ -35,6 +37,8 @@ export function startJobsFromEnv(env: Record<string, string | undefined> = proce
   } catch {
     payments = null;
   }
-  shared.__hourhandJobs = startJobRunner({ pool, mailer, baseUrl, calendar, zoom, payments });
+  const traefik = traefikFromEnv(env);
+  if (!traefik.ok) console.info(`[jobs] ${traefik.reason} Hosts see that on the Custom domain page.`);
+  shared.__hourhandJobs = startJobRunner({ pool, mailer, baseUrl, calendar, zoom, payments, domains: { resolver: systemResolver(), traefik } });
   console.info(`[jobs] runner started (${env.RESEND_API_KEY ? "Resend" : "log only"}, calendars ${calendar ? `${Object.keys(calendar.providers).join(" + ")} on${calendar.providers.google ? `, Google ${calendar.pushAddress ? "instant" : "polling"}` : ""}` : "off"}, booking payments ${payments ? "on" : "off"}, Zoom ${zoom ? "on" : "off"})`);
 }
