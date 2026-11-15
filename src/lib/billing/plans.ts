@@ -30,12 +30,14 @@ export interface PlanLimits {
   reportDays: number;
   /** Downloading the GST and P&L CSVs. */
   reportExport: boolean;
+  /** Meeting polls open (taking votes) at once. */
+  openPolls: number;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true, reportDays: 30, reportExport: false },
-  solo: { checkedCalendars: Infinity, footer: false, reportDays: Infinity, reportExport: true },
-  duo: { checkedCalendars: Infinity, footer: false, reportDays: Infinity, reportExport: true },
+  free: { checkedCalendars: 2, footer: true, reportDays: 30, reportExport: false, openPolls: 1 },
+  solo: { checkedCalendars: Infinity, footer: false, reportDays: Infinity, reportExport: true, openPolls: Infinity },
+  duo: { checkedCalendars: Infinity, footer: false, reportDays: Infinity, reportExport: true, openPolls: Infinity },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {
