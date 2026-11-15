@@ -13,7 +13,10 @@ import { formatDate, zoneName } from "@/lib/format";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { LOCATION_KEYS, resolveLocale, t, tNodes } from "@/lib/i18n/guest";
 import { AddToCalendar } from "@/components/AddToCalendar";
-import { resolveBaseUrl } from "@/lib/auth/auth";
+import { authEnabled, resolveBaseUrl } from "@/lib/auth/auth";
+import { getPool } from "@/lib/data/pg-store";
+import { formatMoney } from "@/lib/billing/plans";
+import { paidShareFor, refundPreview } from "@/lib/payments/series";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +40,11 @@ export default async function ManageBookingPage({ params, searchParams }: { para
   const series = booking.seriesId ? (await store.listBookings(booking.hostId)).filter((b) => b.seriesId === booking.seriesId) : [];
   const now = new Date();
   const laterWeeks = series.filter((b) => (b.seriesIndex ?? 0) > (booking.seriesIndex ?? 0) && b.status === "confirmed" && b.startAt > now).length;
+  // What cancelling gives back, when it's still allowed (inside the cutoff the guest can't cancel online at all).
+  const canCancel = booking.status === "confirmed" && booking.startAt.getTime() - now.getTime() >= eventType.cancelCutoffMinutes * 60_000;
+  const preview = canCancel && authEnabled() ? refundPreview(await paidShareFor(getPool(process.env.DATABASE_URL as string), booking.id), laterWeeks) : null;
+  const money = (minor: number) => (minor > 0 ? formatMoney(minor, "INR") : null);
+  const refund = preview ? { thisOnly: money(preview.thisOnly), withLater: money(preview.withLater) } : null;
 
   return (
     <main lang={locale} className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
@@ -77,7 +85,7 @@ export default async function ManageBookingPage({ params, searchParams }: { para
           manageUrl={`${(resolveBaseUrl() ?? "").replace(/\/+$/, "")}/b/${token}`}
         />
         {canSayRunningLate(booking.startAt, new Date()) && <RunningLate token={token} hostName={host.name} told={booking.invitee.runningLateMinutes} locale={locale} />}
-        <ManageBooking token={token} slug={host.slug} event={eventType.slug} bookingWindowDays={eventType.bookingWindowDays} hostName={host.name} laterWeeks={laterWeeks} locale={locale} langQuery={q} cancelPolicy={eventType.cancelPolicy} groupSeat={booking.classKey !== null} />
+        <ManageBooking token={token} slug={host.slug} event={eventType.slug} bookingWindowDays={eventType.bookingWindowDays} hostName={host.name} laterWeeks={laterWeeks} locale={locale} langQuery={q} cancelPolicy={eventType.cancelPolicy} groupSeat={booking.classKey !== null} refund={refund} />
         </>
       )}
     </main>

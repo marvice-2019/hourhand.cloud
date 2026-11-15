@@ -25,6 +25,8 @@ interface Props {
   cancelPolicy?: string | null;
   /** A seat in a group class: it can be cancelled but not moved. */
   groupSeat?: boolean;
+  /** What cancelling refunds, as shown: this booking alone, and with its later weeks. Null when nothing comes back. */
+  refund?: { thisOnly: string | null; withLater: string | null } | null;
 }
 
 function When({ slot, tz, locale }: { slot: string; tz: string; locale: Locale }) {
@@ -32,13 +34,13 @@ function When({ slot, tz, locale }: { slot: string; tz: string; locale: Locale }
 }
 
 /** The two things a guest can do with a booking: move it, or cancel it. */
-export function ManageBooking({ token, slug, event, bookingWindowDays, hostName, laterWeeks = 0, locale = "en", langQuery = "", cancelPolicy = null, groupSeat = false }: Props) {
+export function ManageBooking({ token, slug, event, bookingWindowDays, hostName, laterWeeks = 0, locale = "en", langQuery = "", cancelPolicy = null, groupSeat = false, refund = null }: Props) {
   return (
     <>
       {groupSeat
         ? <p className="mt-8 max-w-md text-text">{t(locale, "groupNoMove")}</p>
         : <Reschedule token={token} slug={slug} event={event} bookingWindowDays={bookingWindowDays} locale={locale} langQuery={langQuery} />}
-      <Cancel token={token} hostName={hostName} laterWeeks={laterWeeks} locale={locale} policy={cancelPolicy} />
+      <Cancel token={token} hostName={hostName} laterWeeks={laterWeeks} locale={locale} policy={cancelPolicy} refund={refund} />
     </>
   );
 }
@@ -110,8 +112,11 @@ function Reschedule({ token, slug, event, bookingWindowDays, locale = "en", lang
   );
 }
 
-function Cancel({ token, hostName, laterWeeks, locale, policy }: { token: string; hostName: string; laterWeeks: number; locale: Locale; policy: string | null }) {
+function Cancel({ token, hostName, laterWeeks, locale, policy, refund }: { token: string; hostName: string; laterWeeks: number; locale: Locale; policy: string | null; refund: Props["refund"] }) {
   const router = useRouter();
+  // The refund shown follows the "also cancel later weeks" box, so the guest sees what they'll get back before confirming.
+  const [withLater, setWithLater] = useState(false);
+  const refundShown = refund ? (withLater ? refund.withLater : refund.thisOnly) : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -153,10 +158,11 @@ function Cancel({ token, hostName, laterWeeks, locale, policy }: { token: string
         </div>
         {laterWeeks > 0 && (
           <label className="flex min-h-11 items-start gap-3 text-text">
-            <input type="checkbox" name="laterWeeks" className={`mt-1 h-5 w-5 accent-accent ${focusRing}`} />
+            <input type="checkbox" name="laterWeeks" checked={withLater} onChange={(e) => setWithLater(e.target.checked)} className={`mt-1 h-5 w-5 accent-accent ${focusRing}`} />
             <span>{laterWeeks === 1 ? t(locale, "alsoCancelNext") : t(locale, "alsoCancelLater", { n: laterWeeks })}</span>
           </label>
         )}
+        {refundShown && <p className="rounded-md bg-surface p-3 text-text" aria-live="polite">{t(locale, "cancelRefund", { amount: refundShown })}</p>}
         {error && <p className="text-danger" role="alert">{error}</p>}
         <Button type="submit" variant="danger" loading={busy}>{t(locale, busy ? "cancelling" : "cancelBooking")}</Button>
       </form>

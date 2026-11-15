@@ -35,3 +35,27 @@ export async function queueRefunds(db: Db, bookingIds: string[], now: Date): Pro
 export function refundTarget(p: { status: string; amountMinor: number; refundedMinor: number; refundDueMinor: number }): number {
   return p.status === "refund_pending" ? p.amountMinor : Math.min(p.amountMinor, p.refundedMinor + p.refundDueMinor);
 }
+
+export interface PaidShare { amountMinor: number; sessions: number; refundedMinor: number; refundDueMinor: number }
+
+/**
+ * What a guest gets back for cancelling, by the same rules queueRefunds applies: a booking paid on its own (or its
+ * deposit) in full; a week of a paid series its share, and with its `laterWeeks` still to come their shares too, never
+ * more than is left on the payment. Null when nothing was paid.
+ */
+export function refundPreview(p: PaidShare | null, laterWeeks: number): { thisOnly: number; withLater: number } | null {
+  if (!p) return null;
+  if (p.sessions <= 1) return { thisOnly: p.amountMinor, withLater: p.amountMinor };
+  const left = Math.max(0, p.amountMinor - p.refundedMinor - p.refundDueMinor);
+  const unit = p.amountMinor / p.sessions;
+  return { thisOnly: Math.min(unit, left), withLater: Math.min(unit * (1 + laterWeeks), left) };
+}
+
+/** The paid payment a booking's cancel would refund from: its own, or its series' (held by the first week). */
+export async function paidShareFor(db: Db, bookingId: string): Promise<PaidShare | null> {
+  const { rows: [p] } = await db.query(
+    `select p.amount_minor, p.sessions, p.refunded_minor, p.refund_due_minor from bookings b
+     join payments p on p.status = 'paid' and (p.booking_id = b.id or (b.series_id is not null and p.booking_id = b.series_id and p.sessions > 1))
+     where b.id = $1 order by p.booking_id = b.id desc, p.created_at desc limit 1`, [bookingId]);
+  return p ? { amountMinor: p.amount_minor, sessions: p.sessions, refundedMinor: p.refunded_minor, refundDueMinor: p.refund_due_minor } : null;
+}

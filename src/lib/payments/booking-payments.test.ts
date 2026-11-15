@@ -14,6 +14,7 @@ import { handleConfirmPayment } from "./confirm-handler";
 import { keyPairAuth } from "./host-razorpay";
 import { razorpayOrders } from "./razorpay-orders";
 import { handleCancel } from "../manage";
+import { paidShareFor, refundPreview } from "./series";
 import { monthlyEarnings, monthOf } from "../earnings";
 import { gstinCheckChar } from "../gst/gst";
 import { removeTaxProfile, saveTaxProfile } from "../gst/invoices";
@@ -831,6 +832,32 @@ describe.skipIf(!BASE)("paid bookings (Postgres)", () => {
         await handleCancel(store, await manageToken(body.bookingId), null, now());
         await processRefunds(refundDeps(fake), now());
         expect((await monthlyEarnings(pool, priya.id, month, now()))!.refundsMinor - before).toBe(2 * UNIT);
+      });
+
+      it("the cancel screen's refund is exactly what the cancel then queues", async () => {
+        const { body } = await paidSeries(4);
+        const [first, second, third] = await weeksOf(body.bookingId);
+        expect(refundPreview(await paidShareFor(pool, second.id), 2)).toEqual({ thisOnly: UNIT, withLater: 3 * UNIT });
+        await handleCancel(store, await manageToken(second.id), null, now());
+        expect((await payment(body.bookingId))[0].refund_due_minor).toBe(UNIT);
+        // The third week with the last one: two shares, which is what the cancel adds.
+        expect(refundPreview(await paidShareFor(pool, third.id), 1)).toEqual({ thisOnly: UNIT, withLater: 2 * UNIT });
+        await handleCancel(store, await manageToken(third.id), null, now(), { laterWeeks: true });
+        expect((await payment(body.bookingId))[0].refund_due_minor).toBe(3 * UNIT);
+        // Only the first week is left, so only its share can come back.
+        expect(refundPreview(await paidShareFor(pool, first.id), 0)).toEqual({ thisOnly: UNIT, withLater: UNIT });
+      });
+
+      it("a single paid booking shows its full price; a free one shows nothing", async () => {
+        const fake = fakeRazorpay();
+        const single = (await handleCreateBooking(store, await request(), now(), undefined, deps(fake))).body as Created & { payment: { orderId: string } };
+        const pay: FakePayment = { id: `pay_one${Math.random().toString(36).slice(2, 8)}`, order_id: single.payment.orderId, amount: UNIT, currency: "INR", status: "captured" };
+        fake.state.payments.set(pay.id, pay);
+        await confirmPayment({ pool, auth, orders: fake.orders }, { bookingId: single.bookingId, paymentId: pay.id, signature: sign(pay.order_id, pay.id) }, now());
+        expect(refundPreview(await paidShareFor(pool, single.bookingId), 0)).toEqual({ thisOnly: UNIT, withLater: UNIT });
+        await setPrice(null);
+        const free = (await handleCreateBooking(store, await request(), now(), undefined, deps())).body as Created;
+        expect(await paidShareFor(pool, free.bookingId)).toBeNull();
       });
 
       it("a deposit still holds one booking: no series", async () => {
