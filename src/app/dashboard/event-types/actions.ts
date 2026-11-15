@@ -3,12 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { store, type EventTypeInUseError, type QuestionDraft } from "@/lib/data";
 import { isNamedError } from "@/lib/data/types";
-import { SLUG_TAKEN, priceGateError, validateEventType, validateQuestions, type EventTypeErrors, type EventTypeForm, type QuestionErrors } from "@/lib/event-types";
+import { checkEventType, checkQuestions, priceGateError, type CodedError, type EventTypeErrors, type EventTypeForm, type QuestionErrors } from "@/lib/event-types";
+import type { HostKey } from "@/lib/i18n/host";
 import { requireHost } from "@/lib/auth/session";
 import { authEnabled } from "@/lib/auth/auth";
 import { hostPlan } from "@/lib/billing/account";
 import { getPool } from "@/lib/data/pg-store";
 import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
+import { getHostI18n } from "@/lib/i18n/host/server";
 
 export type SaveResult =
   | { ok: true; id: string; slug: string }
@@ -23,10 +25,16 @@ function refresh(userSlug: string, id?: string) {
 /** Why the host can't charge this price, checked here on the server whatever the editor showed. Null when they can. */
 async function priceError(userId: string, priceMinor: number | null): Promise<string | null> {
   if (priceMinor === null) return null;
-  if (!authEnabled()) return priceGateError({ priceMinor, demo: true, plan: "free", paymentsReady: false });
-  const pool = getPool(process.env.DATABASE_URL as string);
-  const [plan, account] = await Promise.all([hostPlan(pool, userId), paymentAccount(pool, userId)]);
-  return priceGateError({ priceMinor, demo: false, plan, paymentsReady: account?.ready === true });
+  let gate: Parameters<typeof priceGateError>[0] = { priceMinor, demo: true, plan: "free", paymentsReady: false };
+  if (authEnabled()) {
+    const pool = getPool(process.env.DATABASE_URL as string);
+    const [plan, account] = await Promise.all([hostPlan(pool, userId), paymentAccount(pool, userId)]);
+    gate = { priceMinor, demo: false, plan, paymentsReady: account?.ready === true };
+  }
+  if (priceGateError(gate) === null) return null;
+  // priceGateError decides; the host reads the same reason in their own language, checked in the same order.
+  const { t } = await getHostI18n();
+  return t(gate.demo ? "eventTypes.priceDemo" : gate.plan === "free" ? "eventTypes.pricePlan" : "eventTypes.pricePayments");
 }
 
 /** Prices are saved in the currency the host's payment provider settles in (INR on Razorpay, the Stripe account's otherwise). */
@@ -39,10 +47,16 @@ async function hostCurrency(userId: string): Promise<string> {
 export async function saveEventType(id: string | null, form: EventTypeForm, questions: QuestionDraft[]): Promise<SaveResult> {
   const user = await requireHost();
   const others = (await store.listEventTypes(user.id)).filter((e) => e.id !== id).map((e) => e.slug);
-  const details = validateEventType(form, others);
-  const checked = validateQuestions(questions);
+  const details = checkEventType(form, others);
+  const checked = checkQuestions(questions);
   if (!details.ok || !checked.ok) {
-    return { ok: false, errors: details.ok ? {} : details.errors, questionErrors: checked.ok ? [] : checked.errors };
+    // The validators word their errors in English; each code is shown in the host's language instead.
+    const { t } = await getHostI18n();
+    const say = (e: CodedError) => t(`eventTypes.err${e.code[0].toUpperCase()}${e.code.slice(1)}` as HostKey, e.vars);
+    const errors: EventTypeErrors = {};
+    if (!details.ok) for (const [field, e] of Object.entries(details.codes)) if (e) errors[field as keyof EventTypeErrors] = say(e);
+    const questionErrors: QuestionErrors = checked.ok ? [] : checked.codes.map((c) => ({ ...(c.label ? { label: say(c.label) } : {}), ...(c.choices ? { choices: say(c.choices) } : {}) }));
+    return { ok: false, errors, questionErrors };
   }
   const gate = await priceError(user.id, details.value.priceMinor);
   if (gate) return { ok: false, errors: { price: gate }, questionErrors: [] };
@@ -56,7 +70,7 @@ export async function saveEventType(id: string | null, form: EventTypeForm, ques
     refresh(user.slug, saved.id);
     return { ok: true, id: saved.id, slug: saved.slug };
   } catch (e) {
-    if (isNamedError(e, "SlugTakenError")) return { ok: false, errors: { slug: SLUG_TAKEN }, questionErrors: [] };
+    if (isNamedError(e, "SlugTakenError")) return { ok: false, errors: { slug: (await getHostI18n()).t("eventTypes.slugTaken") }, questionErrors: [] };
     throw e;
   }
 }
@@ -73,7 +87,11 @@ export async function deleteEventType(id: string): Promise<{ ok: true } | { ok: 
   try {
     await store.deleteEventType(user.id, id);
   } catch (e) {
-    if (isNamedError<EventTypeInUseError>(e, "EventTypeInUseError")) return { ok: false, error: e.message };
+    if (isNamedError<EventTypeInUseError>(e, "EventTypeInUseError")) {
+      const { t } = await getHostI18n();
+      if (e.reason === "history") return { ok: false, error: t("eventTypes.inUseHistory") };
+      return { ok: false, error: t(e.upcomingCount === 1 ? "eventTypes.inUseUpcomingOne" : "eventTypes.inUseUpcoming", { n: e.upcomingCount }) };
+    }
     throw e;
   }
   refresh(user.slug);

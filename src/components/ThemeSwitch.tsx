@@ -31,6 +31,7 @@ function choose(choice: ThemeChoice) {
 
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
 const OPTIONS: ThemeChoice[] = ["system", "light", "dark"];
+// i18n-ignore: the fallback when a page passes no labels; the dashboard and booking pages pass their own.
 const ENGLISH = { legend: "Appearance", system: "Device", light: "Light", dark: "Dark" };
 
 /** Light, dark, or match the device. The server render shows "Device" so hydration matches; the head script has already applied the saved theme. */

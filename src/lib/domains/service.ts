@@ -10,6 +10,12 @@ type Db = Pick<pg.Pool, "query">;
 
 export type DomainActionError = "not_entitled" | "taken" | "invalid";
 
+/** The refusals addDomain words itself (an invalid domain uses DOMAIN_ERRORS), as code -> English. */
+export const DOMAIN_SERVICE_MESSAGES = {
+  not_entitled: "A custom domain needs the Custom domain add-on on a paid plan.",
+  taken: "Another Hourhand account already uses that domain.",
+} as const;
+
 export type AddResult = { ok: true; domain: CustomDomain; replaced: string | null } | { ok: false; error: DomainActionError; message: string };
 
 /** Whether the host may add a custom domain right now: the add-on is live and they are on a paid plan. */
@@ -21,9 +27,9 @@ export async function mayUseCustomDomain(db: Db, userId: string, now = new Date(
 export async function addDomain(db: Db, userId: string, input: unknown, opts: { resolver: Resolver; appHosts?: string[]; now?: Date }): Promise<AddResult> {
   const parsed = normalizeDomain(input, opts.appHosts);
   if (!parsed.ok) return { ok: false, error: "invalid", message: DOMAIN_ERRORS[parsed.error] };
-  if (!(await mayUseCustomDomain(db, userId))) return { ok: false, error: "not_entitled", message: "A custom domain needs the Custom domain add-on on a paid plan." };
+  if (!(await mayUseCustomDomain(db, userId))) return { ok: false, error: "not_entitled", message: DOMAIN_SERVICE_MESSAGES.not_entitled };
   const saved = await setDomain(db, userId, parsed.domain, opts.now);
-  if (saved.result === "taken") return { ok: false, error: "taken", message: "Another Hourhand account already uses that domain." };
+  if (saved.result === "taken") return { ok: false, error: "taken", message: DOMAIN_SERVICE_MESSAGES.taken };
   const checked = await checkHostDomain(db, userId, opts.resolver, opts.now);
   return { ok: true, domain: checked!, replaced: saved.replaced };
 }
