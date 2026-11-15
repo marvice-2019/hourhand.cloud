@@ -6,6 +6,7 @@ import { queueBookingNotifications } from "./notifications";
 import { insertConsent } from "../privacy/consent";
 import { seal, tokenKey, unseal } from "../crypto/seal";
 import { bookingNoteAad, clientNoteAad } from "../privacy/notes";
+import { pollHolds } from "../polls/holds";
 import { PackageUnavailableError, takeCredits } from "../packages/packages";
 import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
@@ -419,6 +420,9 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
       });
       const [{ link }] = await linkRows(pool, "l.id = $1", [linkId], now);
       return { eventType, link, token };
+    },
+    async listPollHolds(userId, from, to, now) {
+      return pollHolds(pool, userId, from, to, now);
     },
     async listOneOffTimes(eventTypeId) {
       if (!isId(eventTypeId)) return [];

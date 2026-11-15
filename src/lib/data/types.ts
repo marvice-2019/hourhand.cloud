@@ -372,6 +372,8 @@ export interface DataStore {
   createOneOffMeeting(hostId: string, input: OneOffInput, now: Date): Promise<{ eventType: EventType; link: BookingLink; token: string }>;
   /** The offered start times of a one_off event type, earliest first. */
   listOneOffTimes(eventTypeId: string): Promise<Date[]>;
+  /** Times the host's open meeting polls hold, overlapping [from, to): blocked from other bookings like busy time. */
+  listPollHolds(userId: string, from: Date, to: Date, now: Date): Promise<{ start: Date; end: Date }[]>;
 }
 
 /** The editable fields of an event type, already validated. */
