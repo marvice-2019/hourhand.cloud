@@ -3,7 +3,11 @@ import { notFound } from "next/navigation";
 import { saveClientNoteAction } from "../actions";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { requireHost } from "@/lib/auth/session";
+import { authEnabled } from "@/lib/auth/auth";
+import { getHostContext, requireHost } from "@/lib/auth/session";
+import { getPool } from "@/lib/data/pg-store";
+import { CHANNEL_LABELS, listConsents, PURPOSE_LABELS } from "@/lib/privacy/consent";
+import { MAX_NOTE } from "@/lib/privacy/notes";
 import { clientKey, summarizeClients } from "@/lib/clients";
 import { store } from "@/lib/data";
 import { formatDate, formatTime } from "@/lib/format";
@@ -19,7 +23,10 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   const client = summarizeClients(all, new Date()).find((c) => c.key === key);
   if (!client) notFound();
   const history = all.filter((b) => clientKey(b.invitee.email) === key && b.status !== "pending_payment").sort((a, b) => b.startAt.getTime() - a.startAt.getTime());
-  const note = await store.getClientNote(user.id, client.email);
+  // The note is decrypted for the account owner only, never for a Duo second person managing the account.
+  const owner = !(await getHostContext())?.acting;
+  const note = owner ? await store.getClientNote(user.id, client.email) : "";
+  const consents = authEnabled() ? await listConsents(getPool(process.env.DATABASE_URL as string), user.id, client.email) : [];
   const tz = user.timezone;
   return (
     <div>
@@ -33,18 +40,44 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
         <div><dt className="text-sm text-text-muted">Client since</dt><dd className="text-lg font-semibold text-text">{formatDate(client.firstAt, tz)}</dd></div>
       </dl>
 
-      <Card className="mt-6 max-w-xl">
-        <form action={saveClientNoteAction} className="grid gap-3">
-          <input type="hidden" name="key" value={key} />
-          <label htmlFor="note" className="font-semibold text-text">Private note</label>
-          <p className="text-sm text-text-muted">Only you see this. It shows on each of {client.name}&apos;s bookings.</p>
-          <textarea id="note" name="note" rows={6} maxLength={5000} defaultValue={note} placeholder="What you're working on together, preferences, what you agreed."
-            className={`block w-full rounded-md border border-border-input bg-card p-3 text-base text-text ${focusRing}`} />
-          {saved && <p className="text-success" role="status">Saved.</p>}
-          {error === "too_long" && <p className="text-danger" role="alert">Keep the note under 5000 characters.</p>}
-          <div><Button type="submit">Save note</Button></div>
-        </form>
-      </Card>
+      {owner ? (
+        <Card className="mt-6 max-w-xl">
+          <form action={saveClientNoteAction} className="grid gap-3">
+            <input type="hidden" name="key" value={key} />
+            <label htmlFor="note" className="font-semibold text-text">Private note</label>
+            <p className="text-sm text-text-muted">Only you see this: it is encrypted when stored and a second person on your Duo plan can&apos;t read it. It shows on each of {client.name}&apos;s bookings.</p>
+            <textarea id="note" name="note" rows={6} maxLength={MAX_NOTE} defaultValue={note} placeholder="What you're working on together, preferences, what you agreed."
+              className={`block w-full rounded-md border border-border-input bg-card p-3 text-base text-text ${focusRing}`} />
+            {saved && <p className="text-success" role="status">Saved.</p>}
+            {error === "too_long" && <p className="text-danger" role="alert">Keep the note under 5000 characters.</p>}
+            <div><Button type="submit">Save note</Button></div>
+          </form>
+        </Card>
+      ) : (
+        <p className="mt-6 max-w-xl text-sm text-text-muted">Notes about this client are private to the account owner.</p>
+      )}
+
+      <section aria-labelledby="consent" className="mt-8 max-w-2xl">
+        <h2 id="consent" className="font-semibold text-text">Consent log</h2>
+        <p className="mt-1 text-sm text-text-muted">What {client.name} agreed to each time they booked, in the words they saw. Kept as your record under India&apos;s data protection law.</p>
+        {consents.length === 0 ? <p className="mt-2 text-sm text-text-muted">Nothing recorded yet. Bookings made from now on are logged here.</p> : (
+          <ul className="mt-2 grid gap-2">
+            {consents.map((c) => (
+              <li key={c.id} className="rounded-md border border-border bg-card px-4 py-2 text-sm">
+                <p className="text-text">
+                  <span className="font-semibold">{PURPOSE_LABELS[c.purpose]}: </span>
+                  <span className={c.granted ? "text-success" : "text-text-muted"}>{c.granted ? "agreed" : "not ticked"}</span>
+                </p>
+                <p className="mt-1 text-text">&ldquo;{c.statement}&rdquo;</p>
+                <p className="mt-1 text-text-muted">
+                  {formatDate(c.recordedAt, tz)}, {formatTime(c.recordedAt, tz)} · {CHANNEL_LABELS[c.channel]} · notice {c.noticeVersion} · {c.locale} ·{" "}
+                  <Link href={`/dashboard/bookings/${c.bookingId}`} className="text-accent underline">booking</Link>
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section aria-labelledby="history" className="mt-8">
         <h2 id="history" className="font-semibold text-text">History</h2>
