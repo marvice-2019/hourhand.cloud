@@ -1,6 +1,7 @@
 import type { HandlerResult, PaymentDeps } from "../booking";
 import { isNamedError } from "../data/types";
 import { BOOKING_LIMITS, CONFIRM_PAYMENT_LIMIT, type createRateLimiter } from "../rate-limit";
+import { parseOfferInput, type OfferRefusedError } from "../offers/offers";
 import { confirmPurchase, publicPackage, startPurchase, type PurchaseStartError, type PurchaseVerifyError } from "./packages";
 
 type Limiter = Pick<ReturnType<typeof createRateLimiter>, "take">;
@@ -24,17 +25,20 @@ export async function handleStartPurchase(
   const found = await publicPackage(deps.pool, packageId);
   if (!found) return { status: 404, body: { error: "not_found" } };
   // Selling needs a paid plan and the host's own Razorpay, like a priced event type.
-  const auth = (await deps.planFor(found.host.id)) !== "free" ? await deps.authFor(found.host.id) : null;
+  const plan = await deps.planFor(found.host.id);
+  const auth = plan !== "free" ? await deps.authFor(found.host.id) : null;
   if (!auth) return { status: 409, body: { error: "payments_unavailable" } };
   if (limit && (!limit.limiter.take(`purchase-ip:${limit.clientKey}`, BOOKING_LIMITS.perIp) || !limit.limiter.take(`purchase-email:${email.toLowerCase()}`, BOOKING_LIMITS.perEmail))) {
     return { status: 429, body: { error: "too_many_requests" } };
   }
   try {
-    const r = await startPurchase({ pool: deps.pool, auth, orders: deps.ordersFor(auth) }, { packageId, name, email, phone: phone || null, idempotencyKey });
+    const r = await startPurchase({ pool: deps.pool, auth, orders: deps.ordersFor(auth) }, { packageId, name, email, phone: phone || null, idempotencyKey },
+      { plan, couponCode: parseOfferInput(input).couponCode, now: new Date(), limit });
     return { status: 200, body: r };
   } catch (err) {
     if (isNamedError(err, "NotFoundError")) return { status: 404, body: { error: "not_found" } };
     if (isNamedError<PurchaseStartError>(err, "PurchaseStartError")) return { status: 502, body: { error: "payment_unavailable" } };
+    if (isNamedError<OfferRefusedError>(err, "OfferRefusedError")) return { status: err.status, body: err.body };
     throw err;
   }
 }

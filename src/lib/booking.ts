@@ -7,6 +7,7 @@ import { waNumber } from "./whatsapp";
 import { BOOKING_LIMITS, type createRateLimiter } from "./rate-limit";
 import type { Plan } from "./billing/plans";
 import { startPaidBooking } from "./payments/booking-payments";
+import { parseOfferInput, resolvePrice } from "./offers/offers";
 import type { HostRazorpayAuth } from "./payments/host-razorpay";
 import type { RazorpayOrders } from "./payments/razorpay-orders";
 
@@ -279,8 +280,16 @@ export async function handleCreateBooking(
 
   // A repeated submit returns the booking it already made, before the slot re-check (which it would now fail).
   const existing = (await store.listBookings(host.id)).find((b) => b.idempotencyKey === req.idempotencyKey);
-  // What the guest pays now: the price, or else a refundable no-show deposit. Paid for with a package: nothing at booking.
-  const priceMinor = req.packageToken ? null : eventType.priceMinor ?? eventType.depositMinor;
+  // What the guest pays now: the price after at most one offer (worked out and recorded by resolvePrice), or else a
+  // refundable no-show deposit, which offers never touch. Paid for with a package: nothing at booking.
+  const priced = !req.packageToken && eventType.priceMinor !== null && payments
+    ? await resolvePrice(payments.pool, {
+      hostId: host.id, plan: await payments.planFor(host.id), item: { kind: "event_type", id: eventType.id, listMinor: eventType.priceMinor },
+      email: req.email, ...parseOfferInput(input), idempotencyKey: req.idempotencyKey, now, limit, reserve: true,
+    })
+    : null;
+  if (priced && !priced.ok) return { status: priced.status, body: priced.body };
+  const priceMinor = req.packageToken ? null : priced?.chargeMinor ?? eventType.priceMinor ?? eventType.depositMinor;
   const paymentKind = eventType.priceMinor === null ? "deposit" as const : "payment" as const;
   // A priced repeat goes through startPaidBooking below instead, so a still-held booking gets its payment details back.
   if (existing && !priceMinor) return { status: 200, body: { bookingId: existing.id, manageToken: existing.invitee.manageToken } };
@@ -317,7 +326,7 @@ export async function handleCreateBooking(
   const startPaid = async (p: { auth: HostRazorpayAuth; deps: PaymentDeps }, priceMinor: number, status: number): Promise<HandlerResult> => {
     const { booking, payment } = await startPaidBooking(
       { pool: p.deps.pool, store, auth: p.auth, orders: p.deps.ordersFor(p.auth) }, { ...bookingInput, priceMinor, kind: paymentKind }, now);
-    return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, holdExpiresAt: payment.holdExpiresAt.toISOString() } } };
+    return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, holdExpiresAt: payment.holdExpiresAt.toISOString() }, ...(priced?.ok && priced.offer ? { offer: priced.offer } : {}) } };
   };
 
   try {

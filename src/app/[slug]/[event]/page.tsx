@@ -13,6 +13,9 @@ import { packagesForEventType } from "@/lib/packages/packages";
 import { hostPlan } from "@/lib/billing/account";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
 import { razorpayStatus } from "@/lib/payments/host-razorpay";
+import { pagePricing } from "@/lib/offers/offers";
+import { discountText } from "@/lib/offers/labels";
+import { CampaignBanner } from "@/components/CampaignBanner";
 
 export default async function PublicEventPage({ params, searchParams }: { params: Promise<{ slug: string; event: string }>; searchParams: Promise<{ at?: string; lang?: string; name?: string; email?: string }> }) {
   const { slug, event } = await params;
@@ -29,15 +32,29 @@ export default async function PublicEventPage({ params, searchParams }: { params
     .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
   // Packages need Postgres, a paid plan and the host's Razorpay; offered only when a buyer could actually pay.
   const pool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
-  const canSell = pool ? (await hostPlan(pool, host.id)) !== "free" && (await razorpayStatus(pool, host.id)) !== null : false;
+  const plan = pool ? await hostPlan(pool, host.id) : "free";
+  const canSell = pool ? plan !== "free" && (await razorpayStatus(pool, host.id)) !== null : false;
   const packages = pool && canSell ? await packagesForEventType(pool, host.id, eventType.id) : [];
+  // Offers on the price (never a deposit): today's campaign, a sliding scale, a code box, the first-session line.
+  const pricing = pool && canSell && eventType.priceMinor !== null
+    ? await pagePricing(pool, host.id, plan, { kind: "event_type", id: eventType.id, listMinor: eventType.priceMinor }, new Date())
+    : null;
+  const priceText = eventType.priceMinor === null ? null
+    : pricing?.sliding ? `${formatMoney(pricing.sliding.minMinor, "INR")}–${formatMoney(pricing.sliding.maxMinor, "INR")}`
+    : formatMoney(eventType.priceMinor, "INR");
   return (
     <main lang={locale} className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
       <EmbedResize />
       <LanguageSwitcher locale={locale} path={`/${host.slug}/${eventType.slug}`} params={{ at: typeof at === "string" ? at : undefined }} />
       <Link href={`/${host.slug}${langQuery}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-accent underline">{host.name}</Link>
       <h1 className="font-display text-xl text-text">{eventType.name}</h1>
-      <p className="mt-2 text-text-muted">{t(locale, "minutes", { n: eventType.durationMinutes })}{eventType.priceMinor !== null && ` · ${formatMoney(eventType.priceMinor, "INR")}`}</p>
+      {pricing?.campaign && <CampaignBanner name={pricing.campaign.name} banner={pricing.campaign.banner} />}
+      <p className="mt-2 text-text-muted">
+        {t(locale, "minutes", { n: eventType.durationMinutes })}
+        {priceText && (pricing?.campaign
+          ? <> · <s>{priceText}</s> <span className="font-semibold text-text">{t(locale, "offerWith", { price: formatMoney(pricing.campaign.chargeMinor, "INR"), name: pricing.campaign.name })}</span></>
+          : ` · ${priceText}`)}
+      </p>
       {eventType.description && <p className="mt-2 text-text">{eventType.description}</p>}
       {eventType.priceMinor === null && eventType.depositMinor !== null && (
         <p className="mt-2 max-w-xl rounded-md bg-surface p-3 text-sm text-text">
@@ -63,6 +80,10 @@ export default async function PublicEventPage({ params, searchParams }: { params
       )}
       <BookingFlow
         slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)}
+        offers={pricing && eventType.priceMinor !== null ? {
+          listMinor: eventType.priceMinor, campaign: pricing.campaign && { name: pricing.campaign.name, chargeMinor: pricing.campaign.chargeMinor },
+          sliding: pricing.sliding, coupons: pricing.coupons, firstSession: pricing.firstSession && discountText(pricing.firstSession),
+        } : null}
         paid={eventType.priceMinor !== null ? { price: formatMoney(eventType.priceMinor, "INR"), hostName: host.name, eventName: eventType.name }
           : eventType.depositMinor !== null ? { price: formatMoney(eventType.depositMinor, "INR"), hostName: host.name, eventName: eventType.name, deposit: true } : null}
       />
