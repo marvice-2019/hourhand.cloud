@@ -230,6 +230,15 @@ summary D5-policy $OUT/out-d5.txt
 sleep 2
 
 fresh
+: > $OUT/srv-sch.log
+node e2e/start-e2e.mjs 3206 $DB > $OUT/srv-sch.log 2>&1 & SRV=$!
+up 3206
+node e2e/e2e-schedules.mjs 3206 $OUT/srv-sch.log $DB > $OUT/out-schedules.txt 2>&1
+kill $SRV
+summary Schedules $OUT/out-schedules.txt
+sleep 2
+
+fresh
 node e2e/fake-meta.mjs 3797 > $OUT/fakemeta.log 2>&1 & FM=$!
 : > $OUT/srv-d7.log
 node e2e/start-e2e-d7.mjs 3207 $DB 3797 > $OUT/srv-d7.log 2>&1 & SRV=$!
