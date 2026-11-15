@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
 import { deleteEventType, saveEventType } from "@/app/dashboard/event-types/actions";
 import type { CustomQuestion, LocationKind, QuestionDraft } from "@/lib/data/types";
+import { canBeParent, parentOptions } from "@/lib/intake";
 import { LOCATION_VALUE_LABEL, START_INCREMENTS, slugify, type EventTypeErrors, type EventTypeForm, type QuestionErrors } from "@/lib/event-types";
 import { Button } from "./ui/Button";
 import { Card } from "./ui/Card";
@@ -36,13 +37,17 @@ const LOCATIONS: { kind: LocationKind | ""; label: string }[] = [
 const QUESTION_KINDS: { kind: CustomQuestion["kind"]; label: string }[] = [
   { kind: "short_text", label: "Short answer" },
   { kind: "long_text", label: "Long answer" },
+  { kind: "phone", label: "Phone number" },
   { kind: "single_select", label: "Pick one from a list" },
+  { kind: "multi_select", label: "Pick any from a list" },
+  { kind: "consent", label: "Tick box (consent or agreement)" },
 ];
 
 const fieldClasses = (invalid: boolean) =>
   `mt-1 block w-full rounded-md border bg-card px-3 text-base text-text ${invalid ? "border-danger" : "border-border-input"} ${focusRing}`;
 
-type EditableQuestion = QuestionDraft & { key: string };
+/** In the editor a condition names its parent by key, so it survives moving questions around; saving turns it into a position. */
+type EditableQuestion = Omit<QuestionDraft, "showIf"> & { key: string; showIf: { parentKey: string; anyOf: string[] } | null };
 
 export interface EventTypeEditorProps {
   id: string | null;
@@ -58,7 +63,10 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
   const [tab, setTab] = useState<TabId>("details");
   const [form, setForm] = useState(initial);
   const [customDuration, setCustomDuration] = useState(!PRESET_DURATIONS.includes(Number(initial.durationMinutes)));
-  const [questions, setQuestions] = useState<EditableQuestion[]>(() => initialQuestions.map((q, i) => ({ ...q, key: q.id ?? `new-${i}` })));
+  const [questions, setQuestions] = useState<EditableQuestion[]>(() => {
+    const keys = initialQuestions.map((q, i) => q.id ?? `new-${i}`);
+    return initialQuestions.map((q, i) => ({ ...q, key: keys[i], showIf: q.showIf ? { parentKey: keys[q.showIf.parent], anyOf: [...q.showIf.anyOf] } : null }));
+  });
   const [errors, setErrors] = useState<EventTypeErrors>({});
   const [questionErrors, setQuestionErrors] = useState<QuestionErrors>([]);
   const [status, setStatus] = useState<"idle" | "saved" | "invalid">(justSaved ? "saved" : "idle");
@@ -76,7 +84,7 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
 
   const tabHasErrors = (t: TabId) =>
     t === "form"
-      ? questionErrors.some((e) => e.label || e.choices)
+      ? questionErrors.some((e) => e.label || e.choices || e.showIf)
       : Object.keys(errors).some((k) => DETAIL_FIELDS.includes(k as keyof EventTypeForm) === (t === "details"));
 
   function onTabKey(e: KeyboardEvent<HTMLButtonElement>) {
@@ -88,7 +96,7 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
     tabRefs.current[TABS[next].id]?.focus();
   }
 
-  function updateQuestion(index: number, patch: Partial<QuestionDraft>) {
+  function updateQuestion(index: number, patch: Partial<EditableQuestion>) {
     setQuestions((qs) => qs.map((q, i) => (i === index ? { ...q, ...patch } : q)));
     setStatus("idle");
   }
@@ -102,18 +110,23 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
     setStatus("idle");
   }
   function removeQuestion(index: number) {
-    setQuestions((qs) => qs.filter((_, i) => i !== index));
+    // Questions that depended on this one lose their condition rather than pointing at nothing.
+    setQuestions((qs) => qs.filter((_, i) => i !== index).map((q) => (q.showIf?.parentKey === qs[index].key ? { ...q, showIf: null } : q)));
     setQuestionErrors((es) => es.filter((_, i) => i !== index));
     setStatus("idle");
   }
   function addQuestion() {
-    setQuestions((qs) => [...qs, { key: crypto.randomUUID(), id: null, label: "", kind: "short_text", required: false, choices: [] }]);
+    setQuestions((qs) => [...qs, { key: crypto.randomUUID(), id: null, label: "", kind: "short_text", required: false, choices: [], showIf: null }]);
     setStatus("idle");
   }
 
   function save() {
     startSaving(async () => {
-      const result = await saveEventType(id, form, questions.map(({ id: qid, label, kind, required, choices }) => ({ id: qid, label, kind, required, choices })));
+      const position = new Map(questions.map((q, i) => [q.key, i]));
+      const result = await saveEventType(id, form, questions.map(({ id: qid, label, kind, required, choices, showIf }) => ({
+        id: qid, label, kind, required, choices,
+        showIf: showIf && position.has(showIf.parentKey) ? { parent: position.get(showIf.parentKey)!, anyOf: showIf.anyOf } : null,
+      })));
       if (!result.ok) {
         setErrors(result.errors);
         setQuestionErrors(result.questionErrors);
@@ -329,7 +342,7 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
                       {!QUESTION_KINDS.some((k) => k.kind === q.kind) && <option value={q.kind}>{q.kind.replace("_", " ")}</option>}
                     </select>
                   </div>
-                  {q.kind === "single_select" && (
+                  {(q.kind === "single_select" || q.kind === "multi_select") && (
                     <div>
                       <Label htmlFor={`q-${q.key}-choices`}>Choices, one per line</Label>
                       <textarea
@@ -343,8 +356,9 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
                   )}
                   <label className="inline-flex min-h-11 items-center gap-2 text-sm text-text">
                     <input type="checkbox" checked={q.required} onChange={(ev) => updateQuestion(i, { required: ev.target.checked })} className={`size-5 accent-accent ${focusRing}`} />
-                    Guests must answer
+                    {q.kind === "consent" ? "Guests must tick it to book" : "Guests must answer"}
                   </label>
+                  <ConditionEditor question={q} earlier={questions.slice(0, i)} error={e.showIf} onChange={(showIf) => updateQuestion(i, { showIf })} />
                   <div className="flex flex-wrap gap-2">
                     <Button variant="secondary" size="sm" disabled={i === 0} onClick={() => moveQuestion(i, -1)} aria-label={`Move "${name}" up`}>Move up</Button>
                     <Button variant="secondary" size="sm" disabled={i === questions.length - 1} onClick={() => moveQuestion(i, 1)} aria-label={`Move "${name}" down`}>Move down</Button>
@@ -399,5 +413,42 @@ function Choice({ name, checked, onChange, children }: { name: string; checked: 
       <input type="radio" name={name} checked={checked} onChange={onChange} className="accent-accent" />
       {children}
     </label>
+  );
+}
+
+/**
+ * "Only show this question if …": pick an earlier choice or tick-box question and the answers that show this one.
+ * Off by default; the guest sees the question only after answering the earlier one that way.
+ */
+function ConditionEditor({ question, earlier, error, onChange }: {
+  question: EditableQuestion; earlier: EditableQuestion[]; error?: string; onChange: (showIf: EditableQuestion["showIf"]) => void;
+}) {
+  const parents = earlier.filter((p) => canBeParent(p.kind));
+  const id = `q-${question.key}-if`;
+  if (parents.length === 0 && !question.showIf) return null;
+  const parent = question.showIf ? earlier.find((p) => p.key === question.showIf!.parentKey) : undefined;
+  const options = parent ? parentOptions({ kind: parent.kind, choices: parent.choices.map((c) => c.trim()).filter(Boolean) }) : [];
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor={id}>Only show this question if</Label>
+      <select id={id} value={question.showIf?.parentKey ?? ""} aria-describedby={error ? `${id}-error` : undefined} aria-invalid={error ? true : undefined}
+        onChange={(ev) => onChange(ev.target.value ? { parentKey: ev.target.value, anyOf: [] } : null)} className={`h-11 ${fieldClasses(Boolean(error))}`}>
+        <option value="">Always show it</option>
+        {parents.map((p) => <option key={p.key} value={p.key}>{p.label.trim() || `Question ${earlier.indexOf(p) + 1}`} is answered…</option>)}
+      </select>
+      {question.showIf && parent && (
+        <fieldset className="grid gap-1">
+          <legend className="text-sm text-text-muted">{parent.kind === "consent" ? "Shown when it is ticked" : "…with any of these"}</legend>
+          {options.map((o) => (
+            <label key={o} className="inline-flex min-h-11 items-center gap-2 text-sm text-text">
+              <input type="checkbox" checked={question.showIf!.anyOf.includes(o)} className={`size-5 accent-accent ${focusRing}`}
+                onChange={(ev) => onChange({ parentKey: parent.key, anyOf: ev.target.checked ? [...question.showIf!.anyOf, o] : question.showIf!.anyOf.filter((a) => a !== o) })} />
+              {parent.kind === "consent" ? "Ticked" : o}
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {error && <p id={`${id}-error`} className="text-sm text-danger">{error}</p>}
+    </div>
   );
 }

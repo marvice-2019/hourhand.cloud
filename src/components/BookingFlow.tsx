@@ -13,8 +13,11 @@ import { payWithRazorpay, type CheckoutPayment } from "./razorpay-checkout";
 import { SlotPicker, useDeviceZone } from "./SlotPicker";
 import { useTimeFormat } from "./useTimeFormat";
 import { WaitlistForm } from "./WaitlistForm";
+import { IntakeFields, readAnswers } from "./IntakeFields";
+import type { IntakeQuestion } from "@/lib/intake";
 
-export interface FlowQuestion { id: string; label: string; kind: string; required: boolean }
+/** An intake question as the booking page needs it (see src/lib/intake.ts). */
+export type FlowQuestion = IntakeQuestion;
 
 interface Props {
   slug: string;
@@ -137,7 +140,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
     e.preventDefault();
     if (zone.confirm && !zoneConfirmed) { setZoneError(true); document.getElementById("zone-confirm")?.focus(); return; }
     const data = new FormData(e.currentTarget);
-    const answers = Object.fromEntries(questions.map((q) => [q.id, String(data.get(`q_${q.id}`) ?? "")]));
+    const answers = readAnswers(data, questions);
     const guests = String(data.get("guests") ?? "").split(/[\s,;]+/).filter(Boolean);
     setBusy(true); setFailed(false); setLimited(false); setExpired(false); setWeeksTaken(null);
     try {
@@ -252,26 +255,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
       ) : (
         <button type="button" onClick={() => setShowGuests(true)} className={`min-h-11 justify-self-start text-sm font-semibold text-accent underline ${focusRing}`}>{t(locale, "addGuests")}</button>
       )}
-      {questions.map((q) => {
-        const id = `q_${q.id}`;
-        const err = errors[`answers.${q.id}`];
-        return (
-          <div key={q.id}>
-            <Label htmlFor={id}>{q.required ? q.label : t(locale, "optionalLabel", { label: q.label })}</Label>
-            {q.kind === "long_text" ? (
-              <>
-                <textarea
-                  id={id} name={id} rows={4} required={q.required} aria-invalid={err ? true : undefined} aria-describedby={err ? `${id}-error` : undefined}
-                  className={`mt-1 block w-full rounded-md border bg-card p-3 text-base text-text ${err ? "border-danger" : "border-border-input"} ${focusRing}`}
-                />
-                {err && <p id={`${id}-error`} className="mt-1 text-sm text-danger">{err}</p>}
-              </>
-            ) : (
-              <Input id={id} name={id} required={q.required} error={err} />
-            )}
-          </div>
-        );
-      })}
+      <IntakeFields questions={questions} errors={errors} locale={locale} />
       {linkGone && (
         <p className="text-danger" role="alert">
           {t(locale, linkGone === "link_used" ? "linkUsed" : "linkGone")}

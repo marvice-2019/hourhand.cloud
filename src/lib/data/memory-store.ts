@@ -7,7 +7,7 @@ import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
 import {
   EventTypeInUseError, LinkUnavailableError, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type BookingLink, type BookingWithInvitee,
-  type CreateBookingInput, type DataStore, type EventType, type EventTypeDraft, type Interval,
+  type CreateBookingInput, type CustomQuestion, type DataStore, type EventType, type EventTypeDraft, type Interval,
 } from "./types";
 
 const MIN = 60_000;
@@ -335,9 +335,14 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       if (!ownsEventType(userId, eventTypeId)) throw new NotFoundError("Event type");
       // Keep a client-sent id only when it already belongs to a question of this event type.
       const own = new Set(db.questions.filter((q) => q.eventTypeId === eventTypeId).map((q) => q.id));
-      const saved = questions.map((q, position) => ({
-        id: q.id !== null && own.has(q.id) ? q.id : randomUUID(), eventTypeId, label: q.label, kind: q.kind, required: q.required, choices: [...q.choices], position,
-      }));
+      const saved: CustomQuestion[] = [];
+      for (const [position, q] of questions.entries()) {
+        const parent = q.showIf ? saved[q.showIf.parent] : undefined;
+        saved.push({
+          id: q.id !== null && own.has(q.id) ? q.id : randomUUID(), eventTypeId, label: q.label, kind: q.kind, required: q.required, choices: [...q.choices], position,
+          showIf: q.showIf && parent ? { questionId: parent.id, anyOf: [...q.showIf.anyOf] } : null,
+        });
+      }
       db.questions = [...db.questions.filter((q) => q.eventTypeId !== eventTypeId), ...saved];
       return saved;
     },

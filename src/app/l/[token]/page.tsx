@@ -32,7 +32,7 @@ export default async function LinkPage({ params }: { params: Promise<{ token: st
   const { host, eventType } = resolved;
   const questions = (await store.listCustomQuestions(host.id, eventType.id))
     .sort((a, b) => a.position - b.position)
-    .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
+    .map(({ id, label, kind, required, choices, showIf }) => ({ id, label, kind, required, choices, showIf }));
   return (
     <main className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
       <p className="text-sm font-semibold text-text-muted">{host.name}</p>

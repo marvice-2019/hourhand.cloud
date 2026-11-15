@@ -3,6 +3,7 @@ import type { PackageUnavailableError } from "./packages/packages";
 import { computeOneOffSlots, computeSlotSeats, isSyncStale } from "./slots";
 import { isNamedError, type Booking, type DataStore, type EventType, type LinkUnavailableError, type User } from "./data/types";
 import { isLocale } from "./i18n/guest";
+import { checkAnswers } from "./intake";
 import { waNumber } from "./whatsapp";
 import { BOOKING_LIMITS, type createRateLimiter } from "./rate-limit";
 import type { Plan } from "./billing/plans";
@@ -298,11 +299,10 @@ export async function handleCreateBooking(
   if (existing && priceMinor && existing.status === "confirmed") return { status: 200, body: { bookingId: existing.id, manageToken: existing.invitee.manageToken } };
   if (existing && priceMinor && existing.status === "cancelled") return { status: 409, body: { error: "attempt_expired" } };
 
-  const questions = await store.listCustomQuestions(host.id, eventType.id);
-  const missing = questions.filter((q) => q.required && !req.answers[q.id]);
-  if (missing.length > 0) {
-    return { status: 400, body: { error: "invalid_request", fields: Object.fromEntries(missing.map((q) => [`answers.${q.id}`, "This one is required."])) } };
-  }
+  // The intake form: required questions that show must be answered, choices must be the host's, and answers to
+  // questions the guest's own answers hid are dropped (the booking page applies the same rules as they type).
+  const intake = checkAnswers(await store.listCustomQuestions(host.id, eventType.id), req.answers);
+  if (!intake.ok) return { status: 400, body: { error: "invalid_request", fields: intake.fields } };
 
   const bookingInput = {
     eventTypeId: eventType.id, startAt: req.start, idempotencyKey: req.idempotencyKey, ...(req.weeks > 1 ? { weeks: req.weeks } : {}),
@@ -311,7 +311,7 @@ export async function handleCreateBooking(
     ...(req.packageToken ? { packageToken: req.packageToken } : {}),
     invitee: {
       name: req.name, email: req.email, timezone: req.timezone, phone: req.phone, guests: req.guests, locale: req.locale, whatsappOptIn: req.whatsappOptIn,
-      answers: questions.filter((q) => req.answers[q.id]).map((q) => ({ questionId: q.id, label: q.label, answer: req.answers[q.id] })),
+      answers: intake.answers,
     },
   };
 

@@ -26,7 +26,7 @@ export default async function PublicEventPage({ params, searchParams }: { params
   const langQuery = typeof lang === "string" && lang === locale ? `?lang=${locale}` : "";
   const questions = (await store.listCustomQuestions(host.id, eventType.id))
     .sort((a, b) => a.position - b.position)
-    .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
+    .map(({ id, label, kind, required, choices, showIf }) => ({ id, label, kind, required, choices, showIf }));
   // Packages need Postgres, a paid plan and the host's Razorpay; offered only when a buyer could actually pay.
   const pool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
   const canSell = pool ? (await hostPlan(pool, host.id)) !== "free" && (await razorpayStatus(pool, host.id)) !== null : false;

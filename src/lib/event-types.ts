@@ -1,5 +1,6 @@
 // Pure validation for the event type editor. Limits mirror the checks on event_types and custom_questions in docs/schema.sql.
 import type { Plan } from "./billing/plans";
+import { checkConditions } from "./intake";
 import { LOCATION_KINDS, type CustomQuestion, type EventLocation, type EventType, type EventTypeDraft, type LocationKind, type QuestionDraft } from "./data/types";
 import { cleanRedirectUrl } from "./calendar-links";
 
@@ -61,7 +62,7 @@ export const MAX_SEATS = 500;
 export const MAX_WEEKS = 12;
 
 export type EventTypeErrors = Partial<Record<keyof EventTypeForm, string>>;
-export type QuestionErrors = { label?: string; choices?: string }[];
+export type QuestionErrors = { label?: string; choices?: string; showIf?: string }[];
 
 /** "45-min Coaching Session!" -> "45-min-coaching-session". */
 export function slugify(name: string): string {
@@ -241,8 +242,12 @@ export function validateQuestions(questions: readonly QuestionDraft[]):
     const choices = isSelect ? q.choices.map((c) => c.trim()).filter(Boolean) : [];
     if (isSelect && choices.length < 2) e.choices = "Add at least two choices, one per line.";
     if (e.label || e.choices) ok = false;
-    value.push({ id: q.id, label, kind: q.kind, required: q.required, choices });
+    value.push({ id: q.id, label, kind: q.kind, required: q.required, choices, showIf: q.showIf ?? null });
     return e;
   });
+  // Conditions are checked against the cleaned list, so a parent's choices are the ones that will be saved.
+  const conditions = checkConditions(value);
+  conditions.errors.forEach((msg, i) => { if (msg) { errors[i].showIf = msg; ok = false; } });
+  value.forEach((q, i) => { q.showIf = conditions.showIf[i]; });
   return ok ? { ok: true, value } : { ok: false, errors };
 }

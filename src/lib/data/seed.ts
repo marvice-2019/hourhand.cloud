@@ -80,7 +80,7 @@ export function buildSeed(now: Date): Seed {
   return {
     users: [priya], schedules: [schedule], rules, eventTypes,
     locations: [{ id: "loc_meet", eventTypeId: "evt_coaching", kind: "google_meet", value: null, position: 0 }],
-    questions: [{ id: "q_goal", eventTypeId: "evt_coaching", label: "What would you like to work on?", kind: "long_text", required: true, choices: [], position: 0 }],
+    questions: [{ id: "q_goal", eventTypeId: "evt_coaching", label: "What would you like to work on?", kind: "long_text", required: true, choices: [], position: 0, showIf: null }],
     connections, calendars, busyBlocks, bookings,
   };
 }

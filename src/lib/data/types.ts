@@ -104,6 +104,8 @@ export interface CustomQuestion {
   required: boolean;
   choices: string[];
   position: number;
+  /** Shown only when the earlier question `questionId` was answered with one of `anyOf` (a consent question: "yes"). */
+  showIf: { questionId: string; anyOf: string[] } | null;
 }
 
 export interface Booking {
@@ -376,7 +378,8 @@ export type EventTypeDraft = Pick<EventType,
 };
 
 /** A question as edited; `id` is null for a new one. */
-export type QuestionDraft = Pick<CustomQuestion, "label" | "kind" | "required" | "choices"> & { id: string | null };
+/** `showIf.parent` is the position, in the same list, of the earlier question it depends on. */
+export type QuestionDraft = Pick<CustomQuestion, "label" | "kind" | "required" | "choices"> & { id: string | null; showIf?: { parent: number; anyOf: string[] } | null };
 
 export class SlugTakenError extends Error {
   readonly code = "slug_taken";

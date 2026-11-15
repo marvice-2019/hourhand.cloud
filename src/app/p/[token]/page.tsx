@@ -27,7 +27,7 @@ export default async function PackagePage({ params }: { params: Promise<{ token:
   const sessions = await purchaseSessions(db!, purchase.id);
   const questions = (await store.listCustomQuestions(host.id, eventType.id))
     .sort((a, b) => a.position - b.position)
-    .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
+    .map(({ id, label, kind, required, choices, showIf }) => ({ id, label, kind, required, choices, showIf }));
   const tz = host.timezone;
 
   return (

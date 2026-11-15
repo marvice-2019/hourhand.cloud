@@ -11,7 +11,7 @@ import { queueWaitlistFor } from "../waitlist";
 import { classKeyOf, localDay, weekOf } from "../slots";
 import {
   EventTypeInUseError, LinkUnavailableError, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type AvailabilityRule, type BookingLink,
-  type BookingWithInvitee, type CreateBookingInput, type DataStore, type EventType, type EventTypeDraft, type Interval, type User,
+  type BookingWithInvitee, type CreateBookingInput, type CustomQuestion, type DataStore, type EventType, type EventTypeDraft, type Interval, type User,
 } from "./types";
 
 const MIN = 60_000;
@@ -303,9 +303,12 @@ export function createPgStore(pool: pg.Pool): DataStore {
     async listCustomQuestions(userId, eventTypeId) {
       if (!isId(userId) || !isId(eventTypeId)) return [];
       const { rows } = await pool.query(
-        "select q.id, q.event_type_id, q.label, q.kind, q.required, q.choices, q.position from custom_questions q join event_types e on e.id = q.event_type_id where q.event_type_id = $1 and e.user_id = $2 order by q.position",
+        "select q.id, q.event_type_id, q.label, q.kind, q.required, q.choices, q.position, q.show_if from custom_questions q join event_types e on e.id = q.event_type_id where q.event_type_id = $1 and e.user_id = $2 order by q.position",
         [eventTypeId, userId]);
-      return rows.map((r) => ({ id: r.id, eventTypeId: r.event_type_id, label: r.label, kind: r.kind, required: r.required, choices: r.choices, position: r.position }));
+      return rows.map((r) => ({
+        id: r.id, eventTypeId: r.event_type_id, label: r.label, kind: r.kind, required: r.required, choices: r.choices, position: r.position,
+        showIf: r.show_if ? { questionId: r.show_if.question as string, anyOf: (r.show_if.anyOf as string[]) ?? [] } : null,
+      }));
     },
     async getDefaultSchedule(userId) {
       const find = () => pool.query("select id, user_id, name, timezone, is_default from availability_schedules where user_id = $1 and is_default", [userId]);
@@ -627,12 +630,16 @@ export function createPgStore(pool: pg.Pool): DataStore {
         // Keep a client-sent id only when it already belongs to a question of this event type.
         const own = new Set((await client.query("select id from custom_questions where event_type_id = $1", [eventTypeId])).rows.map((r) => r.id as string));
         await client.query("delete from custom_questions where event_type_id = $1", [eventTypeId]);
-        const saved = [];
+        const saved: CustomQuestion[] = [];
         for (const [position, q] of questions.entries()) {
+          // A condition names its parent by position; parents come first, so the parent's id is already known here.
+          const parent = q.showIf ? saved[q.showIf.parent] : undefined;
+          const showIf = q.showIf && parent ? { questionId: parent.id, anyOf: [...q.showIf.anyOf] } : null;
           const { rows } = await client.query(
-            "insert into custom_questions (id, event_type_id, label, kind, required, choices, position) values (coalesce($1::uuid, gen_random_uuid()),$2,$3,$4,$5,$6,$7) returning id",
-            [q.id !== null && own.has(q.id) ? q.id : null, eventTypeId, q.label, q.kind, q.required, q.choices, position]);
-          saved.push({ id: rows[0].id as string, eventTypeId, label: q.label, kind: q.kind, required: q.required, choices: [...q.choices], position });
+            "insert into custom_questions (id, event_type_id, label, kind, required, choices, position, show_if) values (coalesce($1::uuid, gen_random_uuid()),$2,$3,$4,$5,$6,$7,$8) returning id",
+            [q.id !== null && own.has(q.id) ? q.id : null, eventTypeId, q.label, q.kind, q.required, q.choices, position,
+              showIf ? JSON.stringify({ question: showIf.questionId, anyOf: showIf.anyOf }) : null]);
+          saved.push({ id: rows[0].id as string, eventTypeId, label: q.label, kind: q.kind, required: q.required, choices: [...q.choices], position, showIf });
         }
         return saved;
       });

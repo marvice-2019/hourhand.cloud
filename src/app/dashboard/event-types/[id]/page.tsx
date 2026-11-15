@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { EventTypeEditor } from "@/components/EventTypeEditor";
 import { store } from "@/lib/data";
 import { toForm } from "@/lib/event-types";
+import { toDraftConditions } from "@/lib/intake";
 import { requireHost } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export default async function EventTypePage({ params, searchParams }: {
   if (!eventType) notFound();
   const [locations, questions] = await Promise.all([store.listEventLocations(user.id, id), store.listCustomQuestions(user.id, id)]);
   const ordered = [...questions].sort((a, b) => a.position - b.position);
+  const conditions = toDraftConditions(ordered);
 
   return (
     <div>
@@ -30,7 +32,7 @@ export default async function EventTypePage({ params, searchParams }: {
         id={eventType.id}
         userSlug={user.slug}
         initial={toForm(eventType, locations[0])}
-        initialQuestions={ordered.map(({ id: qid, label, kind, required, choices }) => ({ id: qid, label, kind, required, choices }))}
+        initialQuestions={ordered.map(({ id: qid, label, kind, required, choices }, i) => ({ id: qid, label, kind, required, choices, showIf: conditions[i] }))}
         justSaved={saved === "1"}
       />
     </div>
