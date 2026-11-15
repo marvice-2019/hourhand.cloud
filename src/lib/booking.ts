@@ -48,7 +48,7 @@ export async function freeSlotSeats(store: DataStore, host: User, eventType: Eve
     const [times, connections, busyBlocks, bookings] = await Promise.all([
       store.listOneOffTimes(eventType.id),
       store.listCalendarConnections(host.id),
-      store.listBusyBlocks(host.id, new Date(from.getTime() - DAY), new Date(to.getTime() + DAY)),
+      busyWithPollHolds(store, host.id, from, to, now),
       store.listBookings(host.id),
     ]);
     return computeOneOffSlots({
@@ -59,13 +59,22 @@ export async function freeSlotSeats(store: DataStore, host: User, eventType: Eve
   const [{ schedule, rules }, connections, busyBlocks, bookings] = await Promise.all([
     store.getDefaultSchedule(host.id),
     store.listCalendarConnections(host.id),
-    store.listBusyBlocks(host.id, new Date(from.getTime() - DAY), new Date(to.getTime() + DAY)),
+    busyWithPollHolds(store, host.id, from, to, now),
     store.listBookings(host.id),
   ]);
   return computeSlotSeats({
     eventType, schedule, rules, busyBlocks, bookings: bookings.filter((b) => b.id !== movingId), now, rangeStart: from, rangeEnd: to,
     syncStale: isSyncStale(connections, now),
   });
+}
+
+/** The host's busy calendar time around [from, to), plus the times their open meeting polls hold, which block slots the same way. */
+async function busyWithPollHolds(store: DataStore, hostId: string, from: Date, to: Date, now: Date): Promise<{ start: Date; end: Date }[]> {
+  const [busy, holds] = await Promise.all([
+    store.listBusyBlocks(hostId, new Date(from.getTime() - DAY), new Date(to.getTime() + DAY)),
+    store.listPollHolds(hostId, new Date(from.getTime() - DAY), new Date(to.getTime() + DAY), now),
+  ]);
+  return [...busy, ...holds];
 }
 
 type Target = { host: User; eventType: EventType; linkToken: string | null };

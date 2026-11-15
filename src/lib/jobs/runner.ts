@@ -9,6 +9,7 @@ import { reconcilePurchases } from "../packages/packages";
 import { processStripeRefunds, reconcileStripePayments, reconcileStripePurchases, type StripeDeps } from "../payments/stripe-checkout";
 import { queueMonthlyReports } from "../earnings";
 import { pruneWaitlist } from "../waitlist";
+import { closeDuePolls } from "../polls/polls";
 import { setJobKick } from "./kick";
 import { BATCH_SIZE, processDueNotifications, type CalendarDeps } from "./worker";
 import { whatsappConfig } from "../whatsapp-cloud";
@@ -71,6 +72,8 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
           await queueMonthlyReports(opts.pool, new Date()).catch((error) => console.error("[jobs] monthly reports failed", error));
           await pruneWaitlist(opts.pool, new Date()).catch((error) => console.error("[jobs] waitlist cleanup failed", error));
         }
+        // Meeting polls past their deadline close (releasing their held times) and their hosts are emailed to pick a time.
+        await closeDuePolls(opts.pool, new Date()).catch((error) => console.error("[jobs] closing polls failed", error));
         // A full batch means more may be due: keep going until a batch comes back short.
         for (;;) {
           const r = await processDueNotifications(opts.pool, opts.mailer, { baseUrl: opts.baseUrl, calendar: opts.calendar, whatsapp: whatsappConfig() });
