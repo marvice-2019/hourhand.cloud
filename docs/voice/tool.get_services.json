@@ -1,0 +1,42 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "get_services",
+    "description": "Call this first on every call, before answering anything. Returns the practice's services (name, minutes, price, deposit, cancellation policy) and its public note (address, parking). If it returns end_call, say its `say` line and end the call.",
+    "response_timeout_secs": 15,
+    "api_schema": {
+      "url": "https://hourhand.cloud/api/voice/tools/get_services",
+      "method": "POST",
+      "request_headers": {
+        "Authorization": {
+          "secret_id": "<SECRET_ID: Hourhand tool key for this host>"
+        }
+      },
+      "request_body_schema": {
+        "type": "object",
+        "description": "Arguments for get_services.",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "dynamic_variable": "system__conversation_id"
+          },
+          "caller_phone": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en",
+              "hi"
+            ],
+            "description": "The language the caller is speaking: en or hi."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      }
+    }
+  }
+}

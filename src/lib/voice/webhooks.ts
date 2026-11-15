@@ -3,12 +3,13 @@ import type pg from "pg";
 import type { HandlerResult } from "../booking";
 import type { DataStore } from "../data/types";
 import type { Mailer } from "../mail/mailer";
+import { recordingRule } from "./agent-config";
 import { verifyElevenLabsSignature } from "./auth";
 import { callCostPaise, type VoiceRates } from "./cost";
 import { DISCLOSURE, RECORDING_NOTICE, SAY } from "./guardrails";
 import { emailCapWarning } from "./notify";
 import { claimCapWarning, closeCall, getVoiceSettingsByAgent, monthOf, releaseCapWarning, usedSecondsThisMonth } from "./store";
-import { VOICE_PLANS } from "./tools";
+import { voiceEntitled } from "./tools";
 
 // The two webhooks ElevenLabs calls for the whole workspace, told apart by agent id:
 //   call start  (conversation initiation client data): before the agent speaks, gives it the host's name, the opening
@@ -21,6 +22,7 @@ export interface WebhookDeps {
   pool: pg.Pool;
   store: Pick<DataStore, "getUser">;
   planFor(hostId: string): Promise<string>;
+  hasAddon?(hostId: string): Promise<boolean>;
   mailer: Mailer;
   rates: VoiceRates;
   baseUrl: string;
@@ -43,7 +45,7 @@ export async function handleCallStart(deps: WebhookDeps, secret: string, authHea
   const settings = agentId ? await getVoiceSettingsByAgent(deps.pool, agentId) : null;
   const host = settings ? await deps.store.getUser(settings.hostId) : null;
   if (!settings || !host) return { status: 404, body: { error: "not_found" } };
-  const allowed = settings.enabled && VOICE_PLANS.includes(await deps.planFor(host.id))
+  const allowed = (await voiceEntitled(deps, settings, host.id))
     && (await usedSecondsThisMonth(deps.pool, host.id, host.timezone, now)) < settings.monthlyMinuteCap * 60;
   const rec = settings.recordingEnabled;
   return {
@@ -54,6 +56,7 @@ export async function handleCallStart(deps: WebhookDeps, secret: string, authHea
         host_name: host.name,
         voice_allowed: allowed ? "yes" : "no",
         recording: rec ? "on" : "off",
+        recording_rule: recordingRule(rec),
         opening_en: allowed ? `${DISCLOSURE.en(host.name)}${rec ? ` ${RECORDING_NOTICE.en}` : ""}` : SAY.capReached.en,
         opening_hi: allowed ? `${DISCLOSURE.hi(host.name)}${rec ? ` ${RECORDING_NOTICE.hi}` : ""}` : SAY.capReached.hi,
       },

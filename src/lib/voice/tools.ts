@@ -38,6 +38,8 @@ export interface VoiceDeps {
   store: DataStore;
   key: Buffer;
   planFor(hostId: string): Promise<string>;
+  /** Whether the host's receptionist add-on is paid up. Left out in tests of the tools alone. */
+  hasAddon?(hostId: string): Promise<boolean>;
   payments: PaymentDeps | null;
   mailer: Mailer;
   whatsapp: WhatsAppConfig | null;
@@ -71,7 +73,7 @@ export async function authorize(deps: VoiceDeps, presented: string | null, input
   const body = (typeof input === "object" && input !== null && !Array.isArray(input) ? input : {}) as Record<string, unknown>;
   const lang = voiceLang(body.language);
   const stop = (error: string): HandlerResult => ({ status: 403, body: { error, say: SAY.capReached[lang], end_call: true } });
-  if (!settings.enabled || !VOICE_PLANS.includes(await deps.planFor(host.id))) return stop("voice_off");
+  if (!(await voiceEntitled(deps, settings, host.id))) return stop("voice_off");
   if (await usedSecondsThisMonth(deps.pool, host.id, host.timezone, now) >= settings.monthlyMinuteCap * 60) return stop("cap_reached");
   const conversationId = str(body.conversation_id, 100);
   if (!CONVERSATION.test(conversationId)) return bad({ conversation_id: "Pass {{system__conversation_id}}." });
@@ -79,6 +81,14 @@ export async function authorize(deps: VoiceDeps, presented: string | null, input
   // The conversation id is another host's: never touch or reveal it.
   if (!call) return { status: 403, body: { error: "unauthorized" } };
   return { deps, host, settings, call, lang, body, now };
+}
+
+/** Voice runs only when the host switched it on, is on Duo or Clinic, and (where billing is wired) has the add-on. */
+export async function voiceEntitled(
+  deps: { planFor(hostId: string): Promise<string>; hasAddon?(hostId: string): Promise<boolean> }, settings: Pick<VoiceSettings, "enabled">, hostId: string,
+): Promise<boolean> {
+  if (!settings.enabled || !VOICE_PLANS.includes(await deps.planFor(hostId))) return false;
+  return deps.hasAddon ? deps.hasAddon(hostId) : true;
 }
 
 /** Services callers may hear about and book: the host's active, listed event types (no one-off meetings). */

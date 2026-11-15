@@ -54,7 +54,7 @@ export default async function ManageBookingPage({ params, searchParams }: { para
             {series.length > 1 && <dd className="text-sm text-text-muted">{t(locale, "weekOf", { i: booking.seriesIndex ?? 1, n: new Set(series.map((b) => b.seriesIndex)).size })}</dd>}
           </div>
           {booking.locationKind && <div><dt className="text-sm text-text-muted">{t(locale, "where")}</dt><dd className="text-text">{t(locale, LOCATION_KEYS[booking.locationKind])}{booking.joinUrl && booking.status === "confirmed" && <> · <a href={booking.joinUrl} className="font-semibold text-accent underline" rel="noopener noreferrer" target="_blank">{t(locale, "joinCall")}</a></>}</dd></div>}
-          <div><dt className="text-sm text-text-muted">{t(locale, "bookedFor")}</dt><dd className="text-text">{booking.invitee.name}, {booking.invitee.email}</dd></div>
+          <div><dt className="text-sm text-text-muted">{t(locale, "bookedFor")}</dt><dd className="text-text">{booking.invitee.name}, {/\.invalid$/i.test(booking.invitee.email) ? booking.invitee.phone : booking.invitee.email}</dd></div>
         </dl>
       </Card>
       {cancelled ? (
