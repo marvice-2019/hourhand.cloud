@@ -128,6 +128,15 @@ async function seriesCancel(pool: pg.Pool, r: ContextRow): Promise<Pick<BookingM
 }
 
 /**
+ * What a cancellation refunds the guest, as its email says: a week of a paid series its share and those of the weeks
+ * cancelled with it; a booking paid on its own (or its deposit) what was paid. Null when nothing was paid.
+ */
+async function cancelRefundMinor(pool: pg.Pool, r: ContextRow): Promise<number | null> {
+  if (r.series_id && r.series_unit_minor) return (await seriesCancel(pool, r)).refundMinor ?? null;
+  return (r.paid_minor as number | null) ?? null;
+}
+
+/**
  * Later weeks of the same series cancelled in the same transaction as this one (same cancelled_at), that have no
  * cancellation email of their own: closing an account emails every week, and each would otherwise list (and, for a paid
  * series, count the refund of) the weeks after it again.
@@ -473,6 +482,7 @@ export async function processDueNotifications(
         const message = templateMessage(c.kind as Parameters<typeof templateMessage>[0], {
           guestName: r.guest_name as string, hostName: r.host_name as string, eventName: r.event_name as string, startAt: new Date(r.start_at as Date),
           guestTimezone: r.guest_timezone as string, locale: (r.guest_locale as string | null) ?? "en", manageToken: r.manage_token as string,
+          ...(c.kind === "cancelled_guest" ? { refundMinor: await cancelRefundMinor(pool, r) } : {}),
         }, c.recipient);
         ({ id: providerId } = await sendWhatsApp(opts.whatsapp!, message, opts.fetch));
       } else if (isCalendarJob(c.kind)) {

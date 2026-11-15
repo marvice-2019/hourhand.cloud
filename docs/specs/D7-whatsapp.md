@@ -26,6 +26,7 @@ Draft English bodies (wording is strictly transactional so Meta keeps them in th
 - Confirmed: "Hi {{1}}, your {{2}} with {{3}} is booked for {{4}}. Use the button to reschedule or cancel."
 - Reminder: "Hi {{1}}, a reminder: {{2}} with {{3}} is on {{4}}. Use the button to reschedule or cancel."
 - Changed: "Hi {{1}}, your {{2}} with {{3}} has changed: {{4}}. Use the button for details."
+  - {{4}} for a cancellation: "it has been cancelled", or with a refund "it has been cancelled, and ₹500 is being refunded to the way you paid" (the amount the cancellation email names: a paid series week's share plus any later weeks cancelled with it). It is template variable text, so the approved template is unchanged.
 
 Each template is submitted once per language. Launch with English and Hindi (6 approvals). Tamil, Telugu and
 Kannada follow after the native-speaker review of the D3 drafts (9 more).
