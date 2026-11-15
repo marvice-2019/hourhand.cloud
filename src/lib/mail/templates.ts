@@ -319,11 +319,26 @@ export function renderInvoiceMail(v: { kind: "invoice" | "credit_note"; number: 
 }
 
 /** Last month in a few figures, with a link to the full report. */
-export function renderEarningsMail(e: { monthLabel: string; netMinor: number; bookingsMinor: number; packagesMinor: number; refundsMinor: number; sessionsHeld: number; noShows: number; url: string }): RenderedMail {
+/** "$99" or "€12.50" for a currency formatMoney doesn't cover; falls back to "XYZ 12.50" for one Intl doesn't know. */
+function anyMoney(minor: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: minor % 100 === 0 ? 0 : 2 }).format(minor / 100);
+  } catch {
+    return `${currency} ${(minor / 100).toFixed(2)}`;
+  }
+}
+
+/**
+ * The monthly earnings email. The headline and rows are rupees only; money in other currencies gets its own rows and is
+ * never added to the rupee total.
+ */
+export function renderEarningsMail(e: { monthLabel: string; netMinor: number; bookingsMinor: number; packagesMinor: number; refundsMinor: number; sessionsHeld: number; noShows: number; url: string; otherCurrencies?: { currency: string; netMinor: number }[] }): RenderedMail {
   return render(`Your ${e.monthLabel} on Hourhand: ${formatMoney(e.netMinor, "INR")}`, {
     heading: `${e.monthLabel} at a glance`, intro: `Here's how ${e.monthLabel} went.`,
     rows: [["Net received", formatMoney(e.netMinor, "INR")], ["Bookings", formatMoney(e.bookingsMinor, "INR")], ["Packages", formatMoney(e.packagesMinor, "INR")],
-      ["Refunds", formatMoney(e.refundsMinor, "INR")], ["Sessions held", String(e.sessionsHeld)], ["No-shows", String(e.noShows)]],
+      ["Refunds", formatMoney(e.refundsMinor, "INR")],
+      ...(e.otherCurrencies ?? []).map((o): [string, string] => [`Also received in ${o.currency}`, anyMoney(o.netMinor, o.currency)]),
+      ["Sessions held", String(e.sessionsHeld)], ["No-shows", String(e.noShows)]],
     link: { label: "See the full report", url: e.url }, footer: "Sent by Hourhand once a month.",
   });
 }

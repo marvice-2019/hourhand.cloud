@@ -1,7 +1,8 @@
 import type pg from "pg";
 
 // A host's month in money and sessions (India time). Read straight from payments, package purchases, invoices and
-// bookings, so it always agrees with them. Money is in paise.
+// bookings, so it always agrees with them. The rupee figures count INR only, in paise; money taken in any other
+// currency (Stripe) is reported per currency in otherCurrencies and never added to them.
 
 type Db = Pick<pg.Pool, "query">;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -32,6 +33,8 @@ export interface MonthlyEarnings {
   feeEstimateMinor: number;
   sessions: { held: number; noShows: number; cancelledByGuest: number; cancelledByHost: number; upcoming: number };
   byEventType: EarningsLine[];
+  /** Net received per other currency (prices + packages + kept deposits − refunds), in that currency's minor units. */
+  otherCurrencies: { currency: string; netMinor: number }[];
 }
 
 /** The month's bounds in UTC for "YYYY-MM" in India time; null if it isn't a month. */
@@ -49,17 +52,17 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
   if (!range || !UUID.test(hostId)) return null;
   const { from, to } = range;
   const args = [hostId, from, to];
-  const [money, refunds, packages, kept, held, gst, sessions, byBooking, byPackage] = await Promise.all([
+  const [money, refunds, packages, kept, held, gst, sessions, byBooking, byPackage, others] = await Promise.all([
     db.query(`select coalesce(sum(amount_minor), 0)::bigint as total from payments
-              where host_id = $1 and kind = 'payment' and paid_at >= $2 and paid_at < $3 and status in ('paid', 'refund_pending', 'refunded')`, args),
+              where host_id = $1 and currency = 'INR' and kind = 'payment' and paid_at >= $2 and paid_at < $3 and status in ('paid', 'refund_pending', 'refunded')`, args),
     // A refund's month is when it was recorded.
     db.query(`select coalesce(sum(refunded_minor), 0)::bigint as total from payments
-              where host_id = $1 and kind = 'payment' and status = 'refunded' and refunded_at >= $2 and refunded_at < $3`, args),
-    db.query(`select coalesce(sum(price_minor), 0)::bigint as total from package_purchases where host_id = $1 and status = 'paid' and paid_at >= $2 and paid_at < $3`, args),
+              where host_id = $1 and currency = 'INR' and kind = 'payment' and status = 'refunded' and refunded_at >= $2 and refunded_at < $3`, args),
+    db.query(`select coalesce(sum(price_minor), 0)::bigint as total from package_purchases where host_id = $1 and currency = 'INR' and status = 'paid' and paid_at >= $2 and paid_at < $3`, args),
     db.query(`select coalesce(sum(p.amount_minor), 0)::bigint as total from payments p join bookings b on b.id = p.booking_id join invitees i on i.booking_id = b.id
-              where p.host_id = $1 and p.kind = 'deposit' and p.status = 'paid' and i.no_show_at is not null and b.start_at >= $2 and b.start_at < $3`, args),
+              where p.host_id = $1 and p.currency = 'INR' and p.kind = 'deposit' and p.status = 'paid' and i.no_show_at is not null and b.start_at >= $2 and b.start_at < $3`, args),
     db.query(`select coalesce(sum(p.amount_minor), 0)::bigint as total from payments p join bookings b on b.id = p.booking_id join invitees i on i.booking_id = b.id
-              where p.host_id = $1 and p.kind = 'deposit' and p.status = 'paid' and i.no_show_at is null and p.paid_at >= $2 and p.paid_at < $3`, args),
+              where p.host_id = $1 and p.currency = 'INR' and p.kind = 'deposit' and p.status = 'paid' and i.no_show_at is null and p.paid_at >= $2 and p.paid_at < $3`, args),
     db.query(`select coalesce(sum(case when kind = 'credit_note' then -1 else 1 end * (cgst_minor + sgst_minor + igst_minor)), 0)::bigint as total
               from invoices where host_id = $1 and issued_at >= $2 and issued_at < $3`, args),
     db.query(`select count(*) filter (where b.status = 'confirmed' and b.start_at <= $4 and i.no_show_at is null)::int as held,
@@ -69,9 +72,19 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
                      count(*) filter (where b.status = 'confirmed' and b.start_at > $4)::int as upcoming
               from bookings b join invitees i on i.booking_id = b.id where b.host_id = $1 and b.start_at >= $2 and b.start_at < $3`, [...args, now]),
     db.query(`select e.id, e.name, coalesce(sum(p.amount_minor), 0)::bigint as total from payments p join bookings b on b.id = p.booking_id join event_types e on e.id = b.event_type_id
-              where p.host_id = $1 and p.kind = 'payment' and p.paid_at >= $2 and p.paid_at < $3 and p.status in ('paid', 'refund_pending', 'refunded') group by e.id, e.name`, args),
+              where p.host_id = $1 and p.currency = 'INR' and p.kind = 'payment' and p.paid_at >= $2 and p.paid_at < $3 and p.status in ('paid', 'refund_pending', 'refunded') group by e.id, e.name`, args),
     db.query(`select e.id, e.name, coalesce(sum(k.price_minor), 0)::bigint as total from package_purchases k join event_types e on e.id = k.event_type_id
-              where k.host_id = $1 and k.status = 'paid' and k.paid_at >= $2 and k.paid_at < $3 group by e.id, e.name`, args),
+              where k.host_id = $1 and k.currency = 'INR' and k.status = 'paid' and k.paid_at >= $2 and k.paid_at < $3 group by e.id, e.name`, args),
+    // Everything not in rupees, by currency, on the same rules as the rupee figures above.
+    db.query(`select currency, sum(amount)::bigint as total from (
+                select currency, amount_minor as amount from payments
+                  where host_id = $1 and kind = 'payment' and paid_at >= $2 and paid_at < $3 and status in ('paid', 'refund_pending', 'refunded')
+                union all select currency, -refunded_minor from payments
+                  where host_id = $1 and kind = 'payment' and status = 'refunded' and refunded_at >= $2 and refunded_at < $3
+                union all select currency, price_minor from package_purchases where host_id = $1 and status = 'paid' and paid_at >= $2 and paid_at < $3
+                union all select p.currency, p.amount_minor from payments p join bookings b on b.id = p.booking_id join invitees i on i.booking_id = b.id
+                  where p.host_id = $1 and p.kind = 'deposit' and p.status = 'paid' and i.no_show_at is not null and b.start_at >= $2 and b.start_at < $3
+              ) m where upper(currency) <> 'INR' group by currency order by currency`, args),
   ]);
   const n = (r: { rows: { total: string | number }[] }) => Number(r.rows[0].total);
   const bookingsMinor = n(money), packagesMinor = n(packages), refundsMinor = n(refunds), depositsKeptMinor = n(kept);
@@ -87,6 +100,7 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
     feeEstimateMinor: Math.round((received * RAZORPAY_FEE_BP * 1.18) / 10_000),
     sessions: { held: s.held, noShows: s.no_shows, cancelledByGuest: s.by_guest, cancelledByHost: s.by_host, upcoming: s.upcoming },
     byEventType: [...lines.values()].sort((a, b) => b.bookingsMinor + b.packagesMinor - (a.bookingsMinor + a.packagesMinor)),
+    otherCurrencies: others.rows.map((r) => ({ currency: String(r.currency).toUpperCase(), netMinor: Number(r.total) })).filter((o) => o.netMinor !== 0),
   };
 }
 
@@ -108,7 +122,7 @@ export async function queueMonthlyReports(db: Db, now: Date): Promise<number> {
   return rowCount ?? 0;
 }
 
-/** The report as CSV rows for an accountant: one line per figure, rupees with two decimals. */
+/** The report as CSV rows for an accountant: one line per figure, rupees with two decimals; other currencies on their own lines. */
 export function earningsCsv(e: MonthlyEarnings): string {
   const r = (m: number) => (m / 100).toFixed(2);
   const cell = (v: string) => (/[",\n\r]/.test(v) || /^[=+\-@\t\r]/.test(v) ? `"${(/^[=+\-@\t\r]/.test(v) ? `'${v}` : v).replace(/"/g, '""')}"` : v);
@@ -120,6 +134,7 @@ export function earningsCsv(e: MonthlyEarnings): string {
     ["Deposits still held", r(e.depositsHeldMinor)], ["Sessions held", String(e.sessions.held)], ["No-shows", String(e.sessions.noShows)],
     ["Cancelled by guest", String(e.sessions.cancelledByGuest)], ["Cancelled by you", String(e.sessions.cancelledByHost)],
     ...e.byEventType.map((l) => [`${l.eventName}`, r(l.bookingsMinor + l.packagesMinor)]),
+    ...e.otherCurrencies.map((o) => [`Net received in ${o.currency} (not in the rupee figures)`, r(o.netMinor)]),
   ];
   return ["Item,Value", ...rows.map(([k, v]) => `${cell(k)},${value(v)}`)].join("\r\n") + "\r\n";
 }

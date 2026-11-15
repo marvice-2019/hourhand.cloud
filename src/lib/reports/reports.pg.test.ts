@@ -146,7 +146,8 @@ describe.skipIf(!BASE)("business reports (Postgres)", () => {
     expect(r.currencies[1]).toMatchObject({ grossMinor: 9_900, netIncomeMinor: 9_900, feeEstimateMinor: null });
     // The month's email and the dashboard agree on the rupee figures.
     const e = (await monthlyEarnings(pool, host, "2026-10", now))!;
-    expect(e.netMinor - 9_900).toBe(r.currencies[0].netIncomeMinor); // the email predates currencies and adds the dollars in
+    expect(e.netMinor).toBe(r.currencies[0].netIncomeMinor); // rupees only: the dollars are reported apart
+    expect(e.otherCurrencies).toEqual([{ currency: "USD", netMinor: r.currencies[1].netIncomeMinor }]);
     expect(e.gstMinor).toBe(r.gst.outputTaxMinor);
   });
 

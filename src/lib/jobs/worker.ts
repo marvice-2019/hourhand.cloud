@@ -316,7 +316,7 @@ async function renderEarnings(pool: pg.Pool, c: Claimed, baseUrl: string, now: D
   if (!e) return { skip: "no report" };
   const monthLabel = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${e.month}-01T00:00:00Z`));
   return renderEarningsMail({ monthLabel, netMinor: e.netMinor, bookingsMinor: e.bookingsMinor, packagesMinor: e.packagesMinor, refundsMinor: e.refundsMinor,
-    sessionsHeld: e.sessions.held, noShows: e.sessions.noShows, url: `${baseUrl}/dashboard/earnings?month=${e.month}` });
+    sessionsHeld: e.sessions.held, noShows: e.sessions.noShows, otherCurrencies: e.otherCurrencies, url: `${baseUrl}/dashboard/earnings?month=${e.month}` });
 }
 
 /** A Duo owner's invitation to their second person; skipped if it was withdrawn, moved to someone else, or accepted. */

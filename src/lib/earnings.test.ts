@@ -48,7 +48,7 @@ describe.skipIf(!BASE)("monthly earnings (Postgres)", () => {
     const theirs = await et(other, "Theirs", "theirs");
     let k = 0;
     /** A booking at `start` with an optional payment. */
-    const booking = async (u: string, e: string, start: Date, o: { status?: string; by?: string; noShow?: boolean; pay?: { amount: number; kind?: string; status: string; paidAt: Date; refunded?: number; updatedAt?: Date } } = {}) => {
+    const booking = async (u: string, e: string, start: Date, o: { status?: string; by?: string; noShow?: boolean; pay?: { amount: number; kind?: string; status: string; paidAt: Date; refunded?: number; updatedAt?: Date; currency?: string } } = {}) => {
       k += 1;
       const status = o.status ?? "confirmed";
       const end = new Date(start.getTime() + 3_600_000);
@@ -60,9 +60,9 @@ describe.skipIf(!BASE)("monthly earnings (Postgres)", () => {
         [b.id, u, `g${k}@example.in`, o.noShow ? end : null]);
       if (o.pay) await pool.query(
         `insert into payments (booking_id, host_id, provider, amount_minor, currency, status, kind, paid_at, refunded_minor, updated_at, refunded_at, provider_order_id)
-         values ($1, $2, 'razorpay', $3, 'INR', $4, $5, $6, $7, $8, $9, $10)`,
+         values ($1, $2, 'razorpay', $3, $11, $4, $5, $6, $7, $8, $9, $10)`,
         [b.id, u, o.pay.amount, o.pay.status, o.pay.kind ?? "payment", o.pay.paidAt, o.pay.refunded ?? 0, o.pay.updatedAt ?? o.pay.paidAt,
-         o.pay.status === "refunded" ? (o.pay.updatedAt ?? o.pay.paidAt) : null, `order_e${k}`]);
+         o.pay.status === "refunded" ? (o.pay.updatedAt ?? o.pay.paidAt) : null, `order_e${k}`, o.pay.currency ?? "INR"]);
     };
     await booking(host, coaching, oct(3), { pay: { amount: 100_000, status: "paid", paidAt: oct(1) } });
     await booking(host, coaching, oct(10), { pay: { amount: 50_000, status: "refunded", paidAt: oct(2), refunded: 50_000, updatedAt: oct(4) } , status: "cancelled", by: "guest" });
@@ -72,6 +72,8 @@ describe.skipIf(!BASE)("monthly earnings (Postgres)", () => {
     await booking(host, coaching, oct(25), { status: "cancelled", by: "host" });
     await booking(host, coaching, new Date("2026-09-30T19:00:00Z"), { pay: { amount: 70_000, status: "paid", paidAt: new Date("2026-09-30T19:00:00Z") } }); // 1 Oct 00:30 IST
     await booking(host, coaching, oct(31, 19), {}); // 1 Nov IST: not October
+    // A dollar payment in October (Stripe) for a November session: never added to the rupee figures.
+    await booking(host, coaching, new Date("2026-11-20T06:00:00Z"), { pay: { amount: 9_900, currency: "USD", status: "paid", paidAt: oct(24) } });
     await booking(other, theirs, oct(3), { pay: { amount: 999_900, status: "paid", paidAt: oct(1) } });
     const { rows: [pkg] } = await pool.query("insert into packages (user_id, event_type_id, name, sessions, price_minor, valid_days) values ($1, $2, '5 sessions', 5, 400000, 90) returning id", [host, coaching]);
     await pool.query(
@@ -102,6 +104,14 @@ describe.skipIf(!BASE)("monthly earnings (Postgres)", () => {
     expect(earningsCsv(e)).toContain("Refunds,-500.00"); // a number a spreadsheet adds up, not text
   });
 
+  it("keeps other currencies out of the rupee figures and reports them on their own", async () => {
+    const e = (await monthlyEarnings(pool, host, "2026-10", now))!;
+    expect(e.otherCurrencies).toEqual([{ currency: "USD", netMinor: 9_900 }]);
+    expect(e.bookingsMinor).toBe(220_000);
+    expect(e.feeEstimateMinor).toBe(Math.round((640_000 * 200 * 1.18) / 10_000));
+    expect(earningsCsv(e)).toContain("Net received in USD (not in the rupee figures),99.00");
+  });
+
   it("keeps a refund in the month it was made, whatever touches the row later", async () => {
     // A June refund; any later write (a reconcile, a replayed webhook) fires the updated_at trigger and moves updated_at to today.
     const { rows: [et] } = await pool.query("select id from event_types where user_id = $1 and slug = 'coaching'", [host]);
@@ -123,6 +133,7 @@ describe.skipIf(!BASE)("monthly earnings (Postgres)", () => {
     await processDueNotifications(pool, { async send(m) { sent.push(m); return { id: `m${sent.length}` }; } }, { baseUrl: "https://hourhand.test", now });
     const mine = sent.find((m) => m.to === "earn@example.com")!;
     expect(mine.subject).toBe("Your October 2026 on Hourhand: ₹5,900");
+    expect(mine.text).toContain("Also received in USD: $99");
     expect(mine.text).toContain("https://hourhand.test/dashboard/earnings?month=2026-10");
   });
 
