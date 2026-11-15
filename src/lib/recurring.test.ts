@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleCreateBooking, handleGetSlots } from "./booking";
 import { handleCancel, handleReschedule } from "./manage";
 import { createMemoryStore } from "./data/memory-store";
@@ -71,6 +71,11 @@ describe("weekly repeats", () => {
 });
 
 describe("managing a week", () => {
+  // Stores decide which later weeks are "still to come" from the real clock, so pin it to the test's `now`;
+  // otherwise this test starts failing once the real date passes the booked weeks.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it("a guest cancels one week, or that week and the later ones; earlier weeks stay", async () => {
     const store = fresh();
     const res = await book(store, await firstSlot(store), { weeks: 4 }, "series-manage-1");
