@@ -2,7 +2,7 @@ import { TZDate } from "@date-fns/tz";
 import type pg from "pg";
 import { dayKey } from "../format";
 
-// Voice receptionist rows (db/migrations/0035_voice_receptionist.sql). Postgres only: in memory mode voice is off.
+// Voice receptionist rows (db/migrations/0037_voice_receptionist.sql). Postgres only: in memory mode voice is off.
 
 type Db = Pick<pg.Pool, "query">;
 
