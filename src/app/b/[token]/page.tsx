@@ -12,6 +12,7 @@ import { store } from "@/lib/data";
 import { formatDate, zoneName } from "@/lib/format";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { LOCATION_KEYS, resolveLocale, t, tNodes } from "@/lib/i18n/guest";
+import { mt } from "@/lib/i18n/mail";
 import { AddToCalendar } from "@/components/AddToCalendar";
 import { resolveBaseUrl } from "@/lib/auth/auth";
 
@@ -72,7 +73,7 @@ export default async function ManageBookingPage({ params, searchParams }: { para
       ) : (
         <>
         <AddToCalendar
-          token={token} title={`${eventType.name} with ${host.name}`} start={booking.startAt} end={booking.endAt} locale={locale}
+          token={token} title={mt(locale, "calWith", { event: eventType.name, host: host.name })} start={booking.startAt} end={booking.endAt} locale={locale}
           location={booking.joinUrl ?? (booking.locationKind ? t(locale, LOCATION_KEYS[booking.locationKind]) : null)}
           manageUrl={`${(resolveBaseUrl() ?? "").replace(/\/+$/, "")}/b/${token}`}
         />

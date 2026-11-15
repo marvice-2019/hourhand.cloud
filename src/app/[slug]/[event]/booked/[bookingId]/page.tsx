@@ -9,6 +9,7 @@ import { isUnpaidRelease } from "@/lib/booking-reasons";
 import { store } from "@/lib/data";
 import { formatDate, zoneName } from "@/lib/format";
 import { LOCATION_KEYS, resolveLocale, t, tNodes } from "@/lib/i18n/guest";
+import { mt } from "@/lib/i18n/mail";
 import { AddToCalendar } from "@/components/AddToCalendar";
 import { AutoRedirect } from "@/components/AutoRedirect";
 import { cleanRedirectUrl } from "@/lib/calendar-links";
@@ -71,7 +72,7 @@ export default async function BookedPage({ params, searchParams }: { params: Pro
       </Card>
       {booking.status === "confirmed" && (
         <AddToCalendar
-          token={booking.invitee.manageToken} title={`${eventType?.name ?? ""} with ${host.name}`} start={booking.startAt} end={booking.endAt} locale={locale}
+          token={booking.invitee.manageToken} title={mt(locale, "calWith", { event: eventType?.name ?? "", host: host.name })} start={booking.startAt} end={booking.endAt} locale={locale}
           location={booking.joinUrl ?? (booking.locationKind ? t(locale, LOCATION_KEYS[booking.locationKind]) : null)}
           manageUrl={`${(resolveBaseUrl() ?? "").replace(/\/+$/, "")}/b/${booking.invitee.manageToken}`}
         />

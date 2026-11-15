@@ -1,13 +1,21 @@
-// Words on the guest-facing booking pages, in the five languages a host can pick.
-// The Hindi, Tamil, Telugu and Kannada lines are drafts pending native-speaker review.
+// Words on the guest-facing booking pages, in the nine languages a host can pick.
+// The Hindi, Tamil, Telugu and Kannada lines are drafts pending native-speaker review. Marathi, Bengali, Malayalam
+// and Gujarati live in ./locales/<code>.ts, each a draft marked for native-speaker review.
 // Brand names (Hourhand, WhatsApp, Razorpay, UPI, Google, Instagram) stay in Latin script.
 import { Fragment, createElement, type ReactNode } from "react";
+import * as bn from "./locales/bn";
+import * as gu from "./locales/gu";
+import * as ml from "./locales/ml";
+import * as mr from "./locales/mr";
 
-export const LOCALES = ["en", "hi", "ta", "te", "kn"] as const;
+export const LOCALES = ["en", "hi", "ta", "te", "kn", "mr", "bn", "ml", "gu"] as const;
 export type Locale = (typeof LOCALES)[number];
 
 /** Each language in its own script, for the switcher and the host's setting. */
-export const LOCALE_NAMES: Record<Locale, string> = { en: "English", hi: "हिन्दी", ta: "தமிழ்", te: "తెలుగు", kn: "ಕನ್ನಡ" };
+export const LOCALE_NAMES: Record<Locale, string> = {
+  en: "English", hi: "हिन्दी", ta: "தமிழ்", te: "తెలుగు", kn: "ಕನ್ನಡ",
+  mr: "मराठी", bn: "বাংলা", ml: "മലയാളം", gu: "ગુજરાતી",
+};
 
 export const isLocale = (v: unknown): v is Locale => typeof v === "string" && (LOCALES as readonly string[]).includes(v);
 
@@ -180,7 +188,8 @@ const en = {
 };
 
 export type GuestKey = keyof typeof en;
-type Catalog = Record<GuestKey, string>;
+export type GuestCatalog = Record<GuestKey, string>;
+type Catalog = GuestCatalog;
 
 const hi: Catalog = {
   metaDescription: "{name} के साथ समय बुक करें।",
@@ -818,7 +827,7 @@ const kn: Catalog = {
   cancelPolicy: "ರದ್ದತಿ ನೀತಿ",
 };
 
-export const CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn };
+export const CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn, mr: mr.guest, bn: bn.guest, ml: ml.guest, gu: gu.guest };
 
 /** The line for `key` in `locale`, with each `{name}` replaced from `vars`; unknown placeholders are left as written. */
 export function t(locale: Locale, key: GuestKey, vars: Record<string, string | number> = {}): string {

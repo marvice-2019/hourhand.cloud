@@ -1,7 +1,12 @@
 // What guests read in their booking emails and the WhatsApp texts a host sends them, in the language they booked in.
-// English is the source. Hindi, Tamil, Telugu and Kannada are drafts pending native-speaker review. Brand and product
+// English is the source. Hindi, Tamil, Telugu and Kannada are drafts pending native-speaker review; Marathi, Bengali,
+// Malayalam and Gujarati come from ./locales/<code>.ts, also drafts pending review. Brand and product
 // names (Hourhand, WhatsApp, Razorpay) stay in Latin script.
 import type { Locale } from "./guest";
+import * as bn from "./locales/bn";
+import * as gu from "./locales/gu";
+import * as ml from "./locales/ml";
+import * as mr from "./locales/mr";
 
 const en = {
   subjBooked: "Booked: {event} with {host}, {date}",
@@ -58,7 +63,8 @@ const en = {
 };
 
 export type MailKey = keyof typeof en;
-type Catalog = Record<MailKey, string>;
+export type MailCatalog = Record<MailKey, string>;
+type Catalog = MailCatalog;
 
 const hi: Catalog = {
   subjBooked: "बुक हो गया: {host} के साथ {event}, {date}",
@@ -276,7 +282,7 @@ const kn: Catalog = {
   waManage: "ನಮಸ್ಕಾರ {first}, {when} ರ ನಿಮ್ಮ {event} ಅನ್ನು ಇಲ್ಲಿ ಬದಲಾಯಿಸಬಹುದು ಅಥವಾ ರದ್ದುಮಾಡಬಹುದು: {url}",
 };
 
-export const MAIL_CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn };
+export const MAIL_CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn, mr: mr.mail, bn: bn.mail, ml: ml.mail, gu: gu.mail };
 
 /** The line for `key` in `locale`, with each `{name}` replaced from `vars`. */
 export function mt(locale: Locale, key: MailKey, vars: Record<string, string | number> = {}): string {
