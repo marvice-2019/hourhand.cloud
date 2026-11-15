@@ -66,11 +66,15 @@ jobs:
   # Production deploy: only after `check` passes on a push to main. Coolify's own git auto-deploy
   # never fired (PR #8 needed a manual Redeploy), so CI triggers it through Coolify's API instead
   # and waits for the result, so a failed deploy turns this run red.
-  # Needs two repository secrets: COOLIFY_WEBHOOK (the app's Deploy Webhook URL, from its
-  # Webhooks tab in Coolify) and COOLIFY_TOKEN (a Coolify API token with deploy permission).
+  # Needs two secrets in the GitHub Environment "Production": COOLIFY_WEBHOOK (the app's Deploy
+  # Webhook URL, from its Webhooks tab in Coolify) and COOLIFY_TOKEN (a Coolify API token with
+  # deploy permission). Environment secrets reach a job only when it names that environment.
   deploy:
     needs: check
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: Production
+      url: https://hourhand.cloud
     runs-on: ubuntu-latest
     timeout-minutes: 25
     concurrency:
@@ -84,7 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$COOLIFY_WEBHOOK" ] || [ -z "$COOLIFY_TOKEN" ]; then
-            echo "::error::COOLIFY_WEBHOOK and COOLIFY_TOKEN repository secrets must be set"; exit 1
+            echo "::error::COOLIFY_WEBHOOK and COOLIFY_TOKEN must be set as secrets of the Production environment"; exit 1
           fi
           auth="Authorization: Bearer $COOLIFY_TOKEN"
           resp=$(curl -fsS --retry 3 --retry-all-errors -H "$auth" "$COOLIFY_WEBHOOK")
