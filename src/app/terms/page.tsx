@@ -21,7 +21,7 @@ export default function TermsPage() {
       </Link>
       <main>
         <h1 className="mt-6 font-display text-xl text-text">Terms of service</h1>
-        <p className="mt-2 text-sm text-text-muted">Last updated 11 October 2026</p>
+        <p className="mt-2 text-sm text-text-muted">Last updated 15 November 2026</p>
 
         <p className={p}>These terms are the agreement between you and us when you use Hourhand. By creating an account or booking through Hourhand, you agree to them.</p>
 
@@ -51,6 +51,12 @@ export default function TermsPage() {
         <h2 className={h2}>Payments from your guests</h2>
         <p className={p}>
           On a paid plan you can charge guests when they book. Those payments go straight from the guest to your own Razorpay account. Hourhand is not a party to them: we do not hold the money, and we are not the seller. You are responsible for refunds, taxes, invoices and your own terms with your guests, and for following Razorpay&apos;s terms. When you cancel a paid booking, Hourhand asks Razorpay to refund the guest from your account.
+        </p>
+
+        {/* Working draft, review with a lawyer: this section is meant to serve as the fiduciary-processor contract (DPDP Act 2023, s.8(2)). */}
+        <h2 className={h2}>Your clients&apos; data</h2>
+        <p className={p}>
+          For the personal data of the people who book you, you are the data fiduciary under the Digital Personal Data Protection Act, 2023, and Hourhand is your data processor. We process it only to run Hourhand for you, keep it secure, and do not use it for anything else. You are responsible for having a lawful reason to collect it, for what you ask on your booking form, and for answering your clients&apos; requests to see or delete their data; Hourhand gives you a consent record, an export and an erasure tool for each client, and tells you when a client asks. If we become aware of a breach affecting your clients&apos; data, we will tell you without delay with what you need to inform them and the Data Protection Board.
         </p>
 
         <h2 className={h2}>Acceptable use</h2>

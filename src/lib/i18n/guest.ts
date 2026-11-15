@@ -177,6 +177,15 @@ const en = {
   guestsHint: "Up to 5, separated by commas. They get the details and reminders; only you can change the booking.",
   errGuests: "Check the guest emails: up to 5 valid addresses.",
   cancelPolicy: "Cancellation policy",
+  // Your data: a guest asks their host for a copy or deletion (roadmap 3.10).
+  yourData: "Your data",
+  yourDataIntro: "{host} keeps the details you gave when booking, using Hourhand. You can ask them for a copy, or to delete them.",
+  askCopy: "Ask for a copy",
+  askDelete: "Ask to delete my data",
+  copyRequested: "You asked {host} for a copy of your data. They have until {date} to respond.",
+  deleteRequested: "You asked {host} to delete your data. They have until {date} to respond.",
+  deleteHint: "If you have a booking coming up, {host} cancels it first. Tax invoices are kept as the law requires, without your contact details.",
+  requestFailed: "That didn't go through. Try again, or contact {host} directly.",
 };
 
 export type GuestKey = keyof typeof en;
@@ -339,6 +348,14 @@ const hi: Catalog = {
   guestsHint: "ज़्यादा से ज़्यादा 5, कॉमा से अलग करें। उन्हें जानकारी और रिमाइंडर मिलेंगे; बुकिंग सिर्फ़ आप बदल सकते हैं।",
   errGuests: "मेहमानों के ईमेल जाँचें: ज़्यादा से ज़्यादा 5 सही पते।",
   cancelPolicy: "रद्द करने की नीति",
+  yourData: "आपका डेटा",
+  yourDataIntro: "बुकिंग के समय दी गई आपकी जानकारी {host} Hourhand में रखते हैं। आप उनसे इसकी कॉपी माँग सकते हैं, या इसे मिटाने को कह सकते हैं।",
+  askCopy: "कॉपी माँगें",
+  askDelete: "मेरा डेटा मिटाने को कहें",
+  copyRequested: "आपने {host} से अपने डेटा की कॉपी माँगी है। उन्हें {date} तक जवाब देना है।",
+  deleteRequested: "आपने {host} से अपना डेटा मिटाने को कहा है। उन्हें {date} तक जवाब देना है।",
+  deleteHint: "अगर आपकी कोई बुकिंग आने वाली है, तो {host} पहले उसे रद्द करेंगे। टैक्स इनवॉइस क़ानून के अनुसार रखे जाते हैं, आपके संपर्क विवरण के बिना।",
+  requestFailed: "यह नहीं पहुँचा। फिर से कोशिश करें, या सीधे {host} से संपर्क करें।",
 };
 
 const ta: Catalog = {
@@ -498,6 +515,14 @@ const ta: Catalog = {
   guestsHint: "அதிகபட்சம் 5, காற்புள்ளியால் பிரிக்கவும். அவர்களுக்கு விவரங்களும் நினைவூட்டல்களும் வரும்; முன்பதிவை நீங்கள் மட்டுமே மாற்ற முடியும்.",
   errGuests: "விருந்தினர் மின்னஞ்சல்களைச் சரிபார்க்கவும்: அதிகபட்சம் 5 சரியான முகவரிகள்.",
   cancelPolicy: "ரத்து செய்யும் கொள்கை",
+  yourData: "உங்கள் தரவு",
+  yourDataIntro: "முன்பதிவின்போது நீங்கள் கொடுத்த விவரங்களை {host} Hourhand-இல் வைத்திருக்கிறார். அதன் நகலைக் கேட்கலாம், அல்லது அழிக்கச் சொல்லலாம்.",
+  askCopy: "நகலைக் கேளுங்கள்",
+  askDelete: "என் தரவை அழிக்கச் சொல்லுங்கள்",
+  copyRequested: "உங்கள் தரவின் நகலை {host}-இடம் கேட்டுள்ளீர்கள். அவர் {date}-க்குள் பதில் தர வேண்டும்.",
+  deleteRequested: "உங்கள் தரவை அழிக்கும்படி {host}-இடம் கேட்டுள்ளீர்கள். அவர் {date}-க்குள் பதில் தர வேண்டும்.",
+  deleteHint: "வரவிருக்கும் முன்பதிவு இருந்தால், {host} முதலில் அதை ரத்து செய்வார். வரி விலைப்பட்டியல்கள் சட்டப்படி, உங்கள் தொடர்பு விவரங்கள் இல்லாமல் வைக்கப்படும்.",
+  requestFailed: "அது போகவில்லை. மீண்டும் முயற்சி செய்யுங்கள், அல்லது {host}-ஐ நேரடியாகத் தொடர்பு கொள்ளுங்கள்.",
 };
 
 const te: Catalog = {
@@ -657,6 +682,14 @@ const te: Catalog = {
   guestsHint: "గరిష్ఠంగా 5, కామాలతో వేరు చేయండి. వారికి వివరాలు, రిమైండర్లు వస్తాయి; బుకింగ్‌ను మీరు మాత్రమే మార్చగలరు.",
   errGuests: "అతిథుల ఈమెయిల్స్ చూడండి: గరిష్ఠంగా 5 సరైన చిరునామాలు.",
   cancelPolicy: "రద్దు విధానం",
+  yourData: "మీ డేటా",
+  yourDataIntro: "బుకింగ్ సమయంలో మీరు ఇచ్చిన వివరాలను {host} Hourhandలో ఉంచుతారు. మీరు వాటి కాపీ అడగవచ్చు, లేదా తొలగించమని కోరవచ్చు.",
+  askCopy: "కాపీ అడగండి",
+  askDelete: "నా డేటాను తొలగించమని అడగండి",
+  copyRequested: "మీ డేటా కాపీ కోసం {host}ని అడిగారు. వారు {date} లోపు స్పందించాలి.",
+  deleteRequested: "మీ డేటాను తొలగించమని {host}ని అడిగారు. వారు {date} లోపు స్పందించాలి.",
+  deleteHint: "మీకు రాబోయే బుకింగ్ ఉంటే, {host} ముందుగా దాన్ని రద్దు చేస్తారు. పన్ను ఇన్వాయిస్‌లు చట్ట ప్రకారం, మీ సంప్రదింపు వివరాలు లేకుండా ఉంచబడతాయి.",
+  requestFailed: "అది వెళ్ళలేదు. మళ్ళీ ప్రయత్నించండి, లేదా నేరుగా {host}ని సంప్రదించండి.",
 };
 
 const kn: Catalog = {
@@ -816,6 +849,14 @@ const kn: Catalog = {
   guestsHint: "ಗರಿಷ್ಠ 5, ಅಲ್ಪವಿರಾಮದಿಂದ ಬೇರ್ಪಡಿಸಿ. ಅವರಿಗೆ ವಿವರಗಳು ಮತ್ತು ಜ್ಞಾಪನೆಗಳು ಬರುತ್ತವೆ; ಬುಕಿಂಗ್ ಅನ್ನು ನೀವು ಮಾತ್ರ ಬದಲಾಯಿಸಬಹುದು.",
   errGuests: "ಅತಿಥಿಗಳ ಇಮೇಲ್‌ಗಳನ್ನು ಪರಿಶೀಲಿಸಿ: ಗರಿಷ್ಠ 5 ಸರಿಯಾದ ವಿಳಾಸಗಳು.",
   cancelPolicy: "ರದ್ದತಿ ನೀತಿ",
+  yourData: "ನಿಮ್ಮ ಡೇಟಾ",
+  yourDataIntro: "ಬುಕಿಂಗ್ ಮಾಡುವಾಗ ನೀವು ನೀಡಿದ ವಿವರಗಳನ್ನು {host} Hourhand ನಲ್ಲಿ ಇಟ್ಟುಕೊಳ್ಳುತ್ತಾರೆ. ಅದರ ಪ್ರತಿಯನ್ನು ಕೇಳಬಹುದು, ಅಥವಾ ಅಳಿಸಲು ಹೇಳಬಹುದು.",
+  askCopy: "ಪ್ರತಿ ಕೇಳಿ",
+  askDelete: "ನನ್ನ ಡೇಟಾ ಅಳಿಸಲು ಕೇಳಿ",
+  copyRequested: "ನಿಮ್ಮ ಡೇಟಾದ ಪ್ರತಿಗಾಗಿ {host} ಅವರನ್ನು ಕೇಳಿದ್ದೀರಿ. ಅವರು {date} ಒಳಗೆ ಉತ್ತರಿಸಬೇಕು.",
+  deleteRequested: "ನಿಮ್ಮ ಡೇಟಾ ಅಳಿಸಲು {host} ಅವರನ್ನು ಕೇಳಿದ್ದೀರಿ. ಅವರು {date} ಒಳಗೆ ಉತ್ತರಿಸಬೇಕು.",
+  deleteHint: "ಮುಂಬರುವ ಬುಕಿಂಗ್ ಇದ್ದರೆ, {host} ಮೊದಲು ಅದನ್ನು ರದ್ದುಗೊಳಿಸುತ್ತಾರೆ. ತೆರಿಗೆ ಇನ್‌ವಾಯ್ಸ್‌ಗಳನ್ನು ಕಾನೂನಿನಂತೆ, ನಿಮ್ಮ ಸಂಪರ್ಕ ವಿವರಗಳಿಲ್ಲದೆ ಇಡಲಾಗುತ್ತದೆ.",
+  requestFailed: "ಅದು ಹೋಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ, ಅಥವಾ ನೇರವಾಗಿ {host} ಅವರನ್ನು ಸಂಪರ್ಕಿಸಿ.",
 };
 
 export const CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn };

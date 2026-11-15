@@ -10,7 +10,8 @@ import { GUEST_LOCATION_LABELS } from "../location-labels";
 import { MailError, type Mailer } from "../mail/mailer";
 import { invoiceById } from "../gst/invoices";
 import { monthlyEarnings } from "../earnings";
-import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderRenewalReminder, renderSeatInviteMail, renderWaitlistMail, type BookingMailContext, type RenderedMail } from "../mail/templates";
+import { requestForEmail } from "../privacy/rights";
+import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderRenewalReminder, renderSeatInviteMail, renderWaitlistMail, renderDataRequestMail, type BookingMailContext, type RenderedMail } from "../mail/templates";
 import { PLAN_NAMES, PRICES, priceLine, type BillingInterval, type PaidPlan } from "../billing/plans";
 import { freeSlots } from "../booking";
 import { createPgStore } from "../data/pg-store";
@@ -328,6 +329,15 @@ async function renderSeatInvite(pool: pg.Pool, c: Claimed, baseUrl: string): Pro
   return renderSeatInviteMail({ ownerName: s.name, ownerEmail: s.email, url: `${baseUrl}/sign-in` });
 }
 
+/** A client's data request, to their host. Skipped once the host has dealt with it. */
+async function renderDataRequest(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
+  const m = /^data_request:([0-9a-f-]{36})$/.exec(c.dedupe_key);
+  const r = m ? await requestForEmail(pool, m[1]) : null;
+  if (!r) return { skip: "request already dealt with" };
+  const { rows: [u] } = await pool.query("select timezone from users where id = $1", [c.user_id]);
+  return renderDataRequestMail({ kind: r.kind, dueAt: r.dueAt, timezone: u?.timezone ?? "Asia/Kolkata", url: `${baseUrl}/dashboard/clients/requests` });
+}
+
 /** A time opened on a day the guest waited for. The booking is the cancelled one; its start is the freed time. */
 async function renderWaitlist(pool: pg.Pool, c: Claimed, baseUrl: string, now: Date): Promise<RenderedMail | { skip: string }> {
   const m = /^waitlist:([0-9a-f-]{36})$/.exec(c.dedupe_key);
@@ -408,7 +418,7 @@ export async function processDueNotifications(
       continue;
     }
     // Host emails about their account rather than a booking.
-    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite";
+    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || c.kind === "data_request_host";
     if (!isAccountMail) {
       if (!r?.id) { await skip(c, "booking no longer exists"); continue; }
       const why = skipReason(c.kind, r, now);
@@ -466,6 +476,7 @@ export async function processDueNotifications(
           : c.kind === "earnings_host" ? await renderEarnings(pool, c, opts.baseUrl, now)
           : c.kind === "waitlist_guest" ? await renderWaitlist(pool, c, opts.baseUrl, now)
           : c.kind === "seat_invite" ? await renderSeatInvite(pool, c, opts.baseUrl)
+          : c.kind === "data_request_host" ? await renderDataRequest(pool, c, opts.baseUrl)
           : renderBookingMail(c.kind as BookingEmailKind, {
             ...toContext(r, opts.baseUrl),
             extraGuest: c.recipient.toLowerCase() !== String(r.guest_email).toLowerCase() && c.kind.endsWith("_guest"),

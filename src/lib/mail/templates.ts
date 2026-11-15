@@ -337,6 +337,22 @@ export function renderSeatInviteMail(c: { ownerName: string; ownerEmail: string;
   }, { replyTo: c.ownerEmail });
 }
 
+/**
+ * To the host: one of their clients asked, from their booking's manage link, for a copy or deletion of their data. It
+ * carries no details of the client; the host opens the dashboard to see who and act.
+ */
+export function renderDataRequestMail(c: { kind: "access" | "erasure"; dueAt: Date; timezone: string; url: string }): RenderedMail {
+  const what = c.kind === "access" ? "a copy of the data you hold about them" : "deletion of the data you hold about them";
+  return render(c.kind === "access" ? "A client asked for a copy of their data" : "A client asked you to delete their data", {
+    heading: "A client made a data request", intro: `One of your clients asked, from their booking link, for ${what}.`,
+    rows: [["Respond by", when(c.dueAt, c.timezone, "12h")]], link: { label: "Open the request", url: c.url },
+    note: c.kind === "access"
+      ? "Download their export from the client's page and send it to them, then mark the request done. Leave out your private notes unless you mean to share them."
+      : "Erase the client from their page once nothing is upcoming or still being paid. Bookings and invoices stay as the law requires, without their details.",
+    footer: "Sent by Hourhand. You are responsible for answering your clients' data requests; Hourhand gives you the tools.",
+  });
+}
+
 export function renderWaitlistMail(c: { guestName: string; hostName: string; eventName: string; start: Date; timezone: string; url: string }): RenderedMail {
   return render(`A time opened up with ${c.hostName}`, {
     heading: "A time opened up", intro: `Hi ${c.guestName}, a ${c.eventName} time with ${c.hostName} just became free on the day you asked about.`,

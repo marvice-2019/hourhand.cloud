@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { saveClientNoteAction } from "../actions";
+import { eraseClientAction } from "../privacy-actions";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { authEnabled } from "@/lib/auth/auth";
@@ -15,6 +16,14 @@ import { focusRing } from "@/components/ui/focus";
 
 export const dynamic = "force-dynamic";
 
+const DATA_ERRORS: Record<string, string> = {
+  confirm_mismatch: "The email you typed doesn't match. Nothing was erased.",
+  erase_upcoming: "This client has an upcoming booking or a payment hold. Cancel it first, then erase.",
+  erase_payments_settling: "A payment or refund for this client is still going through. Try again once it settles.",
+  erase_not_found: "There's nothing to erase for this client.",
+  erase_unavailable: "Erasing needs the database; it isn't available in demo mode.",
+};
+
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ key: string }>; searchParams: Promise<{ saved?: string; error?: string }> }) {
   const user = await requireHost();
   const { key } = await params;
@@ -28,6 +37,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   const note = owner ? await store.getClientNote(user.id, client.email) : "";
   const consents = authEnabled() ? await listConsents(getPool(process.env.DATABASE_URL as string), user.id, client.email) : [];
   const tz = user.timezone;
+  const dataError = error && Object.hasOwn(DATA_ERRORS, error) ? DATA_ERRORS[error] : null;
   return (
     <div>
       <Link href="/dashboard/clients" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent underline">All clients</Link>
@@ -78,6 +88,43 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
           </ul>
         )}
       </section>
+
+      {owner && (
+        <section aria-labelledby="data" className="mt-8 max-w-xl">
+          <h2 id="data" className="font-semibold text-text">{client.name}&apos;s data</h2>
+          <p className="mt-1 text-sm text-text-muted">
+            You decide what happens to your clients&apos; data; Hourhand keeps it for you. Use these when a client asks for a copy or to be deleted.
+            Only you can use them, not a second person on your plan.
+          </p>
+          {dataError && <p role="alert" className="mt-3 rounded-md bg-danger-bg p-3 text-sm text-danger">{dataError}</p>}
+          <form action={`/dashboard/clients/${key}/export`} method="get" target="_blank" className="mt-3 grid gap-2">
+            <p className="font-semibold text-text">Export everything about {client.name}</p>
+            <p className="text-sm text-text-muted">Bookings, answers, payments, packages, invoices, consent log and requests. Print the readable copy to PDF from your browser.</p>
+            <label className="flex items-start gap-2 text-sm text-text">
+              <input type="checkbox" name="notes" value="1" className="mt-1 size-5 accent-accent" />
+              <span>Include my private notes (leave this off if you&apos;re sending the export to {client.name})</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" name="format" value="html" variant="secondary">Readable copy</Button>
+              <Button type="submit" name="format" value="json" variant="secondary">JSON file</Button>
+            </div>
+          </form>
+          <form id="erase" action={eraseClientAction} className="mt-6 grid gap-2 rounded-md border border-danger p-4">
+            <input type="hidden" name="key" value={key} />
+            <p className="font-semibold text-danger">Erase {client.name}</p>
+            <p className="text-sm text-text">
+              This can&apos;t be undone. Their name, email, phone, answers, notes and messages come out of Hourhand. Past bookings stay in your history as
+              &ldquo;Erased client&rdquo;, and GST invoices keep what tax law requires (amounts, numbers, dates; the name only on invoices of ₹50,000 or more).
+              Hourhand logs that you erased a client and when, not who. Events already in your own calendar aren&apos;t touched: delete those yourself.
+            </p>
+            {client.upcoming > 0 && <p className="text-sm text-warning">{client.name} has {client.upcoming} upcoming {client.upcoming === 1 ? "booking" : "bookings"}. Cancel {client.upcoming === 1 ? "it" : "them"} first.</p>}
+            <label htmlFor="confirm" className="text-sm text-text">Type <span className="font-semibold">{client.email}</span> to confirm</label>
+            <input id="confirm" name="confirm" type="text" autoComplete="off" required
+              className={`h-11 rounded-md border border-border-input bg-card px-3 text-base text-text ${focusRing}`} />
+            <div><Button type="submit" variant="danger">Erase for good</Button></div>
+          </form>
+        </section>
+      )}
 
       <section aria-labelledby="history" className="mt-8">
         <h2 id="history" className="font-semibold text-text">History</h2>
