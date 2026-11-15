@@ -11,18 +11,20 @@ const items = [
   { href: "/dashboard/profile", label: "Your page" },
   { href: "/dashboard/event-types", label: "Event types" },
   { href: "/dashboard/links", label: "Links" },
+  { href: "/dashboard/polls", label: "Polls" },
   { href: "/dashboard/packages", label: "Packages" },
   { href: "/dashboard/earnings", label: "Earnings" },
   { href: "/dashboard/invoices", label: "Invoices" },
   { href: "/dashboard/availability", label: "Availability" },
   { href: "/dashboard/calendars", label: "Calendars" },
   { href: "/dashboard/integrations", label: "Integrations" },
+  { href: "/dashboard/domain", label: "Custom domain" },
   { href: "/dashboard/plan", label: "Plan" },
   { href: "/dashboard/settings", label: "Settings" },
 ];
 
 /** Pages a Duo second person can use while managing the owner's account; the rest stay the owner's alone. */
-const SHARED = new Set(["/dashboard/bookings", "/dashboard/clients", "/dashboard/profile", "/dashboard/event-types", "/dashboard/links", "/dashboard/packages", "/dashboard/availability"]);
+const SHARED = new Set(["/dashboard/bookings", "/dashboard/clients", "/dashboard/profile", "/dashboard/event-types", "/dashboard/links", "/dashboard/polls", "/dashboard/packages", "/dashboard/availability"]);
 
 export function NavLinks({ onNavigate, acting = false }: { onNavigate?: () => void; acting?: boolean }) {
   const pathname = usePathname();
