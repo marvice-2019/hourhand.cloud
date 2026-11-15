@@ -89,3 +89,46 @@ export function priceLine(plan: PaidPlan, interval: BillingInterval, currency: C
   const total = Math.round(base * (1 + GST_RATE));
   return `${formatMoney(base, currency)} + 18% GST = ${formatMoney(total, currency)} ${per}`;
 }
+
+// ---------- Add-ons ----------
+
+/** Extras sold on top of a paid plan, each its own monthly subscription. */
+export type Addon = "domain";
+
+export const ADDON_NAMES: Record<Addon, string> = { domain: "Custom domain" };
+
+/** Add-on prices before tax, in minor units. INR only for now (Razorpay); monthly only. */
+export const ADDON_PRICES: Record<Addon, { month: { INR: number } }> = {
+  domain: { month: { INR: 19_900 } },
+};
+
+const ADDON_ENV_NAMES: Record<Addon, string> = { domain: "RAZORPAY_PLAN_DOMAIN_MONTH" };
+
+/** The Razorpay Plan id for an add-on, or null when it isn't configured. */
+export function addonPriceId(addon: Addon, env: Env = process.env): string | null {
+  return env[ADDON_ENV_NAMES[addon]] || null;
+}
+
+/** Which add-on a provider-side id stands for, or null. Add-ons are sold through Razorpay only. */
+export function addonForPriceId(provider: Provider, id: string, env: Env = process.env): Addon | null {
+  if (provider !== "razorpay") return null;
+  for (const addon of Object.keys(ADDON_ENV_NAMES) as Addon[]) if (addonPriceId(addon, env) === id) return addon;
+  return null;
+}
+
+/** "₹199 + 18% GST = ₹234.82 a month". */
+export function addonPriceLine(addon: Addon): string {
+  const base = ADDON_PRICES[addon].month.INR;
+  return `${formatMoney(base, "INR")} + 18% GST = ${formatMoney(Math.round(base * (1 + GST_RATE)), "INR")} a month`;
+}
+
+/**
+ * Whether an add-on subscription gives the add-on right now: active, or a renewal being retried. One cancelled at
+ * period end stops at that end even if the provider's "cancelled" event hasn't arrived yet.
+ */
+export function addonLive(sub: { status: SubscriptionStatus; cancelAtPeriodEnd: boolean; currentPeriodEnd: Date | null } | null, now = new Date()): boolean {
+  if (!sub) return false;
+  if (sub.status !== "active" && sub.status !== "past_due") return false;
+  if (sub.cancelAtPeriodEnd && sub.currentPeriodEnd && sub.currentPeriodEnd.getTime() <= now.getTime()) return false;
+  return true;
+}

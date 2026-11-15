@@ -2,6 +2,10 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { DomainForm } from "@/components/DomainForm";
 import { authEnabled } from "@/lib/auth/auth";
+import { hostPlan } from "@/lib/billing/account";
+import { getAddon } from "@/lib/billing/addons";
+import { billingFor } from "@/lib/billing/env";
+import { addonLive, addonPriceId, addonPriceLine } from "@/lib/billing/plans";
 import { requireOwnAccount } from "@/lib/auth/session";
 import { getPool } from "@/lib/data/pg-store";
 import { systemResolver } from "@/lib/domains/dns";
@@ -9,7 +13,7 @@ import { mayUseCustomDomain } from "@/lib/domains/service";
 import { getDomain, type CustomDomain } from "@/lib/domains/store";
 import { DOMAIN_TARGET } from "@/lib/domains/validate";
 import Link from "next/link";
-import { checkDomainNow, removeDomainAction } from "./actions";
+import { buyDomainAddon, cancelDomainAddon, checkDomainNow, removeDomainAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +32,14 @@ async function targetIps(): Promise<string[]> {
   }
 }
 
+const ERRORS: Record<string, string> = {
+  needs_plan: "The custom domain add-on needs a Solo or Duo plan first.",
+  already_subscribed: "You already have the custom domain add-on.",
+  not_configured: "Payments for the custom domain add-on aren't set up on this server yet.",
+  no_subscription: "There's no add-on to cancel.",
+  provider: "The payment provider didn't accept that. Try again in a minute; nothing was charged.",
+};
+
 export default async function DomainPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requireOwnAccount();
   const params = await searchParams;
@@ -35,6 +47,10 @@ export default async function DomainPage({ searchParams }: { searchParams: Promi
   const pool = live ? getPool(process.env.DATABASE_URL as string) : null;
   const domain = pool ? await getDomain(pool, user.id) : null;
   const allowed = pool ? await mayUseCustomDomain(pool, user.id) : false;
+  const paidPlan = pool ? (await hostPlan(pool, user.id)) !== "free" : false;
+  const addon = pool ? await getAddon(pool, user.id, "domain") : null;
+  const addonOn = addonLive(addon);
+  const canBuy = live && billingFor("razorpay") !== null && addonPriceId("domain") !== null;
   const ips = await targetIps();
   const fmt = (d: Date) => new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: user.timezone }).format(d);
   const status = domain ? STATUS[domain.status] : null;
@@ -52,10 +68,42 @@ export default async function DomainPage({ searchParams }: { searchParams: Promi
 
       {!live && <p className="mt-6 text-text-muted">The demo data can&apos;t use a custom domain. Sign in with the database set up.</p>}
 
-      {live && !allowed && !domain && (
+      {params.checkout === "done" && (
+        <p role="status" className="mt-4 max-w-xl text-success">Checkout finished. The add-on switches on as soon as Razorpay confirms the payment, usually within a minute. Refresh to see it.</p>
+      )}
+      {params.checkout === "cancelled" && <p role="status" className="mt-4 text-text-muted">Checkout closed. Nothing was charged.</p>}
+      {params.done === "cancelled" && <p role="status" className="mt-4 max-w-xl text-success">Add-on cancelled. Your domain keeps working until the end of the month you paid for.</p>}
+      {params.error && <p role="alert" className="mt-4 max-w-xl text-danger">{(Object.hasOwn(ERRORS, params.error) && ERRORS[params.error]) || ERRORS.provider}</p>}
+
+      {live && (
         <Card className="mt-6 max-w-2xl">
-          <p className="text-text">A custom domain is available on paid plans.</p>
-          <Link href="/dashboard/plan" className="mt-3 inline-block font-semibold text-accent underline">See plans</Link>
+          <h2 className="font-semibold text-text">Custom domain add-on</h2>
+          <p className="mt-1 text-text">{addonPriceLine("domain")}</p>
+          {addonOn && addon ? (
+            <>
+              <p className="mt-1 text-text-muted">
+                {addon.cancelAtPeriodEnd
+                  ? `Cancelled. Your domain keeps working until ${addon.currentPeriodEnd ? fmt(addon.currentPeriodEnd) : "the end of this month"}, then guests go to hourhand.cloud/${user.slug}.`
+                  : `Active${addon.currentPeriodEnd ? `, renews ${fmt(addon.currentPeriodEnd)}` : ""}.`}
+                {!paidPlan && " Your plan is no longer paid, so your domain is off until you choose Solo or Duo again."}
+              </p>
+              {!addon.cancelAtPeriodEnd && (
+                <form action={cancelDomainAddon} className="mt-4"><Button type="submit" variant="secondary" size="sm">Cancel add-on</Button></form>
+              )}
+            </>
+          ) : !paidPlan ? (
+            <>
+              <p className="mt-1 text-text-muted">Available on Solo and Duo, on top of your plan.</p>
+              <Link href="/dashboard/plan" className="mt-3 inline-block font-semibold text-accent underline">See plans</Link>
+            </>
+          ) : canBuy ? (
+            <>
+              <p className="mt-1 text-text-muted">Monthly, paid through Razorpay. Cancel any time; it runs to the end of the month you paid for.</p>
+              <form action={buyDomainAddon} className="mt-4"><Button type="submit">Add custom domain</Button></form>
+            </>
+          ) : (
+            <p className="mt-1 text-text-muted">{ERRORS.not_configured}</p>
+          )}
         </Card>
       )}
 
@@ -64,6 +112,9 @@ export default async function DomainPage({ searchParams }: { searchParams: Promi
           <h2 className="font-semibold text-text break-all">{domain.domain}</h2>
           <p className={`mt-1 font-semibold ${status.tone}`}>{status.label}</p>
           <p className="mt-1 text-text-muted">{status.detail}</p>
+          {domain.status === "active" && !allowed && (
+            <p className="mt-1 text-danger">Off: the add-on or your paid plan has ended, so guests are sent to hourhand.cloud/{user.slug}.</p>
+          )}
           {domain.lastError && <p role="alert" className="mt-2 text-danger">{domain.lastError}</p>}
           <p className="mt-2 text-sm text-text-muted">
             {domain.lastCheckedAt ? `Last checked ${fmt(domain.lastCheckedAt)}.` : "Not checked yet."}
