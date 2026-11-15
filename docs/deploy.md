@@ -35,6 +35,7 @@ The repo is ready to deploy as a **public beta**. Five must-have features are st
 | Resend | Add domain `hourhand.cloud`, add the SPF, DKIM and DMARC records it shows (section 4), wait for "Verified" |
 | Google Cloud | Redirect URIs, authorised domain and scopes from `docs/backend.md` → "Production addresses for hourhand.cloud". Then submit verification: home page `https://hourhand.cloud`, privacy `https://hourhand.cloud/privacy`, terms `https://hourhand.cloud/terms` |
 | Microsoft Entra | Section 6 |
+| Stripe Connect (hosts outside India) | Section 5c. Sandbox first |
 | Razorpay | Test mode first: webhook `https://hourhand.cloud/api/webhooks/razorpay` (events `subscription.*`), 4 test Plans, one test payment end to end. Then live keys (the live pair shared in chat on 2026-10-11 must be **regenerated** first) |
 
 ## 3. Coolify application
@@ -88,6 +89,8 @@ iCloud calendars need no server keys: each host connects with their own Apple ID
 **Batches A–C (2026-10-11):** migrations now run to `0020` (0019 is skipped on purpose); the container applies them on start, as before. No new required variables. Monthly earnings emails, waitlist emails, Duo invitations and waitlist cleanup run inside the existing job runner. Profile photos are stored in Postgres (up to 2 MB each), so they are in your database backups.
 
 **Batch D (2026-10-11):** migrations run to `0023`. No new variables. Booking pages can now be embedded on other sites through `/embed.js`; the dashboard, sign-in, API and legal pages refuse to be framed. Only https redirect links are kept on event types (any other stored value was cleared by `0023`).
+
+**Roadmap 1.4, Stripe Connect (2026-11-15):** migrations `0034_stripe_connect` and `0035_stripe_payments` (0026 to 0033 belong to other work and may land in any order; each migration is independent). New Runtime variables `STRIPE_SECRET_KEY` and `STRIPE_CONNECT_WEBHOOK_SECRET` (section 5c). Without them, nothing changes for Razorpay hosts and the Stripe option says it isn't set up.
 
 **Security fixes (2026-10-11):** if you put Cloudflare (or any other proxy) in front of Coolify, add its address ranges to `TRUSTED_PROXIES`, or every visitor shares one rate-limit bucket. Keep the app's own port closed to the internet so all traffic comes through Coolify's proxy.
 
@@ -352,6 +355,18 @@ Check after go-live: book on your own page with your phone and the WhatsApp tick
   ]
 }
 ```
+
+## 5c. Stripe Connect (roadmap 1.4: hosts outside India take payment through their own Stripe)
+
+Do all of this in a **Stripe sandbox first**, then repeat it in live mode.
+
+1. **Stripe Dashboard → Connect → Get started.** Choose the platform / SaaS setup, where hosts run their own businesses and accept their own payments. Fill in the Connect branding (business name, icon, brand colour); Stripe's hosted onboarding won't open without it. Hourhand creates accounts with Accounts v2 and the full Stripe Dashboard, so no OAuth client id is needed.
+2. **Workbench → Webhooks → Add destination**, **Events from: Connected accounts**, URL `https://hourhand.cloud/api/webhooks/stripe-connect`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `account.updated`, `account.application.deauthorized`. Copy its signing secret. This is a different endpoint and secret from the plans webhook (`/api/webhooks/stripe`, Your account).
+3. **Coolify env (Runtime only, never build-time):** `STRIPE_SECRET_KEY` (the sandbox key first; a restricted key also works if it can write Accounts v2, Account Links, Checkout Sessions and Refunds) and `STRIPE_CONNECT_WEBHOOK_SECRET`. Redeploy. The log line should end `Stripe on)`.
+4. **Test end to end in the sandbox:** sign in as a host on a paid plan, then Integrations → Stripe → pick a country → Connect Stripe → finish onboarding with Stripe's test data. The card shows "Taking payments" and the currency. Set a price on an event type and book it as a guest with card `4242 4242 4242 4242`. The booking confirms, the host sees "paid", and Stripe emails the receipt. Cancel it and the guest is refunded in the connected account's Dashboard. Try a package and a no-show deposit the same way.
+5. **Live:** swap in the live secret key and the live endpoint's signing secret. Connected accounts made in the sandbox don't carry over; hosts connect again.
+
+Production webhook endpoints for Connect receive both live and test events. Test events that don't match anything here are acknowledged and ignored.
 
 ## 6. Microsoft Entra (for B6: Outlook, Teams links, Sign in with Microsoft)
 
