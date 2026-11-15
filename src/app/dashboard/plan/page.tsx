@@ -71,6 +71,12 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       <p className="mt-2 max-w-xl text-text-muted">
         Free covers one host with {LIMITS.free.checkedCalendars} calendars checked for conflicts. Paid plans remove the limits and the footer.
       </p>
+      {!live && (
+        <p role="note" className="mt-4 max-w-xl rounded-md bg-surface p-3 text-text">
+          <strong>Demo:</strong> this demo lets you try several availability schedules, a Solo and Duo feature. On a real account, Free keeps{" "}
+          {LIMITS.free.schedules === 1 ? "one schedule" : `${LIMITS.free.schedules} schedules`}. The demo can&apos;t take payments.
+        </p>
+      )}
 
       {params.checkout === "done" && (
         <p role="status" className="mt-4 max-w-xl text-success">Checkout finished. Your plan switches on as soon as the payment provider confirms the payment, usually within a minute. Refresh to see it.</p>
