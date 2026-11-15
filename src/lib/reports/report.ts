@@ -32,9 +32,11 @@ export interface CurrencyTotals {
   netIncomeMinor: number;
   /** Deposits paid in the period and still held (owed back unless the guest doesn't show); not income. */
   depositsHeldMinor: number;
-  /** Fees as the provider reported them, or null when none were recorded. */
+  /** Gateway fees as the provider reported them on money captured in the period (GST included), or null when none are. */
   feesReportedMinor: number | null;
-  /** Razorpay's standard fee on what came in, for INR when fees weren't reported. */
+  /** The GST part of the reported fees: input tax a registered host may claim. */
+  feeTaxReportedMinor: number | null;
+  /** Razorpay's standard fee on INR income whose real fee isn't known yet, or null when every fee is known. */
   feeEstimateMinor: number | null;
 }
 
@@ -93,14 +95,16 @@ function totalsFor(currency: string, entries: MoneyEntry[]): CurrencyTotals {
   const depositsKeptMinor = sum((e) => e.type === "deposit_kept");
   const grossMinor = bookingsMinor + packagesMinor;
   const netSalesMinor = grossMinor - refundsMinor;
-  const income = entries.filter((e) => e.type === "sale" || e.type === "deposit_kept");
-  const reported = income.filter((e) => e.feeMinor !== null);
-  const received = grossMinor + depositsKeptMinor;
+  const fees = entries.filter((e) => e.type === "fee");
+  // Only income whose real fee isn't in yet is estimated, so a fee is never counted twice.
+  const unknown = entries.filter((e) => (e.type === "sale" || e.type === "deposit_kept") && e.feeMinor === null);
+  const unknownMinor = unknown.reduce((s, e) => s + e.amountMinor, 0);
   return {
     currency, bookingsMinor, packagesMinor, grossMinor, refundsMinor, netSalesMinor, depositsKeptMinor,
     netIncomeMinor: netSalesMinor + depositsKeptMinor, depositsHeldMinor: sum((e) => e.type === "deposit_held"),
-    feesReportedMinor: reported.length ? reported.reduce((s, e) => s + (e.feeMinor ?? 0), 0) : null,
-    feeEstimateMinor: currency === "INR" && reported.length < income.length ? Math.round((received * RAZORPAY_FEE_BP * 1.18) / 10_000) : null,
+    feesReportedMinor: fees.length ? fees.reduce((s, e) => s + e.amountMinor, 0) : null,
+    feeTaxReportedMinor: fees.length ? fees.reduce((s, e) => s + (e.feeTaxMinor ?? 0), 0) : null,
+    feeEstimateMinor: currency === "INR" && unknown.length ? Math.round((unknownMinor * RAZORPAY_FEE_BP * 1.18) / 10_000) : null,
   };
 }
 
@@ -171,7 +175,7 @@ export function summarize({ period, now, money, sessions, documents, trendFrom }
   const clients = new Map<string, ClientLine>();
   const lines = new Map<string, EventTypeLine>();
   for (const e of [...inPeriod].sort((a, b) => a.at.getTime() - b.at.getTime())) {
-    if (e.type === "deposit_held") continue;
+    if (e.type === "deposit_held" || e.type === "fee") continue;
     const sign = e.type === "refund" ? -1 : 1;
     if (e.clientKey) {
       const ck = `${e.currency}|${e.clientKey}`;

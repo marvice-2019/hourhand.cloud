@@ -29,7 +29,9 @@ export interface MonthlyEarnings {
   netMinor: number;
   /** GST on this month's invoices, less credit notes; part of net, owed to the government. */
   gstMinor: number;
-  /** An estimate of Razorpay's fee on what came in (2% + 18% GST); the settlement report is the real figure. */
+  /** Razorpay's fees as charged (GST included) on rupee money captured this month, where Razorpay has reported them. */
+  feesMinor: number;
+  /** An estimate (2% + 18% GST) for money whose real fee isn't in yet; 0 once every fee is known. */
   feeEstimateMinor: number;
   sessions: { held: number; noShows: number; cancelledByGuest: number; cancelledByHost: number; upcoming: number };
   byEventType: EarningsLine[];
@@ -52,7 +54,7 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
   if (!range || !UUID.test(hostId)) return null;
   const { from, to } = range;
   const args = [hostId, from, to];
-  const [money, refunds, packages, kept, held, gst, sessions, byBooking, byPackage, others] = await Promise.all([
+  const [money, refunds, packages, kept, held, gst, sessions, byBooking, byPackage, others, fees] = await Promise.all([
     db.query(`select coalesce(sum(amount_minor), 0)::bigint as total from payments
               where host_id = $1 and currency = 'INR' and kind = 'payment' and paid_at >= $2 and paid_at < $3 and status in ('paid', 'refund_pending', 'refunded')`, args),
     // A refund's month is when it was recorded.
@@ -85,6 +87,21 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
                 union all select p.currency, p.amount_minor from payments p join bookings b on b.id = p.booking_id join invitees i on i.booking_id = b.id
                   where p.host_id = $1 and p.kind = 'deposit' and p.status = 'paid' and i.no_show_at is not null and b.start_at >= $2 and b.start_at < $3
               ) m where upper(currency) <> 'INR' group by currency order by currency`, args),
+    // Razorpay's real fees on rupee money captured this month (refunded or not: a refund doesn't give the fee back), and
+    // the income whose fee isn't known yet, which is all that gets estimated.
+    db.query(`select coalesce(sum(fee), 0)::bigint as fees, coalesce(sum(unknown), 0)::bigint as unknown from (
+                select fee_minor as fee, 0 as unknown from payments
+                  where host_id = $1 and currency = 'INR' and fee_minor is not null and status in ('paid', 'refund_pending', 'refunded') and paid_at >= $2 and paid_at < $3
+                union all select fee_minor, 0 from package_purchases
+                  where host_id = $1 and currency = 'INR' and fee_minor is not null and status = 'paid' and paid_at >= $2 and paid_at < $3
+                union all select 0, amount_minor from payments
+                  where host_id = $1 and currency = 'INR' and kind = 'payment' and fee_minor is null and status in ('paid', 'refund_pending', 'refunded') and paid_at >= $2 and paid_at < $3
+                union all select 0, price_minor from package_purchases
+                  where host_id = $1 and currency = 'INR' and fee_minor is null and status = 'paid' and paid_at >= $2 and paid_at < $3
+                union all select 0, p.amount_minor from payments p join bookings b on b.id = p.booking_id join invitees i on i.booking_id = b.id
+                  where p.host_id = $1 and p.currency = 'INR' and p.kind = 'deposit' and p.fee_minor is null and p.status = 'paid' and i.no_show_at is not null
+                    and b.start_at >= $2 and b.start_at < $3
+              ) f`, args),
   ]);
   const n = (r: { rows: { total: string | number }[] }) => Number(r.rows[0].total);
   const bookingsMinor = n(money), packagesMinor = n(packages), refundsMinor = n(refunds), depositsKeptMinor = n(kept);
@@ -94,10 +111,12 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
   for (const r of byPackage.rows) line(r.id, r.name).packagesMinor = Number(r.total);
   const s = sessions.rows[0];
   const received = bookingsMinor + packagesMinor + depositsKeptMinor;
+  const unknownFeeMinor = Number(fees.rows[0].unknown);
   return {
     month, bookingsMinor, packagesMinor, refundsMinor, depositsKeptMinor, depositsHeldMinor: n(held),
     netMinor: received - refundsMinor, gstMinor: n(gst),
-    feeEstimateMinor: Math.round((received * RAZORPAY_FEE_BP * 1.18) / 10_000),
+    feesMinor: Number(fees.rows[0].fees),
+    feeEstimateMinor: Math.round((unknownFeeMinor * RAZORPAY_FEE_BP * 1.18) / 10_000),
     sessions: { held: s.held, noShows: s.no_shows, cancelledByGuest: s.by_guest, cancelledByHost: s.by_host, upcoming: s.upcoming },
     byEventType: [...lines.values()].sort((a, b) => b.bookingsMinor + b.packagesMinor - (a.bookingsMinor + a.packagesMinor)),
     otherCurrencies: others.rows.map((r) => ({ currency: String(r.currency).toUpperCase(), netMinor: Number(r.total) })).filter((o) => o.netMinor !== 0),
@@ -130,7 +149,7 @@ export function earningsCsv(e: MonthlyEarnings): string {
   const value = (v: string) => (/^-?\d+(\.\d+)?$/.test(v) ? v : cell(v));
   const rows = [
     ["Month", e.month], ["Bookings paid", r(e.bookingsMinor)], ["Packages paid", r(e.packagesMinor)], ["Deposits kept (no-shows)", r(e.depositsKeptMinor)],
-    ["Refunds", r(-e.refundsMinor)], ["Net received", r(e.netMinor)], ["of which GST", r(e.gstMinor)], ["Razorpay fee (estimate)", r(e.feeEstimateMinor)],
+    ["Refunds", r(-e.refundsMinor)], ["Net received", r(e.netMinor)], ["of which GST", r(e.gstMinor)], ["Razorpay fees (as charged)", r(e.feesMinor)], ["Razorpay fees (estimated until reported)", r(e.feeEstimateMinor)],
     ["Deposits still held", r(e.depositsHeldMinor)], ["Sessions held", String(e.sessions.held)], ["No-shows", String(e.sessions.noShows)],
     ["Cancelled by guest", String(e.sessions.cancelledByGuest)], ["Cancelled by you", String(e.sessions.cancelledByHost)],
     ...e.byEventType.map((l) => [`${l.eventName}`, r(l.bookingsMinor + l.packagesMinor)]),

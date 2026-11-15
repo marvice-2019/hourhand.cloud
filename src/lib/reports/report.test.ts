@@ -11,7 +11,7 @@ const period = resolvePeriod({ period: "custom", from: "2026-10-01", to: "2026-1
 const at = (s: string) => new Date(s);
 
 const entry = (o: Partial<MoneyEntry> & Pick<MoneyEntry, "type" | "amountMinor">): MoneyEntry => ({
-  source: "booking", currency: "INR", at: at("2026-10-10T06:00:00Z"), clientKey: "asha@example.in", clientName: "Asha", eventTypeId: "et1", eventName: "Coaching", feeMinor: null, ...o,
+  source: "booking", currency: "INR", at: at("2026-10-10T06:00:00Z"), clientKey: "asha@example.in", clientName: "Asha", eventTypeId: "et1", eventName: "Coaching", feeMinor: null, feeTaxMinor: null, ...o,
 });
 const session = (o: Partial<SessionRow>): SessionRow => ({
   startAt: at("2026-10-10T06:00:00Z"), status: "confirmed", cancelledBy: null, cancelledAt: null, rescheduled: false, noShow: false, cancelCutoffMinutes: 0,
@@ -28,6 +28,7 @@ describe("business report arithmetic", () => {
     entry({ type: "deposit_held", source: "deposit", amountMinor: 20_000, eventTypeId: "et3", eventName: "Intro" }),
     // A Stripe payment in dollars: its own totals, never added to rupees.
     entry({ type: "sale", currency: "USD", amountMinor: 9_900, clientKey: "sam@example.com", clientName: "Sam", feeMinor: 317 }),
+    entry({ type: "fee", currency: "USD", amountMinor: 317, clientKey: "sam@example.com", feeTaxMinor: 0 }),
     // September money for the trend only.
     entry({ type: "sale", amountMinor: 30_000, at: at("2026-09-20T06:00:00Z") }),
     // 1 Oct 00:30 in India is October, though UTC still says 30 September.
@@ -81,6 +82,24 @@ describe("business report arithmetic", () => {
     expect(percent(0.25)).toBe("25%");
   });
 
+  it("uses Razorpay's real fees where known and estimates only the rest", () => {
+    const r2 = summarize({
+      period, now, sessions: [], documents: [], trendFrom: period.from,
+      money: [
+        entry({ type: "sale", amountMinor: 100_000, feeMinor: 2_360 }),
+        entry({ type: "fee", amountMinor: 2_360, feeTaxMinor: 360 }),
+        entry({ type: "sale", amountMinor: 50_000 }), // fee not in yet
+        // A refunded deposit: its fee stays a cost though the money went back.
+        entry({ type: "fee", source: "deposit", amountMinor: 472, feeTaxMinor: 72 }),
+      ],
+    });
+    expect(r2.currencies[0]).toMatchObject({ feesReportedMinor: 2_832, feeTaxReportedMinor: 432, feeEstimateMinor: Math.round((50_000 * 200 * 1.18) / 10_000) });
+    expect(r2.topClients.map((c) => c.netMinor)).toEqual([150_000]); // fees aren't client revenue
+    const all = summarize({ period, now, sessions: [], documents: [], trendFrom: period.from,
+      money: [entry({ type: "sale", amountMinor: 100_000, feeMinor: 2_360 }), entry({ type: "fee", amountMinor: 2_360, feeTaxMinor: 360 })] });
+    expect(all.currencies[0].feeEstimateMinor).toBeNull(); // every fee known: no estimate at all
+  });
+
   it("shows INR with Indian digit grouping", () => {
     expect(money(123_456_750, "INR")).toBe("₹12,34,567.50");
     expect(money(150_000_00, "INR")).toBe("₹1,50,000");
@@ -122,15 +141,17 @@ describe("CSV exports", () => {
   it("writes a P&L per currency with GST and fees taken off", () => {
     const r = summarize({
       period, now, trendFrom: period.from, sessions: [],
-      money: [entry({ type: "sale", amountMinor: 118_000 }), entry({ type: "refund", amountMinor: 18_000 }), entry({ type: "sale", currency: "USD", amountMinor: 1_000, feeMinor: 59 })],
+      money: [entry({ type: "sale", amountMinor: 118_000 }), entry({ type: "refund", amountMinor: 18_000 }), entry({ type: "sale", currency: "USD", amountMinor: 1_000, feeMinor: 59 }),
+        entry({ type: "fee", currency: "USD", amountMinor: 59, feeTaxMinor: 9 })],
       documents: [doc({ taxableMinor: 100_000, cgstMinor: 9_000, sgstMinor: 9_000, totalMinor: 118_000 })],
     });
     const csv = pnlCsv(r, "Oct");
     expect(csv).toContain("Net income,INR,1000.00\r\n");
     expect(csv).toContain("Less: GST output tax (from invoices),INR,-180.00\r\n");
     expect(csv).toContain("Less: refunds,INR,-180.00\r\n");
-    expect(csv).toContain(`Less: payment gateway fees (estimate),INR,-${((118_000 * 0.02 * 1.18) / 100).toFixed(2)}\r\n`);
-    expect(csv).toContain("Less: payment gateway fees (reported),USD,-0.59\r\n");
-    expect(csv).not.toMatch(/GST.*USD/);
+    expect(csv).toContain(`Less: payment gateway fees (estimated until Razorpay reports them),INR,-${((118_000 * 0.02 * 1.18) / 100).toFixed(2)}\r\n`);
+    expect(csv).toContain("Less: payment gateway fees (as charged incl. GST),USD,-0.59\r\n");
+    expect(csv).toContain("Memo: GST in gateway fees (input tax credit; check with your CA),USD,0.09\r\n");
+    expect(csv).not.toMatch(/output tax.*USD/); // GST output tax is a rupee figure only
   });
 });

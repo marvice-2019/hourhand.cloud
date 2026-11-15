@@ -6,6 +6,7 @@ import { purgeClosedAccounts } from "../data/account-lifecycle";
 import type { Mailer } from "../mail/mailer";
 import { processRefunds, reconcilePayments, releaseDeposits, type PaymentCheckDeps } from "../payments/booking-payments";
 import { reconcilePurchases } from "../packages/packages";
+import { recordMissingFees } from "../payments/fees";
 import { queueMonthlyReports } from "../earnings";
 import { pruneWaitlist } from "../waitlist";
 import { closeDuePolls } from "../polls/polls";
@@ -61,6 +62,7 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
         if (opts.payments) await releaseDeposits(opts.pool, new Date()).catch((error) => console.error("[jobs] deposit release failed", error));
         if (opts.payments) await processRefunds({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] refunds failed", error));
         if (opts.payments) await reconcilePurchases({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] package check failed", error));
+        if (opts.payments) await recordMissingFees({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] fee check failed", error));
         // Last month's earnings emails: queued at most once an hour, and once per host per month by their dedupe key.
         if (Date.now() - lastReports > 3_600_000) {
           lastReports = Date.now();

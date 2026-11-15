@@ -46,8 +46,10 @@ export default async function EarningsPage({ searchParams }: { searchParams: Pro
       tile("Net income", m(c.netIncomeMinor), "Net sales + forfeited deposits"),
       ...(c.currency === "INR" && r ? [tile("GST collected (output tax)", m(r.gst.outputTaxMinor), "From your invoices less credit notes; owed to the government")] : []),
       c.feesReportedMinor !== null
-        ? tile("Gateway fees", m(c.feesReportedMinor), "As reported by the payment provider")
-        : c.feeEstimateMinor !== null ? tile("Gateway fees (estimate)", `≈ ${m(c.feeEstimateMinor)}`, "Razorpay's standard 2% + GST; your settlement report has the exact figure") : null,
+        ? tile("Gateway fees", m(c.feesReportedMinor + (c.feeEstimateMinor ?? 0)),
+          [`As Razorpay charged them, GST included${c.feeTaxReportedMinor ? ` (${m(c.feeTaxReportedMinor)} GST, claimable as input tax)` : ""}`,
+            c.feeEstimateMinor !== null ? `; includes ≈ ${m(c.feeEstimateMinor)} estimated for payments whose fee isn't in yet` : ""].join(""))
+        : c.feeEstimateMinor !== null ? tile("Gateway fees (estimate)", `≈ ${m(c.feeEstimateMinor)}`, "Razorpay's standard 2% + GST until Razorpay reports the real fee") : null,
     ];
   };
   const maxTrend = r ? Math.max(1, ...r.trend.map((t) => Math.abs(t.netIncomeMinor))) : 1;
