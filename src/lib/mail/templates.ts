@@ -8,6 +8,10 @@ import { buildIcs } from "./ics";
 import { LOCATION_KEYS, isLocale, t, type Locale } from "../i18n/guest";
 import { mt, type MailKey } from "../i18n/mail";
 import type { Attachment } from "./mailer";
+import { PROVIDER_NAMES, type CalendarProviderId } from "../calendar/provider";
+
+/** What hosts call each calendar, for alert subjects. */
+const CALENDAR_NAMES: Record<CalendarProviderId, string> = { google: "Google Calendar", microsoft: "Outlook calendar", icloud: "iCloud Calendar" };
 
 export interface BookingMailContext {
   bookingId: string;
@@ -259,11 +263,12 @@ export function renderBookingMail(kind: BookingEmailKind, c: BookingMailContext)
 }
 
 /** Tells a host their calendar connection is failing, so Hourhand has stopped offering times. Sent once per outage. */
-export function renderCalendarAlert(a: { accountEmail: string; disconnected: boolean; lastError: string | null; calendarsUrl: string }): RenderedMail {
-  return render(a.disconnected ? "Reconnect your Google Calendar" : "Hourhand can't read your Google Calendar", {
+export function renderCalendarAlert(a: { provider: CalendarProviderId; accountEmail: string; disconnected: boolean; lastError: string | null; calendarsUrl: string }): RenderedMail {
+  const calendar = CALENDAR_NAMES[a.provider];
+  return render(a.disconnected ? `Reconnect your ${calendar}` : `Hourhand can't read your ${calendar}`, {
     heading: a.disconnected ? "Your calendar is disconnected" : "Your calendar isn't syncing",
     intro: a.disconnected
-      ? `Google no longer lets Hourhand use ${a.accountEmail}. Until you reconnect it, your booking pages show no times, so nobody can book over your meetings.`
+      ? `${PROVIDER_NAMES[a.provider]} no longer lets Hourhand use ${a.accountEmail}. Until you reconnect it, your booking pages show no times, so nobody can book over your meetings.`
       : `Hourhand hasn't been able to read ${a.accountEmail} for a few minutes. Until it can, your booking pages show no times, so nobody can book over your meetings. It keeps retrying.`,
     rows: a.lastError ? [["Last error", a.lastError.slice(0, 200)]] : [],
     link: { label: a.disconnected ? "Reconnect your calendar" : "Check your calendars", url: a.calendarsUrl },

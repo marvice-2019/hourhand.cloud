@@ -286,11 +286,11 @@ async function runCalendarJob(pool: pg.Pool, deps: CalendarDeps, c: Claimed, r: 
 async function renderAlert(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
   const connectionId = /^calendar:([0-9a-f-]{36}):alert:/.exec(c.dedupe_key)?.[1];
   const { rows: [conn] } = connectionId
-    ? await pool.query("select account_email, status, last_error from calendar_connections where id = $1", [connectionId])
+    ? await pool.query("select provider, account_email, status, last_error from calendar_connections where id = $1", [connectionId])
     : { rows: [] };
   if (!conn) return { skip: "calendar connection removed" };
   if (conn.status === "ok") return { skip: "calendar connection recovered" };
-  return renderCalendarAlert({ accountEmail: conn.account_email, disconnected: conn.status === "disconnected", lastError: conn.last_error, calendarsUrl: `${baseUrl}/dashboard/calendars` });
+  return renderCalendarAlert({ provider: conn.provider, accountEmail: conn.account_email, disconnected: conn.status === "disconnected", lastError: conn.last_error, calendarsUrl: `${baseUrl}/dashboard/calendars` });
 }
 
 /** The renewal reminder goes only if that same period is still about to renew: not after a cancel, pause or renewal. */
