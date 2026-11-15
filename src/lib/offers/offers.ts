@@ -3,7 +3,7 @@ import type pg from "pg";
 import { LIMITS, type Plan } from "../billing/plans";
 import { COUPON_LIMITS, type createRateLimiter } from "../rate-limit";
 import {
-  appliesTo, campaignLive, CODE_PATTERN, normaliseCode, pickBest, slidingCharge,
+  appliesTo, campaignLive, CODE_PATTERN, FIXED_CURRENCY, normaliseCode, pickBest, slidingCharge, usableIn,
   type AdjustmentKind, type Candidate, type Discount, type SlidingScale,
 } from "./pricing";
 
@@ -22,7 +22,12 @@ const UNLINKED_HOLD_MS = 2 * MIN;
 /** A package checkout has no hold of its own; its coupon use is held this long while it is pending. */
 const PACKAGE_HOLD_MS = 20 * MIN;
 
-export type PriceItem = { kind: "event_type" | "package"; id: string; listMinor: number };
+/**
+ * What is being priced. `currency` is the price's ISO code, INR when left out. Rupee amounts (fixed codes, campaigns,
+ * first-session discounts, sliding scales) apply only to INR prices; percent offers apply in any currency.
+ */
+export type PriceItem = { kind: "event_type" | "package"; id: string; listMinor: number; currency?: string };
+const currencyOf = (item: PriceItem) => (item.currency ?? FIXED_CURRENCY).toUpperCase();
 
 /** The adjustment a booking or purchase got, as the guest, the confirmation and the invoice explain it. */
 export interface AppliedOffer {
@@ -111,6 +116,7 @@ interface CouponRow { id: string; code: string; discount_kind: Discount["kind"];
 /** Whether a coupon can be used by this email on this item right now (uses counted inside the caller's transaction). */
 async function couponUsable(db: Db, c: CouponRow, item: PriceItem, email: string, now: Date): Promise<boolean> {
   if (c.expires_at && c.expires_at.getTime() <= now.getTime()) return false;
+  if (!usableIn({ kind: c.discount_kind, value: c.discount_value }, currencyOf(item))) return false;
   if (!appliesTo({ eventTypeIds: c.event_type_ids, packageIds: c.package_ids }, item)) return false;
   if (c.max_uses === null && c.max_uses_per_email === null) return true;
   const uses = await couponUses(db, c.id, now, email);
@@ -223,8 +229,10 @@ export async function resolvePrice(pool: pg.Pool, input: ResolvePriceInput): Pro
   if (!LIMITS[plan].offers) return code ? refuse(400, "coupon_invalid", { couponCode: COUPON_INVALID }) : list;
   if (code && !CODE_PATTERN.test(code)) return refuse(400, "coupon_invalid", { couponCode: COUPON_INVALID });
 
-  // Pay what you can: the guest's amount is the price, with nothing else on top.
-  const scale = item.kind === "event_type" ? await slidingScaleFor(pool, item.id) : null;
+  // Pay what you can: the guest's amount is the price, with nothing else on top. Its range is set in rupees, so it
+  // applies to INR prices only; on another currency the event type keeps its list price.
+  const currency = currencyOf(item);
+  const scale = item.kind === "event_type" && currency === FIXED_CURRENCY ? await slidingScaleFor(pool, item.id) : null;
   if (scale) {
     if (code) return refuse(400, "coupon_invalid", { couponCode: SLIDING_NO_COUPON });
     const charge = slidingCharge(scale, input.payMinor);
@@ -252,7 +260,7 @@ export async function resolvePrice(pool: pg.Pool, input: ResolvePriceInput): Pro
     candidates.push({ kind: "coupon", label: `Code ${c.code}`, code: c.code, couponId: c.id, discount: { kind: c.discount_kind, value: c.discount_value } });
   }
 
-  const best = pickBest(item.listMinor, candidates);
+  const best = pickBest(item.listMinor, candidates, currency);
   const couponNotUsed = coupon !== null && best?.candidate.kind !== "coupon";
   if (!best) return { ...list, ...(couponNotUsed ? { couponNotUsed } : {}) };
   const offer: AppliedOffer = {
@@ -330,19 +338,22 @@ export interface PagePricing {
 export async function pagePricing(db: Db, hostId: string, plan: Plan, item: PriceItem, now: Date): Promise<PagePricing> {
   const none: PagePricing = { listMinor: item.listMinor, campaign: null, sliding: null, firstSession: null, coupons: false };
   if (!LIMITS[plan].offers || !UUID.test(hostId)) return none;
-  const sliding = item.kind === "event_type" ? await slidingScaleFor(db, item.id) : null;
+  const currency = currencyOf(item);
+  const sliding = item.kind === "event_type" && currency === FIXED_CURRENCY ? await slidingScaleFor(db, item.id) : null;
   if (sliding) return { ...none, sliding };
   const campaigns = (await liveCampaigns(db, hostId, now)).filter((c) => appliesTo(c, item));
-  const best = pickBest(item.listMinor, campaigns.map((c) => ({ kind: "campaign" as const, label: c.name, discount: c.discount, campaignId: c.id })));
+  const best = pickBest(item.listMinor, campaigns.map((c) => ({ kind: "campaign" as const, label: c.name, discount: c.discount, campaignId: c.id })), currency);
   const campaign = best ? campaigns.find((c) => c.id === best.candidate.campaignId) ?? null : null;
   const { rows: [{ coupons }] } = await db.query(
     `select exists (select 1 from offer_coupons where user_id = $1 and active and (expires_at is null or expires_at > $2)
+       and ($5 = 'INR' or discount_kind = 'percent')
        and ((event_type_ids = '{}' and package_ids = '{}') or $3::uuid = any(case when $4 = 'event_type' then event_type_ids else package_ids end))) as coupons`,
-    [hostId, now, item.id, item.kind]);
+    [hostId, now, item.id, item.kind, currency]);
+  const first = item.kind === "event_type" ? await firstSessionOffer(db, hostId) : null;
   return {
     listMinor: item.listMinor, sliding: null, coupons,
     campaign: campaign && best ? { name: campaign.name, banner: campaign.banner, chargeMinor: item.listMinor - best.discountMinor, discountMinor: best.discountMinor } : null,
-    firstSession: item.kind === "event_type" ? await firstSessionOffer(db, hostId) : null,
+    firstSession: first && usableIn(first, currency) ? first : null,
   };
 }
 

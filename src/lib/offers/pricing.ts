@@ -10,7 +10,14 @@ export interface Discount { kind: DiscountKind; value: number }
 
 export type AdjustmentKind = "coupon" | "first_session" | "campaign" | "sliding_scale";
 
-/** Razorpay's smallest order is ₹1, so no offer takes a price below it. */
+/**
+ * Fixed amounts (codes, campaigns, the first-session discount) are set in rupees, so they only apply to an INR price.
+ * A percent works on a price in any currency.
+ */
+export const FIXED_CURRENCY = "INR";
+export const usableIn = (d: Discount, currency: string): boolean => d.kind === "percent" || currency === FIXED_CURRENCY;
+
+/** Razorpay's smallest order is ₹1 (and Stripe's is about that in USD, GBP or EUR), so no offer takes a price below 100 minor units. */
 export const MIN_CHARGE_MINOR = 100;
 export const MAX_PERCENT = 90;
 
@@ -33,10 +40,11 @@ export interface Candidate {
  * The one adjustment a booking gets: whichever takes the most off. On a tie a campaign or first-session discount wins
  * over a coupon, so the client's code isn't used up for nothing.
  */
-export function pickBest(listMinor: number, candidates: Candidate[]): { candidate: Candidate; discountMinor: number } | null {
+export function pickBest(listMinor: number, candidates: Candidate[], currency: string = FIXED_CURRENCY): { candidate: Candidate; discountMinor: number } | null {
   const rank: Record<Candidate["kind"], number> = { campaign: 0, first_session: 1, coupon: 2 };
   let best: { candidate: Candidate; discountMinor: number } | null = null;
   for (const candidate of candidates) {
+    if (!usableIn(candidate.discount, currency)) continue;
     const discountMinor = discountAmount(listMinor, candidate.discount);
     if (discountMinor <= 0) continue;
     if (!best || discountMinor > best.discountMinor || (discountMinor === best.discountMinor && rank[candidate.kind] < rank[best.candidate.kind])) {

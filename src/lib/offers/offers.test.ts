@@ -21,7 +21,7 @@ import { createCampaign, createCoupon, endOfDay, saveFirstSession, saveSlidingSc
 import { applicationState, campaignBanner, couponUses, offerForBooking, pagePricing, resolvePrice, type ResolvePriceInput } from "./offers";
 import { renderBookingMail, type BookingMailContext } from "../mail/templates";
 import { handleQuote } from "./quote";
-import { appliesTo, campaignLive, discountAmount, pickBest, slidingCharge, type Candidate } from "./pricing";
+import { appliesTo, campaignLive, discountAmount, pickBest, slidingCharge, usableIn, type Candidate } from "./pricing";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const MIN = 60_000;
@@ -48,6 +48,18 @@ describe("offer arithmetic", () => {
     const coupon: Candidate = { kind: "coupon", label: "Code TEN", discount: { kind: "percent", value: 10 }, couponId: "c" };
     const campaign: Candidate = { kind: "campaign", label: "Diwali", discount: { kind: "fixed", value: 10_000 }, campaignId: "k" };
     expect(pickBest(100_000, [coupon, campaign])!.candidate.kind).toBe("campaign");
+  });
+
+  it("rupee amounts apply only to INR prices; percents apply in any currency", () => {
+    expect(usableIn({ kind: "fixed", value: 20_000 }, "INR")).toBe(true);
+    expect(usableIn({ kind: "fixed", value: 20_000 }, "USD")).toBe(false);
+    expect(usableIn({ kind: "percent", value: 20 }, "GBP")).toBe(true);
+    const fixed: Candidate = { kind: "coupon", label: "Code FLAT", discount: { kind: "fixed", value: 5_000 }, couponId: "c" };
+    const pct: Candidate = { kind: "campaign", label: "Ten", discount: { kind: "percent", value: 10 }, campaignId: "k" };
+    // On ₹100 the ₹50 code wins; on $100 it doesn't count at all, so the 10% campaign applies.
+    expect(pickBest(10_000, [fixed, pct], "INR")!.candidate.kind).toBe("coupon");
+    expect(pickBest(10_000, [fixed, pct], "USD")).toEqual({ candidate: pct, discountMinor: 1_000 });
+    expect(pickBest(10_000, [fixed], "EUR")).toBeNull();
   });
 
   it("keeps a sliding-scale pick inside the host's range, defaulting to the suggestion", () => {
@@ -434,6 +446,26 @@ describe.skipIf(!BASE)("offers (Postgres)", () => {
     expect(await handleQuote(store, deps(), { packageId: pkg.id, couponCode: "QUOTE15" }, new Date())).toMatchObject({ status: 200, body: { chargeMinor: 255_000 } });
     expect(await handleQuote(store, deps(), { slug: "priya", event: "nope" }, new Date())).toMatchObject({ status: 404 });
     expect(await handleQuote(store, null, { slug: "priya", event: et.slug }, new Date())).toMatchObject({ status: 409 });
+  });
+
+  it("on a price in another currency: percent codes and campaigns apply, rupee amounts and the sliding scale don't", async () => {
+    await coupon("PCT10", { discount: { kind: "percent", value: 10 } });
+    await coupon("FLAT200", { discount: { kind: "fixed", value: 20_000 } });
+    await createCampaign(pool, priya.id, { name: "Flat campaign", banner: "x", discount: { kind: "fixed", value: 50_000 }, startsOn: today(-1), endsOn: today(1), eventTypeIds: [], packageIds: [] });
+    await saveFirstSession(pool, priya.id, { kind: "fixed", value: 30_000 }, true);
+    const usd = { kind: "event_type" as const, id: et.id, listMinor: 10_000, currency: "usd" };
+    const go = (couponCode: string | null, item = usd) => resolvePrice(pool, { hostId: priya.id, plan: "solo", item, email: email(), couponCode, payMinor: null, idempotencyKey: randomUUID(), now: new Date(), reserve: true });
+    // No usable offer on $100: the fixed campaign and fixed first-session discount are skipped.
+    expect(await go(null)).toEqual({ ok: true, listMinor: 10_000, chargeMinor: 10_000, offer: null });
+    expect(await go("PCT10")).toMatchObject({ ok: true, chargeMinor: 9_000, offer: { kind: "coupon", code: "PCT10" } });
+    expect(await go("FLAT200")).toMatchObject({ ok: false, status: 400, body: { error: "coupon_invalid" } });
+    // The same fixed campaign still applies to an INR price.
+    expect(await go(null, { ...usd, listMinor: 118_000, currency: "INR" })).toMatchObject({ ok: true, offer: { kind: "campaign" } });
+    // A sliding scale is set in rupees: a USD price ignores it and charges its list price.
+    await saveSlidingScale(pool, priya.id, et.id, { minMinor: 50_000, suggestedMinor: 120_000, maxMinor: 200_000, note: null });
+    expect(await resolvePrice(pool, { hostId: priya.id, plan: "solo", item: usd, email: email(), couponCode: null, payMinor: 60_000, idempotencyKey: randomUUID(), now: new Date(), reserve: false }))
+      .toMatchObject({ ok: true, chargeMinor: 10_000, offer: null });
+    expect(await pagePricing(pool, priya.id, "solo", usd, new Date())).toMatchObject({ sliding: null, campaign: null, firstSession: null, coupons: true });
   });
 
   it("rate-limits coupon tries per client address and per event type", async () => {
