@@ -2,13 +2,17 @@ import Link from "next/link";
 import { ICloudConnectForm } from "@/components/ICloudConnectForm";
 import { Button, buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Input, Label } from "@/components/ui/Input";
 import { authEnabled } from "@/lib/auth/auth";
 import { requireOwnAccount } from "@/lib/auth/session";
 import { calendarDeps } from "@/lib/calendar/env";
 import { PROVIDER_NAMES } from "@/lib/calendar/provider";
 import { store, type CalendarConnection } from "@/lib/data";
 import { SYNC_STALE_AFTER_MINUTES } from "@/lib/slots";
-import { disconnectCalendar, toggleConflictCheck, useForBookings } from "./actions";
+import { getPool } from "@/lib/data/pg-store";
+import { HOST_ALERT_ERRORS, type HostAlertError } from "@/lib/host-alerts";
+import { whatsappConfig } from "@/lib/whatsapp-cloud";
+import { disconnectCalendar, saveWhatsAppAlerts, toggleConflictCheck, useForBookings } from "./actions";
 
 // The connect links never prefetch: a prefetch would start an OAuth handshake nobody asked for.
 export const dynamic = "force-dynamic";
@@ -50,6 +54,12 @@ export default async function CalendarsPage({ searchParams }: { searchParams: Pr
   const canICloud = Boolean(providers.icloud);
   const canConnect = canGoogle || canOutlook || canICloud;
   const now = new Date();
+  // WhatsApp sync alerts: only offered once WhatsApp is set up on this server.
+  const alertsOffered = live && Boolean(whatsappConfig());
+  const alertSettings = alertsOffered
+    ? (await getPool(process.env.DATABASE_URL as string).query("select whatsapp_number, whatsapp_alerts from users where id = $1", [user.id])).rows[0]
+    : null;
+  const alertsError = params.alerts_error && Object.hasOwn(HOST_ALERT_ERRORS, params.alerts_error) ? HOST_ALERT_ERRORS[params.alerts_error as HostAlertError] : null;
 
   return (
     <div>
@@ -151,6 +161,26 @@ export default async function CalendarsPage({ searchParams }: { searchParams: Pr
         </div>
       ) : (
         <p className="mt-6 max-w-xl text-sm text-text-muted">{live ? MESSAGES.not_configured : MESSAGES.demo}</p>
+      )}
+
+      {alertsOffered && (
+        <Card className="mt-6 max-w-2xl">
+          <h2 id="alerts" className="font-semibold text-text">Sync alerts on WhatsApp</h2>
+          <p className="mt-1 text-sm text-text-muted">We always email you if a calendar stops syncing. Add WhatsApp to hear about it on your phone too.</p>
+          {params.alerts === "saved" && <p role="status" className="mt-3 text-success">Saved.</p>}
+          <form action={saveWhatsAppAlerts} className="mt-4 grid gap-3">
+            <div className="max-w-xs">
+              <Label htmlFor="alert-phone">WhatsApp number</Label>
+              <Input id="alert-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+91 98765 43210"
+                defaultValue={alertSettings?.whatsapp_number ? `+${alertSettings.whatsapp_number}` : ""} error={alertsError ?? undefined} />
+            </div>
+            <label className="flex min-h-11 items-center gap-3 text-sm text-text">
+              <input name="alerts" type="checkbox" defaultChecked={Boolean(alertSettings?.whatsapp_alerts)} className="size-5" />
+              WhatsApp me if a calendar stops syncing
+            </label>
+            <div><Button type="submit" size="sm">Save</Button></div>
+          </form>
+        </Card>
       )}
     </div>
   );

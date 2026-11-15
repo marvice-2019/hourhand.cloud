@@ -165,7 +165,7 @@ describe.skipIf(!BASE)("WhatsApp sending (Postgres)", () => {
   describe("host calendar sync alert", () => {
     const outage = async (opts: { phone: string | null; alerts: boolean; provider?: string }) => {
       await pool.query("delete from calendar_connections where user_id = $1", [priya.id]);
-      await pool.query("update users set whatsapp_phone = $2, whatsapp_alerts = $3 where id = $1", [priya.id, opts.phone, opts.alerts]);
+      await pool.query("update users set whatsapp_number = $2, whatsapp_alerts = $3 where id = $1", [priya.id, opts.phone, opts.alerts]);
       const { rows: [c] } = await pool.query(
         "insert into calendar_connections (user_id, provider, account_email, credentials_encrypted) values ($1, $2, 'priya@outlook.com', '') returning id",
         [priya.id, opts.provider ?? "microsoft"]);
@@ -176,7 +176,7 @@ describe.skipIf(!BASE)("WhatsApp sending (Postgres)", () => {
       (await pool.query("select channel, recipient, status, last_error from notifications where kind = 'calendar_alert_host' order by channel")).rows;
     afterAll(async () => {
       await pool.query("delete from calendar_connections where user_id = $1", [priya.id]);
-      await pool.query("update users set whatsapp_phone = null, whatsapp_alerts = false where id = $1", [priya.id]);
+      await pool.query("update users set whatsapp_number = null, whatsapp_alerts = false where id = $1", [priya.id]);
     });
 
     it("queues a WhatsApp next to the email only when the host saved a number and ticked alerts", async () => {

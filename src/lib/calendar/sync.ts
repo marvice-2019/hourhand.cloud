@@ -118,7 +118,7 @@ export async function recordConnectionFailure(pool: Pick<pg.Pool, "query">, conn
   // Claim the one alert for this outage in a single statement: a sync and a calendar write failing together send one email.
   const claimed = await pool.query("update calendar_connections set alert_sent_at = $2 where id = $1 and alert_sent_at is null", [connectionId, now]);
   if (!claimed.rowCount) return;
-  const { rows: [host] } = await pool.query("select email, whatsapp_phone, whatsapp_alerts from users where id = $1 and deleted_at is null", [c.user_id]);
+  const { rows: [host] } = await pool.query("select email, whatsapp_number, whatsapp_alerts from users where id = $1 and deleted_at is null", [c.user_id]);
   if (!host) return;
   const key = `calendar:${connectionId}:alert:${now.toISOString()}`;
   await pool.query(
@@ -126,11 +126,11 @@ export async function recordConnectionFailure(pool: Pick<pg.Pool, "query">, conn
      values (null, $1, 'email', 'calendar_alert_host', $2, $3, $4) on conflict (dedupe_key) do nothing`,
     [c.user_id, host.email, now, key]);
   // The same alert on WhatsApp, if the host asked for it. Same outage, same once-only claim above.
-  if (host.whatsapp_alerts && host.whatsapp_phone) {
+  if (host.whatsapp_alerts && host.whatsapp_number) {
     await pool.query(
       `insert into notifications (booking_id, user_id, channel, kind, recipient, send_at, dedupe_key)
        values (null, $1, 'whatsapp', 'calendar_alert_host', $2, $3, $4) on conflict (dedupe_key) do nothing`,
-      [c.user_id, host.whatsapp_phone, now, `${key}:whatsapp`]);
+      [c.user_id, host.whatsapp_number, now, `${key}:whatsapp`]);
   }
 }
 

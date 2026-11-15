@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { authEnabled } from "@/lib/auth/auth";
-import { requireUser } from "@/lib/auth/session";
+import { requireOwnAccount, requireUser } from "@/lib/auth/session";
+import { parseHostAlertForm } from "@/lib/host-alerts";
 import { connectICloud, disconnectConnection, setAddToCalendar, setCheckConflicts } from "@/lib/calendar/connections";
 import { calendarDeps } from "@/lib/calendar/env";
 import { getPool } from "@/lib/data/pg-store";
@@ -26,6 +27,18 @@ export async function toggleConflictCheck(form: FormData): Promise<void> {
     kickJobs();
   }
   revalidatePath("/dashboard/calendars");
+}
+
+/** The host's own WhatsApp number and sync-alert tick. A Duo second person can't change the owner's number. */
+export async function saveWhatsAppAlerts(form: FormData): Promise<void> {
+  const user = await requireOwnAccount();
+  if (!authEnabled()) return;
+  const parsed = parseHostAlertForm(String(form.get("phone") ?? ""), form.get("alerts") === "on");
+  if ("error" in parsed) redirect(`/dashboard/calendars?alerts_error=${parsed.error}#alerts`);
+  await pool().query("update users set whatsapp_number = $2, whatsapp_alerts = $3, updated_at = now() where id = $1 and deleted_at is null",
+    [user.id, parsed.phone, parsed.alerts]);
+  revalidatePath("/dashboard/calendars");
+  redirect("/dashboard/calendars?alerts=saved#alerts");
 }
 
 export async function useForBookings(form: FormData): Promise<void> {
