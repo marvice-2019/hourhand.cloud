@@ -176,9 +176,9 @@ sleep 2
 
 fresh
 : > $OUT/srv-pv.log
-node e2e/start-e2e.mjs 3201 $DB > $OUT/srv-pv.log 2>&1 & SRV=$!
-up 3201
-node e2e/e2e-privacy.mjs 3201 $OUT/srv-pv.log $DB > $OUT/out-privacy.txt 2>&1
+node e2e/start-e2e.mjs 3211 $DB > $OUT/srv-pv.log 2>&1 & SRV=$!
+up 3211
+node e2e/e2e-privacy.mjs 3211 $OUT/srv-pv.log $DB > $OUT/out-privacy.txt 2>&1
 kill $SRV
 summary Privacy $OUT/out-privacy.txt
 sleep 2
