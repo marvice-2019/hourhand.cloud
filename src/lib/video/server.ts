@@ -7,6 +7,7 @@ import { getPool } from "../data/pg-store";
 import { jitsiConfig } from "./config";
 import { videoAvailability, type VideoAvailability } from "./gate";
 import type { JoinDeps } from "./join";
+import { memoryExtraGuestLinks, pgExtraGuestLinks, type ExtraGuestLinks } from "./guest-links";
 import { memoryRoomStore, pgRoomStore, type RoomStore } from "./rooms";
 
 // Wiring for the app: the real store, plan, session and room table. The rules themselves live in join.ts and gate.ts.
@@ -23,7 +24,7 @@ export async function videoAvailabilityFor(hostId: string): Promise<VideoAvailab
   return videoAvailability(await planOf(hostId), jitsiConfig() !== null);
 }
 
-const shared = globalThis as typeof globalThis & { __hourhandVideoRooms?: RoomStore };
+const shared = globalThis as typeof globalThis & { __hourhandVideoRooms?: RoomStore; __hourhandVideoGuests?: ExtraGuestLinks };
 
 export function joinDeps(now: Date): JoinDeps {
   const p = pool();
@@ -34,6 +35,7 @@ export function joinDeps(now: Date): JoinDeps {
     planFor: planOf,
     signedInHostId: async () => (await getHostContext())?.host.id ?? null,
     rooms: p ? pgRoomStore(p) : (shared.__hourhandVideoRooms ??= memoryRoomStore()),
+    extraGuests: p ? pgExtraGuestLinks(p) : (shared.__hourhandVideoGuests ??= memoryExtraGuestLinks()),
     config: jitsiConfig(),
     now,
   };

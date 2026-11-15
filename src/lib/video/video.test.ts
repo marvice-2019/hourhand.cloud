@@ -5,9 +5,10 @@ import { renderBookingMail, type BookingMailContext } from "../mail/templates";
 import type { BookingEmailKind } from "../data/notifications";
 import { jitsiConfig, jitsiSetupProblem, type JitsiConfig } from "./config";
 import { VIDEO_NEEDS_PLAN, VIDEO_NOT_SET_UP, videoAvailability, videoGateError } from "./gate";
-import { checkJoin, resolveHostJoin, resolveJoin, type JoinDeps, type JoinResult } from "./join";
+import { memoryExtraGuestLinks } from "./guest-links";
+import { checkJoin, resolveExtraGuestJoin, resolveHostJoin, resolveJoin, type JoinDeps, type JoinResult } from "./join";
 import { JITSI_AUDIENCE, joinClaims, mintJoinToken, verifyJwt } from "./jwt";
-import { hostVideoJoinUrl, videoJoinUrl, videoJoinUrlFor } from "./links";
+import { extraGuestVideoJoinUrl, hostVideoJoinUrl, videoJoinUrl, videoJoinUrlFor } from "./links";
 import { memoryRoomStore, newRoomName, roomKey } from "./rooms";
 
 const MIN = 60_000;
@@ -35,7 +36,7 @@ function booking(over: Partial<BookingWithInvitee> = {}, invitee: Partial<Bookin
   };
 }
 
-function deps(bookings: BookingWithInvitee[], opts: { signedIn?: string | null; plan?: Plan; config?: JitsiConfig | null; now?: Date; rooms?: ReturnType<typeof memoryRoomStore> } = {}): JoinDeps {
+function deps(bookings: BookingWithInvitee[], opts: { signedIn?: string | null; plan?: Plan; config?: JitsiConfig | null; now?: Date; rooms?: ReturnType<typeof memoryRoomStore>; extraGuests?: ReturnType<typeof memoryExtraGuestLinks> } = {}): JoinDeps {
   return {
     getBookingByManageToken: async (t) => bookings.find((b) => b.invitee.manageToken === t) ?? null,
     getBooking: async (hostId, id) => bookings.find((b) => b.id === id && b.hostId === hostId) ?? null,
@@ -43,6 +44,7 @@ function deps(bookings: BookingWithInvitee[], opts: { signedIn?: string | null; 
     planFor: async () => opts.plan ?? "solo",
     signedInHostId: async () => opts.signedIn ?? null,
     rooms: opts.rooms ?? memoryRoomStore(),
+    extraGuests: opts.extraGuests ?? memoryExtraGuestLinks(),
     config: opts.config === undefined ? cfg : opts.config,
     now: opts.now ?? new Date(START.getTime() - 5 * MIN),
   };
@@ -212,6 +214,43 @@ describe("who may join", () => {
   });
 });
 
+describe("extra guests' own links", () => {
+  const withGuests = (over: Partial<BookingWithInvitee> = {}) => booking(over, { guests: ["asha@example.com", "dev@example.com"] });
+
+  it("let each extra guest in as a participant under their own email, in the booking's room", async () => {
+    const b = withGuests();
+    const d = deps([b]);
+    const asha = await d.extraGuests.linkFor(b.id, b.hostId, "asha@example.com");
+    const dev = await d.extraGuests.linkFor(b.id, b.hostId, "dev@example.com");
+    expect(asha).not.toBe(dev);
+    expect(await d.extraGuests.linkFor(b.id, b.hostId, "asha@example.com")).toBe(asha);
+    const joined = tokenOf(await resolveExtraGuestJoin(d, asha));
+    expect(joined.claims.context.user).toMatchObject({ moderator: false, lobby_bypass: false, email: "asha@example.com", name: "asha@example.com" });
+    expect(joined.room).toBe(tokenOf(await resolveJoin(d, b.invitee.manageToken)).room);
+    expect(asha).not.toContain(b.invitee.manageToken);
+  });
+
+  it("stop working when the email is taken off the booking, the booking is cancelled, or the link is unknown", async () => {
+    const b = withGuests();
+    const links = memoryExtraGuestLinks();
+    const asha = await links.linkFor(b.id, b.hostId, "asha@example.com");
+    expect(await resolveExtraGuestJoin(deps([booking({}, { guests: ["dev@example.com"] })], { extraGuests: links }), asha)).toMatchObject({ ok: false, reason: "not_found" });
+    expect(await resolveExtraGuestJoin(deps([withGuests({ status: "cancelled" })], { extraGuests: links }), asha)).toMatchObject({ ok: false, reason: "cancelled" });
+    expect(await resolveExtraGuestJoin(deps([b], { extraGuests: links }), "x".repeat(32))).toMatchObject({ ok: false, reason: "not_found" });
+    expect(await resolveExtraGuestJoin(deps([b], { extraGuests: links, now: new Date(START.getTime() - 60 * MIN) }), asha)).toMatchObject({ ok: false, reason: "too_early" });
+  });
+
+  it("are tied to one booking: the same email on a moved booking gets a new link, and the old one is refused", async () => {
+    const links = memoryExtraGuestLinks();
+    const old = withGuests({ id: "old" });
+    const oldLink = await links.linkFor("old", host.id, "asha@example.com");
+    const newLink = await links.linkFor("new", host.id, "asha@example.com");
+    expect(newLink).not.toBe(oldLink);
+    expect(await resolveExtraGuestJoin(deps([withGuests({ id: "old", status: "cancelled" }), withGuests({ id: "new" })], { extraGuests: links }), oldLink)).toMatchObject({ ok: false, reason: "cancelled" });
+    expect(old.status).toBe("confirmed");
+  });
+});
+
 describe("plans", () => {
   it("includes Hourhand video on Solo and Duo only", () => {
     expect(LIMITS.free.hourhandVideo).toBe(false);
@@ -259,13 +298,14 @@ describe("join links in emails", () => {
     expect(all).not.toContain("meet.hourhand.test");
   });
 
-  it("gives the guest their /v/ link, the host theirs, and an extra guest none", () => {
+  it("gives the guest their /v/ link, the host theirs, and an extra guest their own", () => {
     expect(renderBookingMail("booked_guest", ctxFor("guest")).text).toContain(`Hourhand video: ${base}/v/${guestToken}`);
     const hostMail = renderBookingMail("booked_host", ctxFor("host"));
     expect(hostMail.text).toContain(`${base}/v/host/b1`);
     expect(hostMail.text + hostMail.html).not.toContain(guestToken);
-    const extra = renderBookingMail("booked_guest", ctxFor("extra_guest"));
-    expect(extra.text + extra.html).not.toContain("/v/");
+    const extra = renderBookingMail("booked_guest", { ...ctxFor("extra_guest"), joinUrl: extraGuestVideoJoinUrl(base, "A".repeat(32)) });
+    expect(extra.text).toContain(`Hourhand video: ${base}/v/g/${"A".repeat(32)}`);
+    expect(extra.text + extra.html).not.toContain(guestToken);
   });
 
   it("builds links only for Hourhand video bookings", () => {

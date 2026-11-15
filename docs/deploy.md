@@ -96,7 +96,7 @@ iCloud calendars need no server keys: each host connects with their own Apple ID
 
 **Group classes and installable app (2026-10-13):** migrations run to `0025` (adds the seat column to bookings; existing bookings are untouched). No new variables. Hosts can install Hourhand to their phone's home screen from the dashboard.
 
-**Hourhand video (3.11):** migration `0035` adds the `hourhand_video` location and the `video_rooms` table. The feature stays off until `JITSI_DOMAIN`, `JITSI_APP_ID` and `JITSI_APP_SECRET` are set as Runtime variables, and it needs its own Jitsi server: see `docs/video-jitsi.md`.
+**Hourhand video (3.11):** migration `0035` adds the `hourhand_video` location and the `video_rooms` and `video_guest_links` tables. The feature stays off until `JITSI_DOMAIN`, `JITSI_APP_ID` and `JITSI_APP_SECRET` are set as Runtime variables, and it needs its own Jitsi server: see `docs/video-jitsi.md`.
 
 ## 5b. WhatsApp (D7: automatic confirmations and reminders)
 

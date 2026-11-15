@@ -23,7 +23,7 @@ Hourhand video gives each booking a private video room. Host and guests join fro
    - A rescheduled booking is a new booking, so it gets a new room, and the old link says "cancelled or moved".
 6. **Nothing is recorded.** Recording, live streaming and transcription are off on the server, and the token also switches them off.
 
-Extra guests (people the guest added) are told it's Hourhand video, but they get no link of their own. The guest's link would hand them the guest's manage token. They can join from the guest's device, or the guest can forward the link knowingly. Giving extra guests their own links is a follow-up.
+Extra guests (people the guest added) get a join link of their own: `https://hourhand.cloud/v/g/<token>`, one per booking and email, made when their email is sent and kept in `video_guest_links`. It carries none of the guest's manage token, so it can join the call and nothing else. It joins them as a participant under their own email, and only while that email is still on the booking; a moved booking gives them a new link.
 
 ## Server size
 
@@ -168,7 +168,7 @@ If step 2 lets the guest straight in, the lobby modules did not load. Check `doc
 | `JITSI_APP_ID` | `hourhand` (same as `JWT_APP_ID`) |
 | `JITSI_APP_SECRET` | the same 64-character secret as `JWT_APP_SECRET` (at least 32 characters) |
 
-Missing or malformed values switch the feature off: the editor says "not set up on this server" and join links explain the same. Migration `0035_hourhand_video.sql` adds the location kind and the `video_rooms` table. It runs when the container starts, as usual.
+Missing or malformed values switch the feature off: the editor says "not set up on this server" and join links explain the same. Migration `0035_hourhand_video.sql` adds the location kind and the `video_rooms` and `video_guest_links` tables. It runs when the container starts, as usual.
 
 ## Sources (read 2026-11-15)
 

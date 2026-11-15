@@ -8,7 +8,8 @@ import { createPgStore } from "../data/pg-store";
 import type { DataStore, EventType, User } from "../data/types";
 import type { Mail, Mailer } from "../mail/mailer";
 import { processDueNotifications } from "../jobs/worker";
-import { resolveHostJoin, resolveJoin, type JoinDeps } from "./join";
+import { pgExtraGuestLinks } from "./guest-links";
+import { resolveExtraGuestJoin, resolveHostJoin, resolveJoin, type JoinDeps } from "./join";
 import { verifyJwt } from "./jwt";
 import { pgRoomStore, roomKey } from "./rooms";
 
@@ -33,6 +34,7 @@ describe.skipIf(!BASE)("Hourhand video (TEST_DATABASE_URL)", () => {
     planFor: async () => "solo",
     signedInHostId: async () => signedIn,
     rooms: pgRoomStore(pool),
+    extraGuests: pgExtraGuestLinks(pool),
     config: { domain: "meet.hourhand.test", appId: "hourhand", secret: SECRET },
     now,
   });
@@ -93,7 +95,10 @@ describe.skipIf(!BASE)("Hourhand video (TEST_DATABASE_URL)", () => {
     expect(to(priya.email).text).toContain(`${baseUrl}/v/host/${b.id}`);
     expect(to(priya.email).text + to(priya.email).html).not.toContain(b.invitee.manageToken);
     const extra = to("friend@example.com");
-    expect(extra.text + extra.html).not.toContain("/v/");
+    const extraToken = (await pool.query("select token from video_guest_links where booking_id = $1 and email = 'friend@example.com'", [b.id])).rows[0].token;
+    expect(extra.text).toContain(`Hourhand video: ${baseUrl}/v/g/${extraToken}`);
+    expect(extra.text + extra.html).not.toContain(b.invitee.manageToken);
+    expect(await pgExtraGuestLinks(pool).linkFor(b.id, b.hostId, "FRIEND@example.com")).toBe(extraToken);
     for (const m of sent) {
       const all = m.text + m.html + JSON.stringify(m.attachments ?? []);
       expect(all).not.toMatch(/eyJ[\w-]+\.[\w-]+\.[\w-]+/);
@@ -109,7 +114,13 @@ describe.skipIf(!BASE)("Hourhand video (TEST_DATABASE_URL)", () => {
     expect(verifyJwt(new URL(asGuest.url).searchParams.get("jwt")!, SECRET)).toMatchObject({ room, context: { user: { moderator: false } } });
     expect(verifyJwt(new URL(asHost.url).searchParams.get("jwt")!, SECRET)).toMatchObject({ room, context: { user: { moderator: true } } });
 
+    const asFriend = await resolveExtraGuestJoin(deps(during), extraToken);
+    if (!asFriend.ok) throw new Error(`expected the extra guest to join, got ${asFriend.reason}`);
+    expect(new URL(asFriend.url).pathname).toBe(`/${room}`);
+    expect(verifyJwt(new URL(asFriend.url).searchParams.get("jwt")!, SECRET)).toMatchObject({ room, context: { user: { moderator: false, email: "friend@example.com" } } });
+
     await store.cancelBooking(priya.id, b.id, "guest");
+    expect(await resolveExtraGuestJoin(deps(during), extraToken)).toMatchObject({ ok: false, reason: "cancelled" });
     expect(await resolveJoin(deps(during), b.invitee.manageToken)).toMatchObject({ ok: false, reason: "cancelled" });
     expect(await resolveHostJoin(deps(during, priya.id), b.id)).toMatchObject({ ok: false, reason: "cancelled" });
   });

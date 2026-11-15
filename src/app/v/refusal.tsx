@@ -13,7 +13,7 @@ import { refusalLines, splitTemplate, type RefusalReason } from "@/lib/video/mes
 export const JOIN_METADATA = { title: "Hourhand video", robots: { index: false, follow: false }, referrer: "no-referrer" as const };
 
 export function JoinRefused({ reason, opensAt, tz, locale, back, switcherPath }: {
-  reason: RefusalReason; opensAt?: Date; tz: string; locale: Locale; back: { href: string; label?: string }; switcherPath?: string;
+  reason: RefusalReason; opensAt?: Date; tz: string; locale: Locale; back?: { href: string; label?: string }; switcherPath?: string;
 }) {
   const lines = refusalLines(locale);
   const msg = lines[reason];
@@ -34,7 +34,7 @@ export function JoinRefused({ reason, opensAt, tz, locale, back, switcherPath }:
           </p>
         )}
       </Card>
-      <Link href={back.href} className="mt-4 inline-flex min-h-11 items-center font-semibold text-accent underline">{back.label ?? lines.seeBooking}</Link>
+      {back && <Link href={back.href} className="mt-4 inline-flex min-h-11 items-center font-semibold text-accent underline">{back.label ?? lines.seeBooking}</Link>}
     </main>
   );
 }

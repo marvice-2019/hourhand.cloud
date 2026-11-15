@@ -6,7 +6,7 @@ export const HOURHAND_VIDEO = "hourhand_video" as const satisfies LocationKind;
 /**
  * Who a join link is for. The guest's link carries their manage token, so it never goes to the host or an extra guest
  * (the same rule as the manage link). The host's link names the booking and only works for the signed-in host.
- * An extra guest gets no link of their own: the main guest's would hand them the booking's manage token.
+ * An extra guest's link is made per email by the worker (see guest-links.ts), so it isn't built here.
  */
 export type VideoAudience = "guest" | "host" | "extra_guest";
 
@@ -32,4 +32,9 @@ export function videoJoinUrlFor(audience: VideoAudience, baseUrl: string, locati
   if (audience === "host") return hostVideoJoinUrl(baseUrl, locationKind, b.bookingId);
   if (audience === "extra_guest") return null;
   return videoJoinUrl(baseUrl, locationKind, b.manageToken);
+}
+
+/** An extra guest's own join link: /v/g/<token>. */
+export function extraGuestVideoJoinUrl(baseUrl: string, token: string): string {
+  return `${trim(baseUrl)}/v/g/${encodeURIComponent(token)}`;
 }

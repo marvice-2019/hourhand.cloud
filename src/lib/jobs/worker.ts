@@ -7,7 +7,8 @@ import type { BookingEmailKind, CalendarJobKind, NotificationKind } from "../dat
 import type { InviteeAnswer, LocationKind } from "../data/types";
 import type { HourCycle } from "../format";
 import { GUEST_LOCATION_LABELS } from "../location-labels";
-import { videoJoinUrlFor, type VideoAudience } from "../video/links";
+import { extraGuestVideoJoinUrl, videoJoinUrlFor, type VideoAudience } from "../video/links";
+import { pgExtraGuestLinks } from "../video/guest-links";
 import { MailError, type Mailer } from "../mail/mailer";
 import { invoiceById } from "../gst/invoices";
 import { monthlyEarnings } from "../earnings";
@@ -477,6 +478,9 @@ export async function processDueNotifications(
           : renderBookingMail(c.kind as BookingEmailKind, {
             ...toContext(r, opts.baseUrl, c.kind.endsWith("_host") ? "host" : extraGuestMail(c, r) ? "extra_guest" : "guest"),
             extraGuest: extraGuestMail(c, r),
+            // An extra guest on Hourhand video gets a join link of their own (never the guest's manage token).
+            ...(extraGuestMail(c, r) && r.booking_location_kind === "hourhand_video" && c.kind !== "cancelled_guest"
+              ? { joinUrl: extraGuestVideoJoinUrl(opts.baseUrl, await pgExtraGuestLinks(pool).linkFor(r.id as string, r.host_id as string, c.recipient)) } : {}),
             ...(c.kind === "cancelled_guest" ? { rebook: await rebookSuggestions(pool, r, opts.baseUrl) } : {}),
             ...((c.kind === "booked_guest" || c.kind === "booked_host") && r.series_id === r.id ? { series: await seriesWeeks(pool, r.id as string, opts.baseUrl) } : {}),
             ...((c.kind === "cancelled_guest" || c.kind === "cancelled_host") && r.series_id ? { alsoCancelled: await cancelledWith(pool, r.id as string) } : {}),

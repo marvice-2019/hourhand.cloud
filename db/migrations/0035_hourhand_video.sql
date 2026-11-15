@@ -24,3 +24,15 @@ create table video_rooms (
   created_at timestamptz not null default now()
 );
 create index on video_rooms (host_id);
+
+-- A join link of their own for each extra guest the guest added (invitees.guests), one per booking and email. It holds
+-- no manage token: it can only join the call, and only while that email is still on the booking.
+create table video_guest_links (
+  token text primary key check (token ~ '^[A-Za-z0-9_-]{32}$'),
+  booking_id uuid not null references bookings(id) on delete cascade,
+  host_id uuid not null references users(id) on delete cascade,
+  email citext not null,
+  created_at timestamptz not null default now(),
+  unique (booking_id, email)
+);
+create index on video_guest_links (host_id);
