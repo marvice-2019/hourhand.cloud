@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
 import { deleteEventType, saveEventType } from "@/app/dashboard/event-types/actions";
 import type { CustomQuestion, LocationKind, QuestionDraft } from "@/lib/data/types";
+import type { ZoomSetup } from "@/lib/zoom/connection";
+import { ZoomHint } from "./ZoomHint";
 import { LOCATION_VALUE_LABEL, START_INCREMENTS, slugify, type EventTypeErrors, type EventTypeForm, type QuestionErrors } from "@/lib/event-types";
 import { Button } from "./ui/Button";
 import { Card } from "./ui/Card";
@@ -51,9 +53,12 @@ export interface EventTypeEditorProps {
   initialQuestions: QuestionDraft[];
   /** Shows "Saved" on arrival, after creating a new event type. */
   justSaved?: boolean;
+  /** Whether choosing Zoom gets bookings a link. */
+  zoomSetup?: ZoomSetup;
 }
 
-export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justSaved = false }: EventTypeEditorProps) {
+
+export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justSaved = false, zoomSetup = "not_configured" }: EventTypeEditorProps) {
   const router = useRouter();
   const [tab, setTab] = useState<TabId>("details");
   const [form, setForm] = useState(initial);
@@ -241,12 +246,13 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
         </div>
         <div>
           <Label htmlFor="f-location">Where you meet</Label>
-          <select id="f-location" aria-describedby={form.locationKind === "teams" ? "f-location-hint" : undefined} value={form.locationKind} onChange={(e) => set("locationKind")(e.target.value)} className={`h-11 ${fieldClasses(false)}`}>
+          <select id="f-location" aria-describedby={form.locationKind === "teams" || form.locationKind === "zoom" ? "f-location-hint" : undefined} value={form.locationKind} onChange={(e) => set("locationKind")(e.target.value)} className={`h-11 ${fieldClasses(false)}`}>
             {LOCATIONS.map((l) => <option key={l.kind} value={l.kind}>{l.label}</option>)}
           </select>
           {form.locationKind === "teams" && (
             <p id="f-location-hint" className="mt-1 text-sm text-text-muted">Teams links are created when bookings go to a work or school Outlook calendar.</p>
           )}
+          {form.locationKind === "zoom" && <ZoomHint setup={zoomSetup} id="f-location-hint" />}
         </div>
         {valueLabel && (
           <div>

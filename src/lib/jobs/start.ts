@@ -8,6 +8,7 @@ import type { PaymentCheckDeps } from "../payments/booking-payments";
 import { loadHostRazorpay } from "../payments/host-razorpay";
 import { razorpayOrders } from "../payments/razorpay-orders";
 import { startJobRunner, type JobRunner } from "./runner";
+import { zoomConfigError, zoomDeps } from "../zoom/connection";
 
 const shared = globalThis as typeof globalThis & { __hourhandJobs?: JobRunner };
 
@@ -20,6 +21,9 @@ export function startJobsFromEnv(env: Record<string, string | undefined> = proce
   // Calendars (Google, Microsoft) are optional; when one is configured, a missing or bad TOKEN_ENCRYPTION_KEY stops the server here.
   const configError = calendarConfigError(env);
   if (configError) throw new Error(configError);
+  const zoomError = zoomConfigError(env);
+  if (zoomError) throw new Error(zoomError);
+  const zoom = zoomDeps(env);
   const deps = calendarDeps(env);
   const calendar = deps && { ...deps, pushAddress: pushAddress(baseUrl, env) };
   const pool = getPool(env.DATABASE_URL);
@@ -31,6 +35,6 @@ export function startJobsFromEnv(env: Record<string, string | undefined> = proce
   } catch {
     payments = null;
   }
-  shared.__hourhandJobs = startJobRunner({ pool, mailer, baseUrl, calendar, payments });
-  console.info(`[jobs] runner started (${env.RESEND_API_KEY ? "Resend" : "log only"}, calendars ${calendar ? `${Object.keys(calendar.providers).join(" + ")} on${calendar.providers.google ? `, Google ${calendar.pushAddress ? "instant" : "polling"}` : ""}` : "off"}, booking payments ${payments ? "on" : "off"})`);
+  shared.__hourhandJobs = startJobRunner({ pool, mailer, baseUrl, calendar, zoom, payments });
+  console.info(`[jobs] runner started (${env.RESEND_API_KEY ? "Resend" : "log only"}, calendars ${calendar ? `${Object.keys(calendar.providers).join(" + ")} on${calendar.providers.google ? `, Google ${calendar.pushAddress ? "instant" : "polling"}` : ""}` : "off"}, Zoom ${zoom ? "on" : "off"}, booking payments ${payments ? "on" : "off"})`);
 }

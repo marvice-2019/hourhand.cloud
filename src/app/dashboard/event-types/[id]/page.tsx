@@ -4,6 +4,8 @@ import { EventTypeEditor } from "@/components/EventTypeEditor";
 import { store } from "@/lib/data";
 import { toForm } from "@/lib/event-types";
 import { requireHost } from "@/lib/auth/session";
+import { getPool } from "@/lib/data/pg-store";
+import { zoomSetupFor } from "@/lib/zoom/connection";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,7 @@ export default async function EventTypePage({ params, searchParams }: {
         initial={toForm(eventType, locations[0])}
         initialQuestions={ordered.map(({ id: qid, label, kind, required, choices }) => ({ id: qid, label, kind, required, choices }))}
         justSaved={saved === "1"}
+        zoomSetup={await zoomSetupFor(() => getPool(process.env.DATABASE_URL as string), user.id)}
       />
     </div>
   );
