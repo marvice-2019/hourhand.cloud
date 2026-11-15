@@ -14,6 +14,11 @@ import { getProfile, profileJsonLd, type Profile } from "@/lib/profile";
 import { waLink } from "@/lib/whatsapp";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { resolveLocale, t } from "@/lib/i18n/guest";
+import { PracticePage } from "@/components/clinic/PracticePage";
+import { practicePage } from "@/lib/clinic/page";
+
+/** A Clinic practice's page, when the slug is a practice's rather than a host's. Read once per request. */
+const loadPractice = cache(async (slug: string) => (authEnabled() ? practicePage(getPool(process.env.DATABASE_URL as string), slug) : null));
 
 /** Read once per request; the metadata and the page both need it. */
 const load = cache(async (slug: string) => {
@@ -27,7 +32,12 @@ type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ lang?:
 
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const found = await load((await params).slug);
-  if (!found) return {};
+  if (!found) {
+    const practice = await loadPractice((await params).slug);
+    if (!practice) return {};
+    const description = practice.practice.about?.slice(0, 160) ?? `Book a session with ${practice.practice.name}.`;
+    return { title: practice.practice.name, description, openGraph: { title: practice.practice.name, description } };
+  }
   const { host, profile } = found;
   const locale = resolveLocale((await searchParams).lang, host.locale);
   const description = profile?.headline ?? profile?.bio?.slice(0, 160) ?? t(locale, "metaDescription", { name: host.name });
@@ -38,7 +48,11 @@ export default async function ProfilePage({ params, searchParams }: Props) {
   const { slug } = await params;
   const { lang } = await searchParams;
   const found = await load(slug);
-  if (!found) notFound();
+  if (!found) {
+    const practice = await loadPractice(slug);
+    if (!practice) notFound();
+    return <PracticePage data={practice} baseUrl={(resolveBaseUrl() ?? "").replace(/\/+$/, "")} locale={resolveLocale(lang, "en")} />;
+  }
   const { host, profile } = found;
   const locale = resolveLocale(lang, host.locale);
   // Keep an explicit choice as guests click through; otherwise the host's default applies on the next page too.
