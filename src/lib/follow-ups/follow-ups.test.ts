@@ -161,6 +161,7 @@ describe("in every guest language", () => {
   const ctx = {
     guestName: "Kiran <b>", hostName: "Priya & Co", hostEmail: "priya@example.com", eventName: "Coaching",
     feedbackUrl: "https://hourhand.test/b/feedback/f.tok", optOutUrl: "https://hourhand.test/b/stop/o.tok",
+    oneClickUrl: "https://hourhand.test/api/follow-ups/stop/o.tok",
   };
 
   it.each(LOCALES)("renders %s with every part, no missing strings, and escaped names", (locale) => {
@@ -183,6 +184,15 @@ describe("in every guest language", () => {
     const m = renderFollowUpMail({ ...ctx, locale: "en" }, { thankYou: true, rebookUrl: null, feedback: false, review: null, nudge: null });
     expect(m.text).not.toMatch(/feedback|g\.page|\/p\/|\/pkg\//);
     expect(m.text).toContain("b/stop/"); // the opt-out link is always there
+  });
+
+  it("carries RFC 8058 one-click List-Unsubscribe headers pointing at the POST endpoint, and none for a non-https server", () => {
+    const m = renderFollowUpMail({ ...ctx, locale: "en" }, full);
+    expect(m.headers).toEqual({
+      "List-Unsubscribe": "<https://hourhand.test/api/follow-ups/stop/o.tok>",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+    expect(renderFollowUpMail({ ...ctx, locale: "en", oneClickUrl: "http://localhost:3000/api/follow-ups/stop/o.tok" }, full).headers).toBeUndefined();
   });
 
   it("says all sessions are used and offers to buy again when none are left", () => {

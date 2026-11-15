@@ -3,6 +3,7 @@ import { NotFoundError } from "../data/types";
 import { formatDate } from "../format";
 import { isLocale, type Locale } from "../i18n/guest";
 import { ft } from "../i18n/follow-up";
+import { listUnsubscribeHeaders } from "../mail/mailer";
 import { escapeHtml, type RenderedMail } from "../mail/templates";
 import { feedbackToken, optOutToken, readFeedbackToken, readOptOutToken } from "./tokens";
 
@@ -171,6 +172,8 @@ export interface FollowUpMailContext {
   /** `/b/feedback/<token>`; each rating button adds ?r=N (opens the form with it picked; nothing is saved on open). */
   feedbackUrl: string;
   optOutUrl: string;
+  /** The RFC 8058 one-click endpoint (POST /api/follow-ups/stop/<token>) for the List-Unsubscribe header. https only. */
+  oneClickUrl: string;
 }
 
 const button = (label: string, url: string, solid: boolean) =>
@@ -218,6 +221,8 @@ export function renderFollowUpMail(c: FollowUpMailContext, plan: FollowUpPlan): 
     html: `<!doctype html><html><body style="margin:0;padding:24px;background:#f6f6f4;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5">
 <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:10px;padding:28px">${html.join("\n")}</div></body></html>`,
     replyTo: c.hostEmail,
+    // The mail client's own "Unsubscribe" button: one POST, no page. Mail clients ignore a non-https one, so none is sent then.
+    ...(c.oneClickUrl.startsWith("https://") ? { headers: listUnsubscribeHeaders(c.oneClickUrl) } : {}),
   };
 }
 
@@ -263,10 +268,12 @@ export async function buildFollowUp(db: Db, n: { booking_id: string | null; reci
     settings: toSettings(r), answered: r.answered, reviewsUrl: r.reviews_url ?? null, rebookUrl, nudge,
   }, now);
   if ("skip" in plan) return plan;
+  const optOut = optOutToken(key, r.host_id, n.recipient);
   return renderFollowUpMail({
     locale, guestName: r.guest_name, hostName: r.host_name || r.host_email, hostEmail: r.host_email, eventName: r.event_name,
     feedbackUrl: `${baseUrl}/b/feedback/${feedbackToken(key, r.id, now)}`,
-    optOutUrl: `${baseUrl}/b/stop/${optOutToken(key, r.host_id, n.recipient)}${lang ? `?${lang}` : ""}`,
+    optOutUrl: `${baseUrl}/b/stop/${optOut}${lang ? `?${lang}` : ""}`,
+    oneClickUrl: `${baseUrl}/api/follow-ups/stop/${optOut}`,
   }, plan);
 }
 

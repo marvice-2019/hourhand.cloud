@@ -1,5 +1,6 @@
 // Follow-ups against real Postgres: queueing and timing, the worker's skips, group seats, feedback links and opt-outs.
 // Runs only with TEST_DATABASE_URL, in its own database (<name>_followups), recreated on every run.
+import { NextRequest } from "next/server";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { migrate } from "../../../scripts/migrate";
@@ -56,6 +57,9 @@ describe.skipIf(!BASE)("follow-ups (TEST_DATABASE_URL)", () => {
     const name = `${u.pathname.slice(1)}_followups`;
     if (!/^[a-z0-9_]*test[a-z0-9_]*$/.test(name)) throw new Error(`TEST_DATABASE_URL must name a test database, got "${name}"`);
     u.pathname = `/${name}`;
+    // For the one-click route, which reads its database the way the app does.
+    process.env.HOURHAND_DATA = "postgres";
+    process.env.DATABASE_URL = u.toString();
     const admin = new URL(BASE!);
     admin.pathname = "/postgres";
     const c = new pg.Client({ connectionString: admin.toString() });
@@ -86,6 +90,7 @@ describe.skipIf(!BASE)("follow-ups (TEST_DATABASE_URL)", () => {
 
   afterAll(async () => {
     await pool?.end();
+    await (globalThis as { __hourhandPool?: pg.Pool }).__hourhandPool?.end();
   });
 
   beforeEach(async () => {
@@ -199,6 +204,43 @@ describe.skipIf(!BASE)("follow-ups (TEST_DATABASE_URL)", () => {
       // Switched back on before it was due: it returns, once.
       await saveFollowUpSettings(pool, priya.id, coaching.id, ALL_ON, new Date());
       expect((await followUps(b.id)).map((r) => r.status)).toEqual(["queued"]);
+    });
+  });
+
+  describe("one-click unsubscribe (RFC 8058)", () => {
+    const call = async (method: "POST" | "GET", token: string) => {
+      const { POST, GET } = await import("../../app/api/follow-ups/stop/[token]/route");
+      const req = new NextRequest(`${baseUrl}/api/follow-ups/stop/${token}`, method === "POST"
+        ? { method, body: "List-Unsubscribe=One-Click", headers: { "content-type": "application/x-www-form-urlencoded" } } : { method });
+      return (method === "POST" ? POST : GET)(req, { params: Promise.resolve({ token }) });
+    };
+
+    it("the email names the endpoint in its headers, and one POST there opts the guest out with no page", async () => {
+      await saveFollowUpSettings(pool, priya.id, coaching.id, ALL_ON, new Date());
+      const b = await book();
+      const later = await book(coaching, nextStart(), { name: "Meera Iyer", email: b.invitee.email });
+      await onlyFollowUps();
+      const { sent } = await run(new Date(b.endAt.getTime() + 2 * HOUR));
+      const header = sent[0].headers?.["List-Unsubscribe"] ?? "";
+      expect(sent[0].headers?.["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
+      const token = /^<https:\/\/hourhand\.test\/api\/follow-ups\/stop\/(o\.[^>]+)>$/.exec(header)?.[1];
+      expect(token).toBeTruthy();
+      // A link scanner's GET changes nothing: it is sent to the page with the button.
+      const get = await call("GET", token!);
+      expect(get.status).toBe(303);
+      expect(get.headers.get("location")).toBe(`${baseUrl}/b/stop/${token}`);
+      expect((await pool.query("select 1 from follow_up_opt_outs where host_id = $1", [priya.id])).rowCount).toBe(0);
+      const post = await call("POST", token!);
+      expect(post.status).toBe(200);
+      expect((await pool.query("select email from follow_up_opt_outs where host_id = $1", [priya.id])).rows.map((r) => r.email)).toEqual([b.invitee.email]);
+      expect((await followUps(later.id))[0]).toMatchObject({ status: "skipped", last_error: "guest opted out of this host's follow-ups" });
+      expect((await call("POST", token!)).status).toBe(200); // a repeat is fine
+    });
+
+    it("refuses a forged token", async () => {
+      const forged = optOutToken(linkKey("ef".repeat(32)), priya.id, "someone@example.com");
+      expect((await call("POST", forged)).status).toBe(404);
+      expect((await pool.query("select 1 from follow_up_opt_outs")).rowCount).toBe(0);
     });
   });
 
