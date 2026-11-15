@@ -22,7 +22,7 @@ export interface RouteDeps {
 /** Files every page needs, the same for every host. */
 const SHARED_FILES = /^\/(?:_next\/|favicon\.ico$|icon\.svg$|icons\/[^/]+$|apple-icon|manifest\.webmanifest$|robots\.txt$|assets\/)/;
 /** The JSON endpoints the booking pages call from the browser. They take ids, not a host, and are public on hourhand.cloud too. */
-const BOOKING_APIS = new Set(["/api/slots", "/api/bookings", "/api/bookings/pay", "/api/waitlist"]);
+const BOOKING_APIS = new Set(["/api/slots", "/api/bookings", "/api/bookings/pay", "/api/waitlist", "/api/events"]);
 /** A manage link and its calendar file, and the guest's manage actions. */
 const MANAGE_PAGE = /^\/b\/([^/]+)(?:\/calendar\.ics)?$/;
 const MANAGE_API = /^\/api\/b\/([^/]+)\/(?:cancel|reschedule|late)$/;
