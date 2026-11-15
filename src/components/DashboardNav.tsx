@@ -17,6 +17,7 @@ const items = [
   { href: "/dashboard/availability", label: "Availability" },
   { href: "/dashboard/calendars", label: "Calendars" },
   { href: "/dashboard/integrations", label: "Integrations" },
+  { href: "/dashboard/domain", label: "Custom domain" },
   { href: "/dashboard/plan", label: "Plan" },
   { href: "/dashboard/settings", label: "Settings" },
 ];

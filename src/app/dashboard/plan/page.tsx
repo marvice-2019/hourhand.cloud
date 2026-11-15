@@ -6,7 +6,7 @@ import { authEnabled } from "@/lib/auth/auth";
 import { requireOwnAccount } from "@/lib/auth/session";
 import { getHostSubscription, type HostSubscription } from "@/lib/billing/account";
 import { billingFor } from "@/lib/billing/env";
-import { effectivePlan, LIMITS, PLAN_NAMES, PROVIDER_FOR, priceLine, providerPriceId, type BillingInterval, type Currency, type PaidPlan } from "@/lib/billing/plans";
+import { addonPriceLine, effectivePlan, LIMITS, PLAN_NAMES, PROVIDER_FOR, priceLine, providerPriceId, type BillingInterval, type Currency, type PaidPlan } from "@/lib/billing/plans";
 import { getPool } from "@/lib/data/pg-store";
 import { SeatForm } from "@/components/SeatForm";
 import { seatFor } from "@/lib/seats";
@@ -120,6 +120,14 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
           <SmsUsageMeter usage={texts} resets={new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" }).format(texts.resetsAt)} />
         </Card>
       )}
+
+      <Card className="mt-6 max-w-2xl">
+        <h2 className="font-semibold text-text">Add-on: custom domain</h2>
+        <p className="mt-1 text-text-muted">
+          Your booking pages at your own address, like book.yourname.com. {addonPriceLine("domain")}, on top of Solo or Duo.{" "}
+          <Link href="/dashboard/domain" className={`font-semibold text-accent underline ${focusRing}`}>Set it up</Link>
+        </p>
+      </Card>
 
       {live && sub && effectivePlan(sub.plan !== "free" ? { plan: sub.plan, status: sub.status } : null) === "duo" && (
         <Card className="mt-6 max-w-2xl">
