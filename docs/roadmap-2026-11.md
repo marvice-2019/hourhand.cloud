@@ -30,8 +30,24 @@ Each item is one PR with tests, merged and deployed on its own. Effort is build 
 | 2.6 | Automatic follow-ups after a session: feedback form, rebook link, Google review ask, package top-up nudge | Rebooking is the revenue lever | 2 days |
 | 2.7 | Earnings and no-show dashboard with GST-ready export | Hosts run small businesses | 1.5 days |
 
+## 3. More features (owner asked for more, 2026-11-15)
+| # | Feature | Revenue or retention lever | Effort | Note |
+|---|---|---|---|---|
+| 3.1 | Memberships: monthly coaching plans (e.g. 4 sessions/month auto-renewing), on Razorpay subscriptions and Stripe | Recurring host revenue, lower churn | 3 days | Builds on packages + billing code |
+| 3.2 | Client portal: one link where a client sees upcoming sessions, rebooks, tops up a package, downloads invoices | Fewer WhatsApp back-and-forths | 2.5 days | Magic-link sign-in, no password |
+| 3.3 | Offers: coupons, sliding-scale prices, first-session discount, festival campaigns (Diwali, New Year) | Conversion on paid types | 2 days | GST computed on the discounted price |
+| 3.4 | WhatsApp booking: guest messages the host's number, gets the booking link and next 3 free slots back | India-first, WhatsApp-led | 2 days | Needs approved WhatsApp number (D7) |
+| 3.5 | AI session prep: a one-paragraph brief before each session from intake answers and past notes | Saves host 10 min per session | 2 days | Opt-in per host; Haiku-class model, cost under Rs 0.50 per brief; never for therapy notes without explicit consent |
+| 3.6 | Booking-page analytics: views, slot clicks, bookings, by UTM source and referrer | Hosts see which channel books | 1.5 days | No third-party trackers |
+| 3.7 | More booking languages: Marathi, Bengali, Malayalam, Gujarati (5 today) | Regional reach | 1 day per language | Translator review per language |
+| 3.8 | Host referrals: a host invites another, both get a month of Solo | Low-cost acquisition | 1.5 days | Abuse limits per account |
+| 3.9 | Clinic plan: several practitioners under one practice page, shared waitlist, one invoice series | Bigger accounts (therapy clinics, coaching institutes) | 5 days | New tier; not round robin |
+| 3.10 | Client data rights (DPDP Act 2023): consent log, client export and delete, encrypted session notes | Required for therapists; trust | 2 days | Clauses to review with a lawyer |
+| 3.11 | Built-in video rooms (self-hosted Jitsi) so no Zoom or Meet account is needed | Removes a setup step | 3 days | Will not fit the 16 GB VPS at volume; needs a separate media server (about Rs 3,000-6,000/month) |
+
 ## Skipped on purpose (do not build)
 Round robin, routing forms, CRM sync, SSO, SOC 2 (enterprise, sales-team products; features.csv marks them out of scope), App Store / Play apps (deferred by owner; installable web app exists), Google appointment-schedule import (no public API).
 
 ## Order
-0.x, then 1.1, 1.4, 2.2, 2.1, 1.3, 2.6, 2.5, 2.4, 2.3, 2.7, then 1.2 when DLT approval lands.
+0.x, then 1.1, 1.4, 2.2, 3.1, 2.1, 3.2, 3.3, 1.3, 2.6, 3.10, 2.5, 3.4, 2.4, 2.3, 2.7, 3.6, 3.8, 3.5, 3.7, 3.9, 3.11, then 1.2 when DLT approval lands.
+Total build effort, sections 1-3: about 55-60 working days, plus owner approvals (DLT, Meta templates, Stripe).
