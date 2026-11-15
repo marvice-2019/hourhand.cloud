@@ -11,6 +11,7 @@ import { formatAmount } from "@/lib/money";
 import { store } from "@/lib/data";
 import { getPool } from "@/lib/data/pg-store";
 import { getProfile, profileJsonLd, type Profile } from "@/lib/profile";
+import { hostMetadata } from "@/lib/share-links";
 import { waLink } from "@/lib/whatsapp";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { resolveLocale, t } from "@/lib/i18n/guest";
@@ -30,8 +31,8 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   if (!found) return {};
   const { host, profile } = found;
   const locale = resolveLocale((await searchParams).lang, host.locale);
-  const description = profile?.headline ?? profile?.bio?.slice(0, 160) ?? t(locale, "metaDescription", { name: host.name });
-  return { title: `${host.name}${profile?.headline ? ` · ${profile.headline}` : ""}`, description, openGraph: { title: host.name, description } };
+  const description = profile?.headline || profile?.bio ? undefined : t(locale, "metaDescription", { name: host.name });
+  return hostMetadata({ slug: host.slug, name: host.name, profile, description });
 }
 
 export default async function ProfilePage({ params, searchParams }: Props) {

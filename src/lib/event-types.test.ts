@@ -44,6 +44,10 @@ describe("priceGateError", () => {
 });
 
 describe("validateEventType", () => {
+  it("keeps the share card's path free: no event type can be called opengraph-image", () => {
+    expect(validateEventType({ ...valid, slug: "opengraph-image" }, [])).toMatchObject({ ok: false, errors: { slug: expect.stringContaining("booking page itself") } });
+  });
+
   it("accepts valid input and returns typed values", () => {
     const result = validateEventType(valid, ["coaching", "intro"]);
     expect(result).toEqual({
