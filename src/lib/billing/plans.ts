@@ -26,12 +26,14 @@ export interface PlanLimits {
   checkedCalendars: number;
   /** "Booked with Hourhand" footer on the booking pages. */
   footer: boolean;
+  /** Clients can find the host's times by messaging Hourhand's WhatsApp number (after the host turns it on). */
+  whatsappBooking: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true },
-  solo: { checkedCalendars: Infinity, footer: false },
-  duo: { checkedCalendars: Infinity, footer: false },
+  free: { checkedCalendars: 2, footer: true, whatsappBooking: false },
+  solo: { checkedCalendars: Infinity, footer: false, whatsappBooking: true },
+  duo: { checkedCalendars: Infinity, footer: false, whatsappBooking: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {

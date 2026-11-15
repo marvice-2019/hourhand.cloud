@@ -8,7 +8,9 @@ import { hostPlan } from "@/lib/billing/account";
 import { parseKey } from "@/lib/crypto/seal";
 import { getPool } from "@/lib/data/pg-store";
 import { maskKeyId, razorpayStatus } from "@/lib/payments/host-razorpay";
+import { whatsappBookingOn } from "@/lib/whatsapp-booking";
 import { connectRazorpay, disconnectRazorpayAction } from "./actions";
+import { WhatsAppBookingCard } from "./WhatsAppBookingCard";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +93,8 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
           <p className="mt-4 max-w-xl text-sm text-text-muted">{live ? ERRORS.not_configured : ERRORS.demo}</p>
         )}
       </Card>
+
+      <WhatsAppBookingCard slug={user.slug} plan={plan} on={pool ? await whatsappBookingOn(pool, user.id) : false} notice={params.whatsapp} />
     </div>
   );
 }

@@ -116,6 +116,25 @@ Plan limits per host per calendar month (IST): Free 0, Solo 300, Duo 600 WhatsAp
 
 Check after go-live: book on your own page with your phone and the WhatsApp tick; the confirmation arrives within a minute and the booking page in the dashboard says "Confirmation: sent automatically". Reply STOP from that phone: you get one reply, and the dashboard shows the reminder won't go.
 
+### Book over WhatsApp (3.4)
+
+Clients message the same number ("Book with priya", usually pre-filled by the host's wa.me link) and get the host's event types, then the next free times (in the zone their country code suggests, with "Change time zone"), then a link to the booking page with that time. Nothing is booked over WhatsApp: payment, questions and consent happen on the page as before. Migration `0031` adds the tables.
+
+| Variable | Value | Required |
+| --- | --- | --- |
+| `WHATSAPP_DISPLAY_NUMBER` | Hourhand's WhatsApp number with country code, e.g. `918000012345` (the number clients see, not the Phone number ID) | for hosts' wa.me links and QR codes |
+
+Steps (you):
+
+1. Set `WHATSAPP_DISPLAY_NUMBER` in Coolify and redeploy.
+2. Meta app → WhatsApp → Configuration → Webhook fields: `messages` must be subscribed (step 5 above already does this; the same field carries clients' messages and taps).
+3. Add a payment method if you haven't (step 3): without one Meta stops delivering replies once the 1,000 free service messages of the month are used.
+4. Turn it on for your own account (Dashboard → Integrations → WhatsApp → Turn on), message the link from your phone, and walk through to the booking page.
+
+Only hosts on Solo or Duo who turned it on are offered; a client is never shown a list of hosts. Replies go only inside Meta's 24-hour customer service window (we only ever answer a message), so no templates are needed. STOP works as before, and an opted-out number gets no booking replies. Each phone gets at most 20 answered messages per 10 minutes. We keep each phone's step for a day (host, event type, zone; never message text) and daily counts per host in `whatsapp_booking_counts`.
+
+Cost (Meta pricing from 1 October 2026): replies are service messages, free for the first 1,000 a month per number, then ₹0.115 each before GST (about ₹0.136 with 18% GST). A full booking conversation is 3 replies (2 when the host has one event type): ₹0 inside the free tier, about ₹0.41 after it. Check the INR rate card in WhatsApp Manager.
+
 ### Templates to submit
 
 #### hh_booking_confirmed (en)
