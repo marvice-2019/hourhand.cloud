@@ -57,16 +57,26 @@ describe.skipIf(!BASE)("custom domains (TEST_DATABASE_URL)", () => {
   beforeEach(async () => {
     await pool.query("delete from custom_domains");
     await pool.query("delete from subscriptions");
+    await pool.query("delete from addon_subscriptions");
     await pool.query("update users set deleted_at = null");
   });
 
-  const paid = (userId: string) => pool.query(
-    "insert into subscriptions (user_id, plan, interval, provider, provider_subscription_id, status) values ($1, 'solo', 'month', 'razorpay', $2, 'active')",
-    [userId, `sub_${userId}`]);
+  /** A paid plan plus the live custom-domain add-on. */
+  const paid = async (userId: string) => {
+    await pool.query(
+      "insert into subscriptions (user_id, plan, interval, provider, provider_subscription_id, status) values ($1, 'solo', 'month', 'razorpay', $2, 'active')",
+      [userId, `sub_${userId}`]);
+    await pool.query(
+      "insert into addon_subscriptions (user_id, addon, provider, provider_subscription_id, status) values ($1, 'domain', 'razorpay', $2, 'active')",
+      [userId, `sub_dom_${userId}`]);
+  };
 
-  it("needs a paid plan to add a domain", async () => {
+  it("needs the add-on on a paid plan to add a domain", async () => {
     const r = await addDomain(pool, priya, "book.priya.in", { resolver: dnsWith(["book.priya.in"]) });
     expect(r).toMatchObject({ ok: false, error: "not_entitled" });
+    // A paid plan alone isn't enough.
+    await pool.query("insert into subscriptions (user_id, plan, interval, provider, provider_subscription_id, status) values ($1, 'solo', 'month', 'razorpay', 'sub_only_plan', 'active')", [priya]);
+    expect(await addDomain(pool, priya, "book.priya.in", { resolver: dnsWith(["book.priya.in"]) })).toMatchObject({ ok: false, error: "not_entitled" });
     expect(await getDomain(pool, priya)).toBeNull();
   });
 
@@ -153,6 +163,8 @@ describe.skipIf(!BASE)("custom domains (TEST_DATABASE_URL)", () => {
     const go = (host: string, pathname: string) => routeRequest({ host, pathname, search: "" }, deps());
 
     it("each domain serves only its own host, and only once verified", async () => {
+      await paid(priya);
+      await paid(arjun);
       await setDomain(pool, priya, "book.priya.in");
       await setDomain(pool, arjun, "arjun.coach");
       // Not verified yet: visitors go to the host's page on hourhand.cloud.
@@ -166,6 +178,7 @@ describe.skipIf(!BASE)("custom domains (TEST_DATABASE_URL)", () => {
     });
 
     it("a closed account's domain serves nothing", async () => {
+      await paid(priya);
       await setDomain(pool, priya, "book.priya.in");
       await checkHostDomain(pool, priya, dnsWith(["book.priya.in"]));
       await pool.query("update users set deleted_at = now() where id = $1", [priya]);
