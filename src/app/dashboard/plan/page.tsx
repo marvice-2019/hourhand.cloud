@@ -29,7 +29,7 @@ const DONE: Record<string, string> = {
 };
 
 const FEATURES: Record<PaidPlan, string[]> = {
-  solo: ["Everything in Free", "Unlimited calendars checked for conflicts", "No Hourhand footer on your booking pages"],
+  solo: ["Everything in Free", "Unlimited calendars checked for conflicts", "Several availability schedules, each with its own hours and time zone", "No Hourhand footer on your booking pages"],
   duo: ["Everything in Solo", "A second person at no extra cost: an assistant who manages your bookings, or a co-host with their own page"],
 };
 
