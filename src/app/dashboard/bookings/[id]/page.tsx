@@ -13,6 +13,7 @@ import { formatMoney } from "@/lib/billing/plans";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
 import { getPool } from "@/lib/data/pg-store";
 import { bookingPayment, DEPOSIT_HOLD_MS, type BookingPaymentSummary } from "@/lib/payments/booking-payments";
+import { hostCancelRefundNote, paidShareFor, refundPreview, seriesPaymentNotes } from "@/lib/payments/series";
 import { LOCATION_KEYS, isLocale, t } from "@/lib/i18n/guest";
 import { GUEST_LOCATION_LABELS } from "@/lib/location-labels";
 import { waLink, waNumber, whatsappMessage, type WhatsAppKind } from "@/lib/whatsapp";
@@ -24,7 +25,7 @@ const PAYMENT_WORDS: Record<BookingPaymentSummary["status"], string> = {
 };
 
 const DONE: Record<string, string> = {
-  cancelled: "Booking cancelled. We've emailed the guest, and a paid booking is refunded in full.",
+  cancelled: "Booking cancelled. We've emailed the guest, and any refund it's owed is on its way.",
   rescheduled: "Booking moved. We've emailed the guest the new time.",
   no_show: "Marked as a no-show.",
   no_show_undone: "No-show undone.",
@@ -80,6 +81,12 @@ export default async function BookingDetailPage({ params, searchParams }: { para
   const classmates = booking.classKey ? allBookings.filter((b) => b.classKey === booking.classKey && (b.status === "confirmed" || b.status === "pending_payment")) : [];
   const seatLimit = booking.classKey ? (await store.getEventType(user.id, booking.eventTypeId))?.seatLimit ?? null : null;
   const laterWeeks = series.filter((b) => (b.seriesIndex ?? 0) > (booking.seriesIndex ?? 0) && b.status === "confirmed" && b.startAt > now).length;
+  const inr = (minor: number) => formatMoney(minor, "INR");
+  // What cancelling refunds, by the rules the cancel itself uses (a host cancel has no cutoff).
+  const cancelRefund = authEnabled() && booking.status === "confirmed"
+    ? hostCancelRefundNote(refundPreview(await paidShareFor(getPool(process.env.DATABASE_URL as string), booking.id), laterWeeks), laterWeeks, inr)
+    : null;
+  const seriesNotes = payment ? seriesPaymentNotes(payment, inr) : { what: null, refunds: null };
   return (
     <div>
       <h1 className="font-display text-xl text-text">Booking with {booking.invitee.name}</h1>
@@ -124,11 +131,12 @@ export default async function BookingDetailPage({ params, searchParams }: { para
           <div>
             <dt className="text-sm text-text-muted">Payment</dt>
             <dd className="text-text">
-              {payment.kind === "deposit" && "Deposit: "}{formatMoney(payment.amountMinor, "INR")}, {payment.kind === "deposit" && payment.status === "paid" && booking.invitee.noShowAt ? "kept for the no-show" : PAYMENT_WORDS[payment.status]}
+              {payment.kind === "deposit" && "Deposit: "}{seriesNotes.what ?? formatMoney(payment.amountMinor, "INR")}, {payment.kind === "deposit" && payment.status === "paid" && booking.invitee.noShowAt ? "kept for the no-show" : PAYMENT_WORDS[payment.status]}
               {payment.kind === "deposit" && payment.status === "paid" && !booking.invitee.noShowAt && confirmed && (
                 <span className="block text-sm text-text-muted">Refunded on {formatDate(new Date(booking.endAt.getTime() + DEPOSIT_HOLD_MS), tz)}, {formatTime(new Date(booking.endAt.getTime() + DEPOSIT_HOLD_MS), tz)} unless you mark a no-show before then.</span>
               )}
-              {payment.status === "refund_pending" && payment.lastError && (
+              {seriesNotes.refunds && <span className="block text-sm text-text-muted">{seriesNotes.refunds}</span>}
+              {(payment.status === "refund_pending" || payment.refundDueMinor > 0) && payment.lastError && (
                 <span className="block text-sm text-danger">Razorpay hasn&apos;t accepted the refund yet ({payment.lastError.slice(0, 120)}). Hourhand keeps retrying; check your Razorpay balance.</span>
               )}
             </dd>
@@ -185,7 +193,7 @@ export default async function BookingDetailPage({ params, searchParams }: { para
                   Also cancel the {laterWeeks === 1 ? "next week" : `${laterWeeks} later weeks`} in this series
                 </label>
               )}
-              <p className="text-sm text-text-muted">We&apos;ll email {booking.invitee.name} that you cancelled. A paid booking is refunded in full.</p>
+              <p className="text-sm text-text-muted">We&apos;ll email {booking.invitee.name} that you cancelled.{cancelRefund && ` ${cancelRefund}`}</p>
               <div className="flex flex-wrap gap-2">
                 <Button type="submit" variant="danger">Yes, cancel</Button>
                 <Link href={`/dashboard/bookings/${booking.id}`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">Keep it</Link>

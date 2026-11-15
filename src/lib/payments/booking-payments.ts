@@ -363,13 +363,17 @@ export async function processRefunds(deps: PaymentCheckDeps & { pool: pg.Pool },
   return result;
 }
 
-export interface BookingPaymentSummary { amountMinor: number; status: "pending" | "paid" | "failed" | "refunded" | "refund_pending"; lastError: string | null; kind: "payment" | "deposit"; /** Weeks this payment covers (a paid series); 1 otherwise. */ sessions: number }
+export interface BookingPaymentSummary { amountMinor: number; status: "pending" | "paid" | "failed" | "refunded" | "refund_pending"; lastError: string | null; kind: "payment" | "deposit"; /** Weeks this payment covers (a paid series); 1 otherwise. */ sessions: number;
+  /** Refunded so far, and queued but not yet refunded (cancelled weeks of a series). */ refundedMinor: number; refundDueMinor: number }
 
 /** The latest payment on one of the host's own bookings, for the host's dashboard. Another host's booking reads as null. */
 export async function bookingPayment(db: Pick<pg.Pool, "query">, hostId: string, bookingId: string): Promise<BookingPaymentSummary | null> {
   const { rows: [p] } = await db.query(
-    `select amount_minor, status, last_error, kind, sessions from payments
+    `select amount_minor, status, last_error, kind, sessions, refunded_minor, refund_due_minor from payments
      where host_id = $2 and (booking_id = $1 or booking_id = (select series_id from bookings where id = $1 and host_id = $2))
      order by booking_id = $1 desc, created_at desc limit 1`, [bookingId, hostId]);
-  return p ? { amountMinor: p.amount_minor, status: p.status, lastError: p.last_error, kind: p.kind, sessions: p.sessions } : null;
+  return p ? {
+    amountMinor: p.amount_minor, status: p.status, lastError: p.last_error, kind: p.kind, sessions: p.sessions,
+    refundedMinor: p.refunded_minor, refundDueMinor: p.refund_due_minor,
+  } : null;
 }

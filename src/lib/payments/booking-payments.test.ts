@@ -741,7 +741,10 @@ describe.skipIf(!BASE)("paid bookings (Postgres)", () => {
         const [, second] = await weeksOf(body.bookingId);
         expect(await handleCancel(store, await manageToken(second.id), null, now())).toMatchObject({ status: 200 });
         expect((await payment(body.bookingId))[0]).toMatchObject({ status: "paid", refund_due_minor: UNIT, refunded_minor: 0 });
+        // The host's page for any week shows the series payment with its refund under way.
+        expect(await bookingPayment(pool, priya.id, second.id)).toMatchObject({ amountMinor: 3 * UNIT, sessions: 3, status: "paid", refundDueMinor: UNIT, refundedMinor: 0 });
         expect((await processRefunds(refundDeps(fake), now())).refunded).toBeGreaterThanOrEqual(1);
+        expect(await bookingPayment(pool, priya.id, body.bookingId)).toMatchObject({ refundDueMinor: 0, refundedMinor: UNIT });
         expect(fake.state.refundCalls).toEqual([{ paymentId: pay.id, body: expect.objectContaining({ amount: UNIT }) }]);
         expect((await payment(body.bookingId))[0]).toMatchObject({ status: "paid", refund_due_minor: 0, refunded_minor: UNIT });
         expect((await pool.query("select amount_minor from payment_refunds where payment_id = (select id from payments where booking_id = $1)", [body.bookingId])).rows).toEqual([{ amount_minor: UNIT }]);

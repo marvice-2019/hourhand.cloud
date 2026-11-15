@@ -59,3 +59,27 @@ export async function paidShareFor(db: Db, bookingId: string): Promise<PaidShare
      where b.id = $1 order by p.booking_id = b.id desc, p.created_at desc limit 1`, [bookingId]);
   return p ? { amountMinor: p.amount_minor, sessions: p.sessions, refundedMinor: p.refunded_minor, refundDueMinor: p.refund_due_minor } : null;
 }
+
+/**
+ * The host's view of a paid series' payment: "₹2,000 for 4 weekly sessions (₹500 each)", and where its refunds stand
+ * ("₹1,000 being refunded to the guest; ₹500 refunded so far"). Null parts for a booking paid on its own.
+ */
+export function seriesPaymentNotes(
+  p: { amountMinor: number; sessions: number; status: string; refundedMinor: number; refundDueMinor: number }, money: (minor: number) => string,
+): { what: string | null; refunds: string | null } {
+  if (p.sessions <= 1) return { what: null, refunds: null };
+  const what = `${money(p.amountMinor)} for ${p.sessions} weekly sessions (${money(p.amountMinor / p.sessions)} each)`;
+  const due = p.status === "refund_pending" ? p.amountMinor - p.refundedMinor : p.refundDueMinor;
+  const parts = [
+    due > 0 ? `${money(due)} being refunded to the guest` : "",
+    p.refundedMinor > 0 && p.status !== "refunded" ? `${money(p.refundedMinor)} refunded so far` : "",
+  ].filter(Boolean);
+  return { what, refunds: parts.length ? `${parts.join("; ")}.` : null };
+}
+
+/** The host's cancel form: what cancelling this booking refunds the guest, and with its later weeks. */
+export function hostCancelRefundNote(preview: { thisOnly: number; withLater: number } | null, laterWeeks: number, money: (minor: number) => string): string | null {
+  if (!preview || preview.thisOnly <= 0) return null;
+  const later = laterWeeks > 0 && preview.withLater > preview.thisOnly ? ` (${money(preview.withLater)} if you also cancel the later weeks)` : "";
+  return `The guest gets ${money(preview.thisOnly)} back${later}, refunded from your Razorpay account.`;
+}
