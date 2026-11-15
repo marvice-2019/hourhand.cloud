@@ -254,13 +254,27 @@ export interface PaymentDeps {
   planFor(hostId: string): Promise<Plan>;
 }
 
+/** A step of the booking funnel, reported to analytics. The reporter must not throw; handleCreateBooking guards it anyway. */
+export type FunnelStep = { kind: "booking_started" | "booking_created"; hostId: string; eventTypeId: string; bookingId?: string };
+export type FunnelReporter = (step: FunnelStep) => void;
+
+/** Analytics never gets in a booking's way: a reporter that throws is logged and ignored. */
+function report(reporter: FunnelReporter | undefined, step: FunnelStep): void {
+  if (!reporter) return;
+  try {
+    reporter(step);
+  } catch (error) {
+    console.error("[analytics] funnel step not reported", error);
+  }
+}
+
 /**
  * POST /api/bookings. With `limit`, new bookings are rate limited per client address (see clientIp) and per guest
  * email; the route always passes it, unit tests of the booking rules leave it out. A priced event also needs `payments`:
  * its booking is held as pending_payment and the response carries what Razorpay Checkout needs.
  */
 export async function handleCreateBooking(
-  store: DataStore, input: unknown, now: Date, limit?: { clientKey: string; limiter: Limiter }, payments?: PaymentDeps | null,
+  store: DataStore, input: unknown, now: Date, limit?: { clientKey: string; limiter: Limiter }, payments?: PaymentDeps | null, funnel?: FunnelReporter,
 ): Promise<HandlerResult> {
   const v = validateBookingRequest(input);
   if (!v.ok) return { status: 400, body: { error: "invalid_request", fields: v.fields } };
@@ -317,8 +331,12 @@ export async function handleCreateBooking(
   const startPaid = async (p: { auth: HostRazorpayAuth; deps: PaymentDeps }, priceMinor: number, status: number): Promise<HandlerResult> => {
     const { booking, payment } = await startPaidBooking(
       { pool: p.deps.pool, store, auth: p.auth, orders: p.deps.ordersFor(p.auth) }, { ...bookingInput, priceMinor, kind: paymentKind }, now);
+    if (status === 201) report(funnel, { kind: "booking_created", hostId: host.id, eventTypeId: eventType.id, bookingId: booking.id });
     return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, holdExpiresAt: payment.holdExpiresAt.toISOString() } } };
   };
+
+  // A first attempt at this booking (not a repeat of one already made) that passed every shape check.
+  if (!existing) report(funnel, { kind: "booking_started", hostId: host.id, eventTypeId: eventType.id });
 
   try {
     // The repeat skips the slot re-check and the limiter, as the free repeat above does.
@@ -340,6 +358,7 @@ export async function handleCreateBooking(
 
     if (paid && priceMinor) return await startPaid(paid, priceMinor, 201);
     const booking = await store.createBooking(bookingInput);
+    report(funnel, { kind: "booking_created", hostId: host.id, eventTypeId: eventType.id, bookingId: booking.id });
     return { status: 201, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken } };
   } catch (err) {
     if (isNamedError(err, "SlotTakenError")) return slotTaken(store, host, eventType, req.start, now);

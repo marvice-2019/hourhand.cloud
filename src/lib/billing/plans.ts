@@ -26,12 +26,15 @@ export interface PlanLimits {
   checkedCalendars: number;
   /** "Booked with Hourhand" footer on the booking pages. */
   footer: boolean;
+  /** Booking analytics: how many days back the host can see, and whether they can download it as CSV. */
+  analyticsDays: number;
+  analyticsExport: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true },
-  solo: { checkedCalendars: Infinity, footer: false },
-  duo: { checkedCalendars: Infinity, footer: false },
+  free: { checkedCalendars: 2, footer: true, analyticsDays: 7, analyticsExport: false },
+  solo: { checkedCalendars: Infinity, footer: false, analyticsDays: 90, analyticsExport: true },
+  duo: { checkedCalendars: Infinity, footer: false, analyticsDays: 90, analyticsExport: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {

@@ -8,6 +8,7 @@ import { processRefunds, reconcilePayments, releaseDeposits, type PaymentCheckDe
 import { reconcilePurchases } from "../packages/packages";
 import { queueMonthlyReports } from "../earnings";
 import { pruneWaitlist } from "../waitlist";
+import { rollupAnalytics } from "../analytics/store";
 import { setJobKick } from "./kick";
 import { BATCH_SIZE, processDueNotifications, type CalendarDeps } from "./worker";
 import { whatsappConfig } from "../whatsapp-cloud";
@@ -61,6 +62,8 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
           lastReports = Date.now();
           await queueMonthlyReports(opts.pool, new Date()).catch((error) => console.error("[jobs] monthly reports failed", error));
           await pruneWaitlist(opts.pool, new Date()).catch((error) => console.error("[jobs] waitlist cleanup failed", error));
+          // Finished days into daily totals, and old rows out (raw 90 days, totals 2 years). Once a day would do; hourly is cheap and idempotent.
+          await rollupAnalytics(opts.pool, new Date()).catch((error) => console.error("[jobs] analytics rollup failed", error));
         }
         // A full batch means more may be due: keep going until a batch comes back short.
         for (;;) {

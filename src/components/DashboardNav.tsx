@@ -13,6 +13,7 @@ const items = [
   { href: "/dashboard/links", label: "Links" },
   { href: "/dashboard/packages", label: "Packages" },
   { href: "/dashboard/earnings", label: "Earnings" },
+  { href: "/dashboard/analytics", label: "Analytics" },
   { href: "/dashboard/invoices", label: "Invoices" },
   { href: "/dashboard/availability", label: "Availability" },
   { href: "/dashboard/calendars", label: "Calendars" },
