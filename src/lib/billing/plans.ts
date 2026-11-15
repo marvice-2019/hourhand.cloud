@@ -26,12 +26,14 @@ export interface PlanLimits {
   checkedCalendars: number;
   /** "Booked with Hourhand" footer on the booking pages. */
   footer: boolean;
+  /** Named availability schedules a host can keep, the default included. */
+  schedules: number;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true },
-  solo: { checkedCalendars: Infinity, footer: false },
-  duo: { checkedCalendars: Infinity, footer: false },
+  free: { checkedCalendars: 2, footer: true, schedules: 1 },
+  solo: { checkedCalendars: Infinity, footer: false, schedules: Infinity },
+  duo: { checkedCalendars: Infinity, footer: false, schedules: Infinity },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EventTypeEditor } from "@/components/EventTypeEditor";
+import { EventTypeSchedule } from "@/components/EventTypeSchedule";
 import { store } from "@/lib/data";
 import { toForm } from "@/lib/event-types";
 import { requireHost } from "@/lib/auth/session";
@@ -9,14 +10,14 @@ export const dynamic = "force-dynamic";
 
 export default async function EventTypePage({ params, searchParams }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ saved?: string; schedule?: string }>;
 }) {
   const { id } = await params;
-  const { saved } = await searchParams;
+  const { saved, schedule } = await searchParams;
   const user = await requireHost();
   const eventType = await store.getEventType(user.id, id);
   if (!eventType) notFound();
-  const [locations, questions] = await Promise.all([store.listEventLocations(user.id, id), store.listCustomQuestions(user.id, id)]);
+  const [locations, questions, schedules] = await Promise.all([store.listEventLocations(user.id, id), store.listCustomQuestions(user.id, id), store.listSchedules(user.id)]);
   const ordered = [...questions].sort((a, b) => a.position - b.position);
 
   return (
@@ -33,6 +34,7 @@ export default async function EventTypePage({ params, searchParams }: {
         initialQuestions={ordered.map(({ id: qid, label, kind, required, choices }) => ({ id: qid, label, kind, required, choices }))}
         justSaved={saved === "1"}
       />
+      {eventType.kind !== "one_off" && <EventTypeSchedule eventTypeId={eventType.id} schedules={schedules} saved={schedule === "saved"} />}
     </div>
   );
 }
