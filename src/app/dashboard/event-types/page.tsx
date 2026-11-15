@@ -17,6 +17,7 @@ const locationLabel: Record<LocationKind, string> = {
   in_person: "In person",
   custom: "Custom location",
   ask_guest: "Guest picks the place",
+  hourhand_video: "Hourhand video",
 };
 
 export const dynamic = "force-dynamic";

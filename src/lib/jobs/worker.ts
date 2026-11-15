@@ -7,6 +7,7 @@ import type { BookingEmailKind, CalendarJobKind, NotificationKind } from "../dat
 import type { InviteeAnswer, LocationKind } from "../data/types";
 import type { HourCycle } from "../format";
 import { GUEST_LOCATION_LABELS } from "../location-labels";
+import { videoJoinUrlFor, type VideoAudience } from "../video/links";
 import { MailError, type Mailer } from "../mail/mailer";
 import { invoiceById } from "../gst/invoices";
 import { monthlyEarnings } from "../earnings";
@@ -89,14 +90,16 @@ const CONTEXT = `
 
 type ContextRow = Record<string, unknown>;
 
-function toContext(r: ContextRow, baseUrl: string): BookingMailContext {
+function toContext(r: ContextRow, baseUrl: string, audience: VideoAudience = "guest"): BookingMailContext {
   return {
     bookingId: r.id as string, eventName: r.event_name as string,
     hostName: r.host_name as string, hostEmail: r.host_email as string, hostTimezone: r.host_timezone as string, hostTimeFormat: r.host_time_format as HourCycle,
     guestName: r.guest_name as string, guestEmail: r.guest_email as string, guestTimezone: r.guest_timezone as string, locale: (r.guest_locale as string | null) ?? "en",
     startAt: new Date(r.start_at as Date), endAt: new Date(r.end_at as Date),
     location: r.location_kind ? { kind: r.location_kind as LocationKind, value: (r.location_value as string | null) ?? null } : null,
-    joinUrl: (r.join_url as string | null) ?? null,
+    // Hourhand video: Hourhand's own join page (never the room or a token), the host's or the guest's, checked on every visit.
+    joinUrl: (r.join_url as string | null)
+      ?? videoJoinUrlFor(audience, baseUrl, r.booking_location_kind as string | null, { bookingId: r.id as string, manageToken: r.manage_token as string | null }),
     answers: (r.answers as InviteeAnswer[]) ?? [],
     cancelledBy: (r.cancelled_by as BookingMailContext["cancelledBy"]) ?? null, cancelReason: (r.cancel_reason as string | null) ?? null,
     paidMinor: (r.paid_minor as number | null) ?? null, paidIsDeposit: r.paid_kind === "deposit",
@@ -108,6 +111,9 @@ function toContext(r: ContextRow, baseUrl: string): BookingMailContext {
     runningLateMinutes: Number(/:late:(\d+)/.exec(String(r.dedupe_key ?? ""))?.[1] ?? r.running_late_minutes) || null,
   };
 }
+
+/** A guest email going to someone the guest added, not the guest who booked. */
+const extraGuestMail = (c: Claimed, r: ContextRow) => c.recipient.toLowerCase() !== String(r.guest_email).toLowerCase() && c.kind.endsWith("_guest");
 
 const REBOOK_DAYS = 21;
 
@@ -219,8 +225,10 @@ async function runCalendarJob(pool: pg.Pool, deps: CalendarDeps, c: Claimed, r: 
   const providerOf = (cal: { providerId: CalendarProviderId }): CalendarProvider | { skip: string } =>
     deps.providers[cal.providerId] ?? { skip: `${PROVIDER_NAMES[cal.providerId] ?? cal.providerId} calendars are not configured on this server` };
   const kind = c.kind as CalendarJobKind;
-  const ctx = toContext(r, baseUrl);
-  const where = ctx.location && ctx.location.kind !== "google_meet" && ctx.location.kind !== "teams"
+  // The event goes in the host's calendar, so it carries the host's join link.
+  const ctx = toContext(r, baseUrl, "host");
+  const where = ctx.location?.kind === "hourhand_video" && ctx.joinUrl ? `${GUEST_LOCATION_LABELS.hourhand_video}: ${ctx.joinUrl}`
+    : ctx.location && ctx.location.kind !== "google_meet" && ctx.location.kind !== "teams"
     ? (ctx.location.value ? `${GUEST_LOCATION_LABELS[ctx.location.kind]}: ${ctx.location.value}` : GUEST_LOCATION_LABELS[ctx.location.kind]) : null;
   const summary = `${ctx.eventName} with ${ctx.guestName}`;
 
@@ -467,8 +475,8 @@ export async function processDueNotifications(
           : c.kind === "waitlist_guest" ? await renderWaitlist(pool, c, opts.baseUrl, now)
           : c.kind === "seat_invite" ? await renderSeatInvite(pool, c, opts.baseUrl)
           : renderBookingMail(c.kind as BookingEmailKind, {
-            ...toContext(r, opts.baseUrl),
-            extraGuest: c.recipient.toLowerCase() !== String(r.guest_email).toLowerCase() && c.kind.endsWith("_guest"),
+            ...toContext(r, opts.baseUrl, c.kind.endsWith("_host") ? "host" : extraGuestMail(c, r) ? "extra_guest" : "guest"),
+            extraGuest: extraGuestMail(c, r),
             ...(c.kind === "cancelled_guest" ? { rebook: await rebookSuggestions(pool, r, opts.baseUrl) } : {}),
             ...((c.kind === "booked_guest" || c.kind === "booked_host") && r.series_id === r.id ? { series: await seriesWeeks(pool, r.id as string, opts.baseUrl) } : {}),
             ...((c.kind === "cancelled_guest" || c.kind === "cancelled_host") && r.series_id ? { alsoCancelled: await cancelledWith(pool, r.id as string) } : {}),

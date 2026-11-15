@@ -14,6 +14,7 @@ import { getPool } from "@/lib/data/pg-store";
 import { bookingPayment, DEPOSIT_HOLD_MS, type BookingPaymentSummary } from "@/lib/payments/booking-payments";
 import { LOCATION_KEYS, isLocale, t } from "@/lib/i18n/guest";
 import { GUEST_LOCATION_LABELS } from "@/lib/location-labels";
+import { videoJoinUrl } from "@/lib/video/links";
 import { waLink, waNumber, whatsappMessage, type WhatsAppKind } from "@/lib/whatsapp";
 import { cancelAsHost, rescheduleAsHost, setNoShow } from "./actions";
 
@@ -114,6 +115,15 @@ export default async function BookingDetailPage({ params, searchParams }: { para
                   <li key={b.id}>{b.id === booking.id ? b.invitee.name : <Link href={`/dashboard/bookings/${b.id}`} className="text-accent underline">{b.invitee.name}</Link>}</li>
                 ))}
               </ul>
+            </dd>
+          </div>
+        )}
+        {confirmed && booking.locationKind === "hourhand_video" && (
+          <div>
+            <dt className="text-sm text-text-muted">Hourhand video</dt>
+            <dd className="text-text">
+              <a href={`/v/host/${booking.id}`} className="font-semibold text-accent underline" rel="noopener noreferrer" target="_blank">Start the call</a>
+              <span className="block text-sm text-text-muted">Opens 15 minutes before the start. You join as the host and let {booking.classKey ? "your class" : "your guest"} in from the lobby.</span>
             </dd>
           </div>
         )}
@@ -257,7 +267,8 @@ async function whatsappLinks(
   const value = locations.find((l) => l.kind === kind)?.value ?? null;
   const locale = isLocale(booking.invitee.locale) ? booking.invitee.locale : "en";
   const label = kind ? (locale === "en" ? GUEST_LOCATION_LABELS[kind] : t(locale, LOCATION_KEYS[kind])) : null;
-  const where = label ? `${label}${booking.joinUrl ? `: ${booking.joinUrl}` : value ? `: ${value}` : ""}` : null;
+  const joinUrl = booking.joinUrl ?? videoJoinUrl(origin.replace(/\/+$/, ""), kind, booking.invitee.manageToken);
+  const where = label ? `${label}${joinUrl ? `: ${joinUrl}` : value ? `: ${value}` : ""}` : null;
   const ctx = {
     guestName: booking.invitee.name, hostName: user.name, eventName: eventType?.name ?? "booking", startAt: booking.startAt,
     guestTimezone: booking.invitee.timezone, where, locale, manageUrl: `${origin.replace(/\/+$/, "")}/b/${booking.invitee.manageToken}`,

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
 import { deleteEventType, saveEventType } from "@/app/dashboard/event-types/actions";
 import type { CustomQuestion, LocationKind, QuestionDraft } from "@/lib/data/types";
+import { VIDEO_NEEDS_PLAN, VIDEO_NOT_SET_UP, type VideoAvailability } from "@/lib/video/gate";
 import { LOCATION_VALUE_LABEL, START_INCREMENTS, slugify, type EventTypeErrors, type EventTypeForm, type QuestionErrors } from "@/lib/event-types";
 import { Button } from "./ui/Button";
 import { Card } from "./ui/Card";
@@ -25,6 +26,7 @@ const LOCATIONS: { kind: LocationKind | ""; label: string }[] = [
   { kind: "google_meet", label: "Google Meet" },
   { kind: "zoom", label: "Zoom" },
   { kind: "teams", label: "Microsoft Teams" },
+  { kind: "hourhand_video", label: "Hourhand video (no Zoom or Meet account needed)" },
   { kind: "phone_host_calls", label: "Phone call (you call them)" },
   { kind: "phone_guest_calls", label: "Phone call (they call you)" },
   { kind: "in_person", label: "In person" },
@@ -51,9 +53,11 @@ export interface EventTypeEditorProps {
   initialQuestions: QuestionDraft[];
   /** Shows "Saved" on arrival, after creating a new event type. */
   justSaved?: boolean;
+  /** Whether Hourhand video can be picked: set up on this server and on the host's plan. */
+  video?: VideoAvailability;
 }
 
-export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justSaved = false }: EventTypeEditorProps) {
+export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justSaved = false, video = "not_set_up" }: EventTypeEditorProps) {
   const router = useRouter();
   const [tab, setTab] = useState<TabId>("details");
   const [form, setForm] = useState(initial);
@@ -241,11 +245,18 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
         </div>
         <div>
           <Label htmlFor="f-location">Where you meet</Label>
-          <select id="f-location" aria-describedby={form.locationKind === "teams" ? "f-location-hint" : undefined} value={form.locationKind} onChange={(e) => set("locationKind")(e.target.value)} className={`h-11 ${fieldClasses(false)}`}>
+          <select id="f-location" aria-describedby={form.locationKind === "teams" || form.locationKind === "hourhand_video" ? "f-location-hint" : undefined} value={form.locationKind} onChange={(e) => set("locationKind")(e.target.value)} className={`h-11 ${fieldClasses(false)}`}>
             {LOCATIONS.map((l) => <option key={l.kind} value={l.kind}>{l.label}</option>)}
           </select>
           {form.locationKind === "teams" && (
             <p id="f-location-hint" className="mt-1 text-sm text-text-muted">Teams links are created when bookings go to a work or school Outlook calendar.</p>
+          )}
+          {errors.locationKind && <p role="alert" className="mt-1 text-sm text-danger">{errors.locationKind}</p>}
+          {form.locationKind === "hourhand_video" && !errors.locationKind && (
+            <p id="f-location-hint" className={`mt-1 text-sm ${video === "ready" ? "text-text-muted" : "text-danger"}`}>
+              {video === "ready" ? "Each booking gets a private video room. You join as host and let guests in from the lobby. Calls aren't recorded."
+                : video === "plan" ? VIDEO_NEEDS_PLAN : VIDEO_NOT_SET_UP}
+            </p>
           )}
         </div>
         {valueLabel && (

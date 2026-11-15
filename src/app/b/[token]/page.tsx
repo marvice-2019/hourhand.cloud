@@ -14,6 +14,7 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { LOCATION_KEYS, resolveLocale, t, tNodes } from "@/lib/i18n/guest";
 import { AddToCalendar } from "@/components/AddToCalendar";
 import { resolveBaseUrl } from "@/lib/auth/auth";
+import { videoJoinUrl } from "@/lib/video/links";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,8 @@ export default async function ManageBookingPage({ params, searchParams }: { para
   const [host, eventType] = await Promise.all([store.getUser(booking.hostId), store.getEventType(booking.hostId, booking.eventTypeId)]);
   if (!host || !eventType) notFound();
   const tz = booking.invitee.timezone;
+  // Hourhand video bookings join through /v/<token>, which checks the booking on every visit.
+  const joinUrl = booking.joinUrl ?? videoJoinUrl((resolveBaseUrl() ?? "").replace(/\/+$/, ""), booking.locationKind, token);
   const locale = resolveLocale(lang, host.locale);
   const q = typeof lang === "string" && lang === locale ? `?lang=${locale}` : "";
   const time = (d: Date) => <LocalTime date={d} tz={tz} locale={locale} />;
@@ -53,7 +56,7 @@ export default async function ManageBookingPage({ params, searchParams }: { para
             </dd>
             {series.length > 1 && <dd className="text-sm text-text-muted">{t(locale, "weekOf", { i: booking.seriesIndex ?? 1, n: new Set(series.map((b) => b.seriesIndex)).size })}</dd>}
           </div>
-          {booking.locationKind && <div><dt className="text-sm text-text-muted">{t(locale, "where")}</dt><dd className="text-text">{t(locale, LOCATION_KEYS[booking.locationKind])}{booking.joinUrl && booking.status === "confirmed" && <> · <a href={booking.joinUrl} className="font-semibold text-accent underline" rel="noopener noreferrer" target="_blank">{t(locale, "joinCall")}</a></>}</dd></div>}
+          {booking.locationKind && <div><dt className="text-sm text-text-muted">{t(locale, "where")}</dt><dd className="text-text">{t(locale, LOCATION_KEYS[booking.locationKind])}{joinUrl && booking.status === "confirmed" && <> · <a href={joinUrl} className="font-semibold text-accent underline" rel="noopener noreferrer" target="_blank">{t(locale, "joinCall")}</a></>}</dd></div>}
           <div><dt className="text-sm text-text-muted">{t(locale, "bookedFor")}</dt><dd className="text-text">{booking.invitee.name}, {booking.invitee.email}</dd></div>
         </dl>
       </Card>
@@ -73,7 +76,7 @@ export default async function ManageBookingPage({ params, searchParams }: { para
         <>
         <AddToCalendar
           token={token} title={`${eventType.name} with ${host.name}`} start={booking.startAt} end={booking.endAt} locale={locale}
-          location={booking.joinUrl ?? (booking.locationKind ? t(locale, LOCATION_KEYS[booking.locationKind]) : null)}
+          location={joinUrl ?? (booking.locationKind ? t(locale, LOCATION_KEYS[booking.locationKind]) : null)}
           manageUrl={`${(resolveBaseUrl() ?? "").replace(/\/+$/, "")}/b/${token}`}
         />
         {canSayRunningLate(booking.startAt, new Date()) && <RunningLate token={token} hostName={host.name} told={booking.invitee.runningLateMinutes} locale={locale} />}

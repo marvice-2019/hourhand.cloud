@@ -4,6 +4,7 @@ import { EventTypeEditor } from "@/components/EventTypeEditor";
 import { store } from "@/lib/data";
 import { toForm } from "@/lib/event-types";
 import { requireHost } from "@/lib/auth/session";
+import { videoAvailabilityFor } from "@/lib/video/server";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ export default async function EventTypePage({ params, searchParams }: {
   const { id } = await params;
   const { saved } = await searchParams;
   const user = await requireHost();
+  const video = await videoAvailabilityFor(user.id);
   const eventType = await store.getEventType(user.id, id);
   if (!eventType) notFound();
   const [locations, questions] = await Promise.all([store.listEventLocations(user.id, id), store.listCustomQuestions(user.id, id)]);
@@ -32,6 +34,7 @@ export default async function EventTypePage({ params, searchParams }: {
         initial={toForm(eventType, locations[0])}
         initialQuestions={ordered.map(({ id: qid, label, kind, required, choices }) => ({ id: qid, label, kind, required, choices }))}
         justSaved={saved === "1"}
+        video={video}
       />
     </div>
   );

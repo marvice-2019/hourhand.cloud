@@ -9,6 +9,8 @@ import { authEnabled } from "@/lib/auth/auth";
 import { hostPlan } from "@/lib/billing/account";
 import { getPool } from "@/lib/data/pg-store";
 import { razorpayStatus } from "@/lib/payments/host-razorpay";
+import { videoGateError } from "@/lib/video/gate";
+import { videoAvailabilityFor } from "@/lib/video/server";
 
 export type SaveResult =
   | { ok: true; id: string; slug: string }
@@ -43,6 +45,12 @@ export async function saveEventType(id: string | null, form: EventTypeForm, ques
   // A deposit is a payment too: same plan and Razorpay requirement.
   const depositGate = await priceError(user.id, details.value.depositMinor);
   if (depositGate) return { ok: false, errors: { deposit: depositGate }, questionErrors: [] };
+  // Hourhand video needs the Jitsi settings on this server and a Solo or Duo plan.
+  if (details.value.location?.kind === "hourhand_video") {
+    const before = id ? await store.listEventLocations(user.id, id) : [];
+    const videoGate = videoGateError({ chosen: true, alreadyChosen: before[0]?.kind === "hourhand_video", availability: await videoAvailabilityFor(user.id) });
+    if (videoGate) return { ok: false, errors: { locationKind: videoGate }, questionErrors: [] };
+  }
   try {
     const saved = id ? await store.updateEventType(user.id, id, details.value) : await store.createEventType(user.id, details.value);
     await store.saveQuestions(user.id, saved.id, checked.value);
