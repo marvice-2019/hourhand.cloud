@@ -11,6 +11,7 @@ import { getPool } from "@/lib/data/pg-store";
 import { systemResolver } from "@/lib/domains/dns";
 import { mayUseCustomDomain } from "@/lib/domains/service";
 import { getDomain, type CustomDomain } from "@/lib/domains/store";
+import { traefikFromEnv } from "@/lib/domains/traefik";
 import { DOMAIN_TARGET } from "@/lib/domains/validate";
 import Link from "next/link";
 import { buyDomainAddon, cancelDomainAddon, checkDomainNow, removeDomainAction } from "./actions";
@@ -33,6 +34,7 @@ async function targetIps(): Promise<string[]> {
 }
 
 const ERRORS: Record<string, string> = {
+  not_set_up: "Custom domains are not set up on this server yet.",
   needs_plan: "The custom domain add-on needs a Solo or Duo plan first.",
   already_subscribed: "You already have the custom domain add-on.",
   not_configured: "Payments for the custom domain add-on aren't set up on this server yet.",
@@ -50,7 +52,8 @@ export default async function DomainPage({ searchParams }: { searchParams: Promi
   const paidPlan = pool ? (await hostPlan(pool, user.id)) !== "free" : false;
   const addon = pool ? await getAddon(pool, user.id, "domain") : null;
   const addonOn = addonLive(addon);
-  const canBuy = live && billingFor("razorpay") !== null && addonPriceId("domain") !== null;
+  const tls = traefikFromEnv();
+  const canBuy = live && tls.ok && billingFor("razorpay") !== null && addonPriceId("domain") !== null;
   const ips = await targetIps();
   const fmt = (d: Date) => new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: user.timezone }).format(d);
   const status = domain ? STATUS[domain.status] : null;
@@ -66,6 +69,9 @@ export default async function DomainPage({ searchParams }: { searchParams: Promi
       {params.checked && <p role="status" className="mt-4 text-text-muted">Checked just now.</p>}
       {params.removed && <p role="status" className="mt-4 text-text-muted">Domain removed. Guests who use it are sent to your Hourhand page.</p>}
 
+      {live && !tls.ok && (
+        <p role="status" className="mt-4 max-w-xl text-text-muted">Custom domains are not set up on this server yet, so they can&apos;t be bought or added. Your Hourhand page works as usual.</p>
+      )}
       {!live && <p className="mt-6 text-text-muted">The demo data can&apos;t use a custom domain. Sign in with the database set up.</p>}
 
       {params.checkout === "done" && (
@@ -102,7 +108,7 @@ export default async function DomainPage({ searchParams }: { searchParams: Promi
               <form action={buyDomainAddon} className="mt-4"><Button type="submit">Add custom domain</Button></form>
             </>
           ) : (
-            <p className="mt-1 text-text-muted">{ERRORS.not_configured}</p>
+            <p className="mt-1 text-text-muted">{tls.ok ? ERRORS.not_configured : ERRORS.not_set_up}</p>
           )}
         </Card>
       )}
@@ -149,7 +155,7 @@ export default async function DomainPage({ searchParams }: { searchParams: Promi
         </Card>
       )}
 
-      {live && allowed && (
+      {live && allowed && tls.ok && (
         <Card className="mt-6 max-w-2xl">
           <DomainForm current={domain?.domain} />
         </Card>

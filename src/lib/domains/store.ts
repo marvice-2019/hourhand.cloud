@@ -73,11 +73,16 @@ export async function recordCheck(db: Db, row: Pick<CustomDomain, "id" | "domain
   return rows[0] ? toDomain(rows[0]) : null;
 }
 
-/** Domains whose last check is older than `olderThanMs` (never-checked first), for the scheduled re-check. */
-export async function domainsDue(db: Db, now: Date, olderThanMs: number, limit = 50): Promise<CustomDomain[]> {
+/**
+ * Domains due for the scheduled re-check, never-checked first: pending and failed ones after `waitingMs` (the host is
+ * waiting on them), active ones after `activeMs`.
+ */
+export async function domainsDue(db: Db, now: Date, ages: { waitingMs: number; activeMs: number }, limit = 50): Promise<CustomDomain[]> {
   const { rows } = await db.query(
-    `select ${COLS} from custom_domains where last_checked_at is null or last_checked_at < $1
-     order by last_checked_at nulls first limit $2`, [new Date(now.getTime() - olderThanMs), limit]);
+    `select ${COLS} from custom_domains
+     where last_checked_at is null or last_checked_at < case when status = 'active' then $2::timestamptz else $1::timestamptz end
+     order by last_checked_at nulls first limit $3`,
+    [new Date(now.getTime() - ages.waitingMs), new Date(now.getTime() - ages.activeMs), limit]);
   return rows.map(toDomain);
 }
 
