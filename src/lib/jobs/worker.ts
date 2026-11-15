@@ -15,6 +15,7 @@ import { PLAN_NAMES, PRICES, priceLine, type BillingInterval, type PaidPlan } fr
 import { freeSlots } from "../booking";
 import { createPgStore } from "../data/pg-store";
 import { hostPlan } from "../billing/account";
+import { isClinicMail, renderClinicMail } from "../clinic/mail";
 import { isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
 
 // Runs due rows of the notifications queue: emails, and writes to the host's calendar (Google or Microsoft). Several workers can run
@@ -408,7 +409,7 @@ export async function processDueNotifications(
       continue;
     }
     // Host emails about their account rather than a booking.
-    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite";
+    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isClinicMail(c.kind);
     if (!isAccountMail) {
       if (!r?.id) { await skip(c, "booking no longer exists"); continue; }
       const why = skipReason(c.kind, r, now);
@@ -466,6 +467,7 @@ export async function processDueNotifications(
           : c.kind === "earnings_host" ? await renderEarnings(pool, c, opts.baseUrl, now)
           : c.kind === "waitlist_guest" ? await renderWaitlist(pool, c, opts.baseUrl, now)
           : c.kind === "seat_invite" ? await renderSeatInvite(pool, c, opts.baseUrl)
+          : isClinicMail(c.kind) ? await renderClinicMail(pool, c, opts.baseUrl)
           : renderBookingMail(c.kind as BookingEmailKind, {
             ...toContext(r, opts.baseUrl),
             extraGuest: c.recipient.toLowerCase() !== String(r.guest_email).toLowerCase() && c.kind.endsWith("_guest"),

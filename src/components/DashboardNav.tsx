@@ -18,6 +18,7 @@ const items = [
   { href: "/dashboard/calendars", label: "Calendars" },
   { href: "/dashboard/integrations", label: "Integrations" },
   { href: "/dashboard/domain", label: "Custom domain" },
+  { href: "/dashboard/practice", label: "Practice" },
   { href: "/dashboard/plan", label: "Plan" },
   { href: "/dashboard/settings", label: "Settings" },
 ];

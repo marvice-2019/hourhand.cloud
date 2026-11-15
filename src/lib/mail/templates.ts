@@ -337,6 +337,18 @@ export function renderSeatInviteMail(c: { ownerName: string; ownerEmail: string;
   }, { replyTo: c.ownerEmail });
 }
 
+export function renderPracticeInviteMail(c: { practiceName: string; inviterName: string; replyTo: string; role: "admin" | "practitioner"; url: string }): RenderedMail {
+  return render(`${c.practiceName} invited you to Hourhand`, {
+    heading: `Join ${c.practiceName} on Hourhand`,
+    intro: `${c.inviterName} added you to ${c.practiceName} as ${c.role === "admin" ? "an admin" : "a practitioner"}. Sign in with this email address to accept.`,
+    rows: [], link: { label: "Sign in to accept", url: c.url },
+    note: c.role === "admin"
+      ? "As an admin you manage the practice's practitioners and see its bookings. Practitioners' client notes stay private to them. If you weren't expecting this, ignore it."
+      : "You keep your own Hourhand account: your calendars, hours, services and client notes stay yours, and you're listed on the practice's page. If you weren't expecting this, ignore it.",
+    footer: `Sent by Hourhand for ${c.practiceName}. Reply to reach them.`,
+  }, { replyTo: c.replyTo });
+}
+
 export function renderWaitlistMail(c: { guestName: string; hostName: string; eventName: string; start: Date; timezone: string; url: string }): RenderedMail {
   return render(`A time opened up with ${c.hostName}`, {
     heading: "A time opened up", intro: `Hi ${c.guestName}, a ${c.eventName} time with ${c.hostName} just became free on the day you asked about.`,

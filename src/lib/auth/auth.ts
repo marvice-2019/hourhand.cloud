@@ -140,7 +140,8 @@ function createAuth() {
           before: async (user, ctx) => {
             if (refuseUnverifiedSignUp(user, ctx)) return false;
             const slug = await uniqueSlug(user.email, user.name, async (candidate) => {
-              const { rowCount } = await pool.query("select 1 from users where slug = $1", [candidate]);
+              // A practice page (Clinic plan) holds its slug too: hosts and practices share the top-level path.
+              const { rowCount } = await pool.query("select 1 from users where slug = $1 union all select 1 from practices where slug = $1", [candidate]);
               return (rowCount ?? 0) > 0;
             });
             return { data: { ...user, slug } };
