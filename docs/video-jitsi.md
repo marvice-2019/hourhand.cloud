@@ -168,7 +168,7 @@ If step 2 lets the guest straight in, the lobby modules did not load. Check `doc
 | `JITSI_APP_ID` | `hourhand` (same as `JWT_APP_ID`) |
 | `JITSI_APP_SECRET` | the same 64-character secret as `JWT_APP_SECRET` (at least 32 characters) |
 
-Missing or malformed values switch the feature off: the editor says "not set up on this server" and join links explain the same. Migration `0034_hourhand_video.sql` adds the location kind and the `video_rooms` table. It runs when the container starts, as usual.
+Missing or malformed values switch the feature off: the editor says "not set up on this server" and join links explain the same. Migration `0035_hourhand_video.sql` adds the location kind and the `video_rooms` table. It runs when the container starts, as usual.
 
 ## Sources (read 2026-11-15)
 

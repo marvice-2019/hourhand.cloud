@@ -7,6 +7,8 @@ import { store } from "@/lib/data";
 import { isNamedError, LOCATION_KINDS, type InvalidOneOffError, type LocationKind } from "@/lib/data/types";
 import { LOCATION_VALUE_LABEL } from "@/lib/event-types";
 import { parseLocalTimes } from "@/lib/links-form";
+import { videoGateError } from "@/lib/video/gate";
+import { videoAvailabilityFor } from "@/lib/video/server";
 
 // Each action checks the session itself; every store call takes the signed-in host's id, so another host's link or
 // event type is simply not found. The raw link is returned once, here, and never stored.
@@ -45,6 +47,11 @@ export async function createOneOff(_prev: LinkFormState, form: FormData): Promis
   if (!LOCATION_KINDS.includes(kind)) return { status: "error", message: "Pick where you'll meet." };
   const valueLabel = LOCATION_VALUE_LABEL[kind];
   if (valueLabel && !value) return { status: "error", message: `Add the ${valueLabel.toLowerCase()} so your guest knows where to go.` };
+  // Hourhand video needs the Jitsi settings on this server and a Solo or Duo plan (a one-off is always a new choice).
+  if (kind === "hourhand_video") {
+    const gate = videoGateError({ chosen: true, alreadyChosen: false, availability: await videoAvailabilityFor(user.id) });
+    if (gate) return { status: "error", message: gate };
+  }
   if (description.length > 2000) return { status: "error", message: "Keep the description under 2000 characters." };
   const parsed = parseLocalTimes(form.getAll("times").map(String), user.timezone);
   if (!parsed.ok) return { status: "error", message: parsed.error };

@@ -114,6 +114,20 @@ describe.skipIf(!BASE)("Hourhand video (TEST_DATABASE_URL)", () => {
     expect(await resolveHostJoin(deps(during, priya.id), b.id)).toMatchObject({ ok: false, reason: "cancelled" });
   });
 
+  it("works for a one-off meeting: its booking is on Hourhand video and the guest joins its own room", async () => {
+    const startAt = nextStart();
+    const { eventType, token } = await store.createOneOffMeeting(priya.id, {
+      name: "Contract review", durationMinutes: 30, location: { kind: "hourhand_video", value: null }, times: [startAt],
+    }, new Date());
+    expect((await store.listEventLocations(priya.id, eventType.id)).map((l) => l.kind)).toEqual(["hourhand_video"]);
+    const b = await store.createBooking({ eventTypeId: eventType.id, startAt, idempotencyKey: `oneoff-video-${Math.random()}`, bookingLinkToken: token, invitee: guest });
+    expect(b.locationKind).toBe("hourhand_video");
+    const joined = await resolveJoin(deps(new Date(startAt.getTime() - 5 * MIN)), b.invitee.manageToken);
+    if (!joined.ok) throw new Error(`expected a join, got ${joined.reason}`);
+    const room = (await pool.query("select room from video_rooms where room_key = $1", [roomKey(b)])).rows[0].room;
+    expect(new URL(joined.url).pathname).toBe(`/${room}`);
+  });
+
   it("drops a host's rooms with their account", async () => {
     const { rows: [u] } = await pool.query("insert into users (email, name, slug, timezone) values ('gone@example.com', 'Gone', 'gone-host', 'Asia/Kolkata') returning id");
     await pgRoomStore(pool).roomFor("booking:gone", u.id);

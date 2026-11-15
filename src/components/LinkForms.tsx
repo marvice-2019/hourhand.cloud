@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { createOneOff, createSingleUseLink, type LinkFormState } from "@/app/dashboard/links/actions";
+import { VIDEO_NEEDS_PLAN, VIDEO_NOT_SET_UP, type VideoAvailability } from "@/lib/video/gate";
 import { CopyLinkButton } from "./CopyLinkButton";
 import { Button } from "./ui/Button";
 import { Input, Label } from "./ui/Input";
@@ -47,13 +48,14 @@ const LOCATIONS: { kind: string; label: string; needs?: string }[] = [
   { kind: "google_meet", label: "Google Meet" },
   { kind: "teams", label: "Microsoft Teams" },
   { kind: "zoom", label: "Zoom" },
+  { kind: "hourhand_video", label: "Hourhand video (no Zoom or Meet account needed)" },
   { kind: "phone_host_calls", label: "Phone call (you call them)" },
   { kind: "phone_guest_calls", label: "Phone call (they call you)", needs: "Your phone number" },
   { kind: "in_person", label: "In person", needs: "Address" },
   { kind: "custom", label: "Somewhere else", needs: "Location details" },
 ];
 
-export function OneOffForm({ timeZone }: { timeZone: string }) {
+export function OneOffForm({ timeZone, video = "not_set_up" }: { timeZone: string; video?: VideoAvailability }) {
   const [state, action, pending] = useActionState(createOneOff, idle);
   const [rows, setRows] = useState<number[]>([0, 1, 2]);
   const [next, setNext] = useState(3);
@@ -69,6 +71,12 @@ export function OneOffForm({ timeZone }: { timeZone: string }) {
           {LOCATIONS.map((l) => <option key={l.kind} value={l.kind}>{l.label}</option>)}
         </select>
         {kind === "teams" && <p className="mt-1 text-sm text-text-muted">Teams links are created when bookings go to a work or school Outlook calendar.</p>}
+        {kind === "hourhand_video" && (
+          <p className={`mt-1 text-sm ${video === "ready" ? "text-text-muted" : "text-danger"}`}>
+            {video === "ready" ? "Your guest gets a private video room. You join as host and let them in from the lobby. Calls aren't recorded."
+              : video === "plan" ? VIDEO_NEEDS_PLAN : VIDEO_NOT_SET_UP}
+          </p>
+        )}
       </div>
       {needs && <div><Label htmlFor="oo-location-value">{needs}</Label><Input id="oo-location-value" name="locationValue" /></div>}
       <div><Label htmlFor="oo-description">Note for your guest (optional)</Label><Input id="oo-description" name="description" maxLength={2000} /></div>

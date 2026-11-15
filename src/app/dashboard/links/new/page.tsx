@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { OneOffForm } from "@/components/LinkForms";
 import { requireHost } from "@/lib/auth/session";
+import { videoAvailabilityFor } from "@/lib/video/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewOneOffPage() {
   const user = await requireHost();
+  const video = await videoAvailabilityFor(user.id);
   return (
     <div>
       <Link href="/dashboard/links" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent underline">Links</Link>
@@ -14,7 +16,7 @@ export default async function NewOneOffPage() {
         Offer a few times for one person. They get a link, pick one, and the link stops working. Times you&apos;re booked or busy
         for by then are hidden from them.
       </p>
-      <div className="mt-6"><OneOffForm timeZone={user.timezone} /></div>
+      <div className="mt-6"><OneOffForm timeZone={user.timezone} video={video} /></div>
     </div>
   );
 }
