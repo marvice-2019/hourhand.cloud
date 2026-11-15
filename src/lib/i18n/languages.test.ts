@@ -77,7 +77,7 @@ describe("choosing the language", () => {
   });
 
   it("lets the database store every language (migration matches LOCALES)", () => {
-    const sql = readFileSync(new URL("../../../db/migrations/0027_invitee_locale_more_languages.sql", import.meta.url), "utf8");
+    const sql = readFileSync(new URL("../../../db/migrations/0031_invitee_locale_more_languages.sql", import.meta.url), "utf8");
     const allowed = [...(/check \(locale in \(([^)]*)\)\)/.exec(sql)?.[1] ?? "").matchAll(/'(\w+)'/g)].map((m) => m[1]);
     expect(allowed.sort()).toEqual([...LOCALES].sort());
   });
