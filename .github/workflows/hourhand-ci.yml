@@ -62,3 +62,53 @@ jobs:
           name: e2e-logs
           path: e2e/.out/
           retention-days: 7
+
+  # Production deploy: only after `check` passes on a push to main. Coolify's own git auto-deploy
+  # never fired (PR #8 needed a manual Redeploy), so CI triggers it through Coolify's API instead
+  # and waits for the result, so a failed deploy turns this run red.
+  # Needs two repository secrets: COOLIFY_WEBHOOK (the app's Deploy Webhook URL, from its
+  # Webhooks tab in Coolify) and COOLIFY_TOKEN (a Coolify API token with deploy permission).
+  deploy:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: hourhand-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Deploy through Coolify
+        env:
+          COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$COOLIFY_WEBHOOK" ] || [ -z "$COOLIFY_TOKEN" ]; then
+            echo "::error::COOLIFY_WEBHOOK and COOLIFY_TOKEN repository secrets must be set"; exit 1
+          fi
+          auth="Authorization: Bearer $COOLIFY_TOKEN"
+          resp=$(curl -fsS --retry 3 --retry-all-errors -H "$auth" "$COOLIFY_WEBHOOK")
+          echo "Coolify: $resp"
+          id=$(echo "$resp" | jq -r '.deployments[0].deployment_uuid // empty')
+          [ -n "$id" ] || { echo "::error::Coolify returned no deployment_uuid"; exit 1; }
+          api="${COOLIFY_WEBHOOK%%/api/v1/*}/api/v1"
+          for i in $(seq 1 120); do
+            status=$(curl -fsS --retry 3 --retry-all-errors -H "$auth" "$api/deployments/$id" | jq -r '.status')
+            echo "[$i] deployment $id: $status"
+            case "$status" in
+              finished) exit 0 ;;
+              failed|cancelled*) echo "::error::Coolify deployment $id $status; see its log in Coolify"; exit 1 ;;
+              queued|in_progress) ;;
+              *) echo "::error::Unexpected deployment status '$status' from $api/deployments/$id"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Coolify deployment $id did not finish within 20 minutes"; exit 1
+      - name: Check the live site
+        run: |
+          set -euo pipefail
+          for p in / /coaches /sign-in /api/health; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --retry 5 --retry-all-errors --retry-delay 5 "https://hourhand.cloud$p")
+            echo "$p $code"; [ "$code" = 200 ] || { echo "::error::$p returned $code"; exit 1; }
+          done
+          curl -fsS https://hourhand.cloud/api/health
