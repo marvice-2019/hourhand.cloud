@@ -26,12 +26,14 @@ export interface PlanLimits {
   checkedCalendars: number;
   /** "Booked with Hourhand" footer on the booking pages. */
   footer: boolean;
+  /** Booking texts (SMS) a host's guests can get per calendar month (IST). Over it, email still goes. */
+  smsPerMonth: number;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true },
-  solo: { checkedCalendars: Infinity, footer: false },
-  duo: { checkedCalendars: Infinity, footer: false },
+  free: { checkedCalendars: 2, footer: true, smsPerMonth: 0 },
+  solo: { checkedCalendars: Infinity, footer: false, smsPerMonth: 100 },
+  duo: { checkedCalendars: Infinity, footer: false, smsPerMonth: 200 },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {

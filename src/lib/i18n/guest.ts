@@ -21,6 +21,15 @@ export function resolveLocale(lang: unknown, hostDefault: string | null | undefi
 export const intlTag = (locale: Locale) => (locale === "en" ? "en-IN" : `${locale}-IN-u-nu-latn`);
 
 const en = {
+  phoneOptionalSms: "Mobile number (optional)",
+  smsOptIn: "Text me booking updates by SMS (Indian mobile numbers only).",
+  errSmsPhone: "Text updates go to Indian mobile numbers only, like +91 98765 43210.",
+  textsHeading: "Text messages",
+  textsOn: "Booking updates are texted to {phone}.",
+  textsOff: "Text messages are off for this booking.",
+  textsTurnOff: "Turn off texts",
+  textsTurnOn: "Turn on texts",
+  textsFailed: "That didn't save. Try again.",
   metaDescription: "Book a time with {name}.",
   waGreeting: "Hi {name}, I found your booking page.",
   chatWhatsApp: "Chat on WhatsApp",
@@ -183,6 +192,15 @@ export type GuestKey = keyof typeof en;
 type Catalog = Record<GuestKey, string>;
 
 const hi: Catalog = {
+  phoneOptionalSms: "मोबाइल नंबर (ज़रूरी नहीं)",
+  smsOptIn: "बुकिंग से जुड़े अपडेट SMS पर भेजें (सिर्फ़ भारतीय मोबाइल नंबर)।",
+  errSmsPhone: "SMS अपडेट सिर्फ़ भारतीय मोबाइल नंबर पर जाते हैं, जैसे +91 98765 43210।",
+  textsHeading: "SMS संदेश",
+  textsOn: "बुकिंग के अपडेट {phone} पर SMS से भेजे जाते हैं।",
+  textsOff: "इस बुकिंग के लिए SMS बंद हैं।",
+  textsTurnOff: "SMS बंद करें",
+  textsTurnOn: "SMS चालू करें",
+  textsFailed: "बदलाव सेव नहीं हुआ। फिर से कोशिश करें।",
   metaDescription: "{name} के साथ समय बुक करें।",
   waGreeting: "नमस्ते {name}, मुझे आपका बुकिंग पेज मिला।",
   chatWhatsApp: "WhatsApp पर बात करें",
@@ -342,6 +360,15 @@ const hi: Catalog = {
 };
 
 const ta: Catalog = {
+  phoneOptionalSms: "மொபைல் எண் (விருப்பம்)",
+  smsOptIn: "முன்பதிவு தகவல்களை SMS-இல் அனுப்பவும் (இந்திய மொபைல் எண்கள் மட்டும்).",
+  errSmsPhone: "SMS தகவல்கள் இந்திய மொபைல் எண்களுக்கு மட்டுமே, உதா. +91 98765 43210.",
+  textsHeading: "SMS செய்திகள்",
+  textsOn: "முன்பதிவு தகவல்கள் {phone} எண்ணுக்கு SMS-ஆக அனுப்பப்படும்.",
+  textsOff: "இந்த முன்பதிவுக்கு SMS நிறுத்தப்பட்டுள்ளது.",
+  textsTurnOff: "SMS-ஐ நிறுத்து",
+  textsTurnOn: "SMS-ஐ இயக்கு",
+  textsFailed: "சேமிக்கவில்லை. மீண்டும் முயலுங்கள்.",
   metaDescription: "{name} உடன் ஒரு நேரத்தை புக் செய்யுங்கள்.",
   waGreeting: "வணக்கம் {name}, உங்கள் புக்கிங் பக்கத்தைப் பார்த்தேன்.",
   chatWhatsApp: "WhatsApp-ல் பேசுங்கள்",
@@ -501,6 +528,15 @@ const ta: Catalog = {
 };
 
 const te: Catalog = {
+  phoneOptionalSms: "మొబైల్ నంబర్ (ఐచ్ఛికం)",
+  smsOptIn: "బుకింగ్ అప్‌డేట్‌లను SMS ద్వారా పంపండి (భారతీయ మొబైల్ నంబర్‌లకు మాత్రమే).",
+  errSmsPhone: "SMS అప్‌డేట్‌లు భారతీయ మొబైల్ నంబర్‌లకు మాత్రమే, ఉదా. +91 98765 43210.",
+  textsHeading: "SMS సందేశాలు",
+  textsOn: "బుకింగ్ అప్‌డేట్‌లు {phone} కు SMS ద్వారా వస్తాయి.",
+  textsOff: "ఈ బుకింగ్‌కు SMS ఆపివేయబడ్డాయి.",
+  textsTurnOff: "SMS ఆపండి",
+  textsTurnOn: "SMS ఆన్ చేయండి",
+  textsFailed: "సేవ్ కాలేదు. మళ్ళీ ప్రయత్నించండి.",
   metaDescription: "{name} తో ఒక సమయం బుక్ చేసుకోండి.",
   waGreeting: "హాయ్ {name}, మీ బుకింగ్ పేజీ చూశాను.",
   chatWhatsApp: "WhatsApp లో మాట్లాడండి",
@@ -660,6 +696,15 @@ const te: Catalog = {
 };
 
 const kn: Catalog = {
+  phoneOptionalSms: "ಮೊಬೈಲ್ ನಂಬರ್ (ಐಚ್ಛಿಕ)",
+  smsOptIn: "ಬುಕಿಂಗ್ ಅಪ್‌ಡೇಟ್‌ಗಳನ್ನು SMS ಮೂಲಕ ಕಳುಹಿಸಿ (ಭಾರತೀಯ ಮೊಬೈಲ್ ನಂಬರ್‌ಗಳಿಗೆ ಮಾತ್ರ).",
+  errSmsPhone: "SMS ಅಪ್‌ಡೇಟ್‌ಗಳು ಭಾರತೀಯ ಮೊಬೈಲ್ ನಂಬರ್‌ಗಳಿಗೆ ಮಾತ್ರ, ಉದಾ. +91 98765 43210.",
+  textsHeading: "SMS ಸಂದೇಶಗಳು",
+  textsOn: "ಬುಕಿಂಗ್ ಅಪ್‌ಡೇಟ್‌ಗಳು {phone} ಗೆ SMS ಮೂಲಕ ಬರುತ್ತವೆ.",
+  textsOff: "ಈ ಬುಕಿಂಗ್‌ಗೆ SMS ನಿಲ್ಲಿಸಲಾಗಿದೆ.",
+  textsTurnOff: "SMS ನಿಲ್ಲಿಸಿ",
+  textsTurnOn: "SMS ಆನ್ ಮಾಡಿ",
+  textsFailed: "ಉಳಿಸಲಾಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
   metaDescription: "{name} ಅವರೊಂದಿಗೆ ಸಮಯ ಬುಕ್ ಮಾಡಿ.",
   waGreeting: "ನಮಸ್ಕಾರ {name}, ನಿಮ್ಮ ಬುಕಿಂಗ್ ಪೇಜ್ ನೋಡಿದೆ.",
   chatWhatsApp: "WhatsApp ನಲ್ಲಿ ಮಾತಾಡಿ",

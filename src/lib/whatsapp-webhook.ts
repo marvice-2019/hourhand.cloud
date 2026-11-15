@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { queueSmsFallback } from "./sms/outbox";
 import { isStop, parseWebhook, sendWhatsApp, STOP_REPLY, textMessage, verifyWebhookSignature, type WhatsAppConfig } from "./whatsapp-cloud";
 
 type Result = { status: number; body: string | Record<string, unknown> };
@@ -28,9 +29,11 @@ export async function handleWhatsAppWebhook(
   const { statuses, messages } = parseWebhook(payload);
   for (const s of statuses) {
     if (s.status !== "failed") continue; // sent, delivered and read change nothing: the row is already "sent"
-    await pool.query(
-      "update notifications set status = 'failed', last_error = $2, updated_at = now() where channel = 'whatsapp' and provider_message_id = $1",
+    const { rows: failed } = await pool.query(
+      "update notifications set status = 'failed', last_error = $2, updated_at = now() where channel = 'whatsapp' and provider_message_id = $1 returning id",
       [s.id, s.error]);
+    // The guest may not be on WhatsApp at all: send the same message as a text, if they ticked that too.
+    for (const f of failed) await queueSmsFallback(pool, f.id as string, new Date());
   }
   for (const m of messages) {
     if (!isStop(m.text)) continue;
