@@ -23,7 +23,7 @@ export function question(rawLabel: unknown, kind: ImportedQuestion["kind"], requ
 
 const KIND_WORDS: Record<ImportedQuestion["kind"], string> = {
   short_text: "short answer", long_text: "long answer", phone: "phone number", single_select: "single choice",
-  multi_select: "multiple choice", consent: "tick box",
+  multi_select: "multiple choice", consent: "tick box", yes_no: "yes or no", date: "date", number: "number", email: "email address",
 };
 
 export function capQuestions(qs: ImportedQuestion[], notes: string[]): ImportedQuestion[] {

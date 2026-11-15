@@ -37,6 +37,7 @@ export default async function EventTypesPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {!acting && <Link href="/dashboard/event-types/import" className={buttonClasses({ variant: "secondary" })}>Import from Calendly / Cal.com</Link>}
+          <Link href="/dashboard/event-types/templates" className={buttonClasses({ variant: "secondary" })}>Intake templates</Link>
           <Link href="/dashboard/event-types/new" className={buttonClasses()}>New event type</Link>
         </div>
       </div>

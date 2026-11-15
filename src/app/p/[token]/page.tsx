@@ -10,6 +10,7 @@ import { getPool } from "@/lib/data/pg-store";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
 import { purchaseByToken, purchaseSessions } from "@/lib/packages/packages";
+import { toIntakeQuestion } from "@/lib/intake/conditions";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export default async function PackagePage({ params }: { params: Promise<{ token:
   const sessions = await purchaseSessions(db!, purchase.id);
   const questions = (await store.listCustomQuestions(host.id, eventType.id))
     .sort((a, b) => a.position - b.position)
-    .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
+    .map(toIntakeQuestion);
   const tz = host.timezone;
 
   return (

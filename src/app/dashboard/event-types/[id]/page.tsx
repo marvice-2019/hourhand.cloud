@@ -4,6 +4,8 @@ import { EventTypeEditor } from "@/components/EventTypeEditor";
 import { store } from "@/lib/data";
 import { toForm } from "@/lib/event-types";
 import { requireHost } from "@/lib/auth/session";
+import { templateChoices, templatesEnabled } from "@/lib/intake/options";
+import { toDrafts } from "@/lib/intake/templates-shape";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +18,7 @@ export default async function EventTypePage({ params, searchParams }: {
   const user = await requireHost();
   const eventType = await store.getEventType(user.id, id);
   if (!eventType) notFound();
-  const [locations, questions] = await Promise.all([store.listEventLocations(user.id, id), store.listCustomQuestions(user.id, id)]);
-  const ordered = [...questions].sort((a, b) => a.position - b.position);
+  const [locations, questions, templates] = await Promise.all([store.listEventLocations(user.id, id), store.listCustomQuestions(user.id, id), templateChoices(user.id)]);
 
   return (
     <div>
@@ -30,7 +31,9 @@ export default async function EventTypePage({ params, searchParams }: {
         id={eventType.id}
         userSlug={user.slug}
         initial={toForm(eventType, locations[0])}
-        initialQuestions={ordered.map(({ id: qid, label, kind, required, choices }) => ({ id: qid, label, kind, required, choices }))}
+        initialQuestions={toDrafts(questions)}
+        templates={templates}
+        canSaveTemplates={templatesEnabled()}
         justSaved={saved === "1"}
       />
     </div>

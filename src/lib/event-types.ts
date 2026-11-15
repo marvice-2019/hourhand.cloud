@@ -1,7 +1,9 @@
 // Pure validation for the event type editor. Limits mirror the checks on event_types and custom_questions in docs/schema.sql.
 import type { Plan } from "./billing/plans";
-import { LOCATION_KINDS, type CustomQuestion, type EventLocation, type EventType, type EventTypeDraft, type LocationKind, type QuestionDraft } from "./data/types";
+import { LOCATION_KINDS, type EventLocation, type EventType, type EventTypeDraft, type LocationKind, type QuestionDraft } from "./data/types";
 import { cleanRedirectUrl } from "./calendar-links";
+import { QUESTION_KINDS } from "./intake/conditions";
+import { checkIntakeFields } from "./intake/questions";
 
 export const DURATION = { min: 5, max: 720 } as const;
 export const START_INCREMENTS = [5, 10, 15, 20, 30, 45, 60] as const;
@@ -61,7 +63,7 @@ export const MAX_SEATS = 500;
 export const MAX_WEEKS = 12;
 
 export type EventTypeErrors = Partial<Record<keyof EventTypeForm, string>>;
-export type QuestionErrors = { label?: string; choices?: string }[];
+export type QuestionErrors = { label?: string; choices?: string; condition?: string; range?: string }[];
 
 /** "45-min Coaching Session!" -> "45-min-coaching-session". */
 export function slugify(name: string): string {
@@ -225,23 +227,23 @@ export function toForm(et: EventType, location: EventLocation | undefined): Even
   };
 }
 
-const QUESTION_KINDS: readonly CustomQuestion["kind"][] = ["short_text", "long_text", "phone", "single_select", "multi_select", "consent"];
-
-/** Checks each question; the error list lines up with the input list. */
+/** Checks each question; the error list lines up with the input list. Conditions and number bounds: see src/lib/intake. */
 export function validateQuestions(questions: readonly QuestionDraft[]):
   { ok: true; value: QuestionDraft[] } | { ok: false; errors: QuestionErrors } {
   let ok = true;
   const value: QuestionDraft[] = [];
-  const errors: QuestionErrors = questions.map((q) => {
+  const errors: QuestionErrors = questions.map((q, index) => {
     const e: QuestionErrors[number] = {};
-    const label = q.label.trim();
+    const label = typeof q.label === "string" ? q.label.trim() : "";
     if (!label) e.label = "Write the question guests will see.";
     if (!QUESTION_KINDS.includes(q.kind)) e.label = "Pick a kind of answer.";
     const isSelect = q.kind === "single_select" || q.kind === "multi_select";
-    const choices = isSelect ? q.choices.map((c) => c.trim()).filter(Boolean) : [];
+    const choices = isSelect && Array.isArray(q.choices) ? q.choices.map((c) => String(c).trim()).filter(Boolean) : [];
     if (isSelect && choices.length < 2) e.choices = "Add at least two choices, one per line.";
-    if (e.label || e.choices) ok = false;
-    value.push({ id: q.id, label, kind: q.kind, required: q.required, choices });
+    const extra = checkIntakeFields(q, index, value);
+    Object.assign(e, extra.errors);
+    if (e.label || e.choices || e.condition || e.range) ok = false;
+    value.push({ id: q.id, label, kind: q.kind, required: q.required === true, choices, ...extra.value });
     return e;
   });
   return ok ? { ok: true, value } : { ok: false, errors };
