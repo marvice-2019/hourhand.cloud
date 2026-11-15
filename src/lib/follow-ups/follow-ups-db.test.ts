@@ -10,9 +10,9 @@ import type { DataStore, EventType, User } from "../data/types";
 import type { Mail, Mailer } from "../mail/mailer";
 import { processDueNotifications } from "../jobs/worker";
 import {
-  FOLLOW_UPS_OFF, applyOptOut, feedbackPage, getFollowUpSettings, listFeedback, saveFollowUpSettings, submitFeedback, type FollowUpSettings,
+  FOLLOW_UPS_OFF, rebookPrefill, applyOptOut, feedbackPage, getFollowUpSettings, listFeedback, saveFollowUpSettings, submitFeedback, type FollowUpSettings,
 } from "./follow-ups";
-import { feedbackToken, linkKey, optOutToken } from "./tokens";
+import { feedbackToken, linkKey, optOutToken, rebookToken } from "./tokens";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const HOUR = 3_600_000;
@@ -144,7 +144,13 @@ describe.skipIf(!BASE)("follow-ups (TEST_DATABASE_URL)", () => {
       expect(sent[0].to).toBe(b.invitee.email);
       expect(sent[0].subject).toBe(`Thanks for your ${coaching.name} with ${priya.name}`);
       expect(sent[0].text).toMatch(new RegExp(`${baseUrl}/b/feedback/f\\.${b.id}\\.\\d+\\.[A-Za-z0-9_-]{24}\\?r=5`));
-      expect(sent[0].text).toContain(`${baseUrl}/priya/coaching?name=Meera+Iyer&email=${encodeURIComponent(b.invitee.email)}`);
+      expect(sent[0].text).toMatch(new RegExp(`${baseUrl}/priya/coaching\\?rebook=r\\.${b.id}\\.\\d+\\.[A-Za-z0-9_-]{24}\\s`));
+      // No guest details in any link: not the address, not the name, not a ?name=/&email= prefill.
+      for (const body of [sent[0].text, sent[0].html]) {
+        expect(body).not.toContain(b.invitee.email);
+        expect(body).not.toContain(encodeURIComponent(b.invitee.email));
+        expect(body).not.toMatch(/[?&](name|email)=/);
+      }
       expect(sent[0].text).toContain(`${baseUrl}/b/stop/o.${priya.id}.`);
       // Queueing again (a retried transaction, a re-save) and running again send nothing more.
       await saveFollowUpSettings(pool, priya.id, coaching.id, ALL_ON, new Date());
@@ -241,6 +247,28 @@ describe.skipIf(!BASE)("follow-ups (TEST_DATABASE_URL)", () => {
       const forged = optOutToken(linkKey("ef".repeat(32)), priya.id, "someone@example.com");
       expect((await call("POST", forged)).status).toBe(404);
       expect((await pool.query("select 1 from follow_up_opt_outs")).rowCount).toBe(0);
+    });
+  });
+
+  describe("rebook links", () => {
+    it("fill the booking form from the earlier booking, only on that booking's host's own pages", async () => {
+      const b = await book(coaching, nextStart(), { name: "Kiran Rao", email: "kiran.rao@example.com" });
+      const token = rebookToken(key, b.id, new Date());
+      expect(await rebookPrefill(pool, key, token, priya.id, new Date())).toEqual({ name: "Kiran Rao", email: "kiran.rao@example.com" });
+      const { rows: [arun] } = await pool.query("select id from users where slug = 'arun'");
+      expect(await rebookPrefill(pool, key, token, arun.id, new Date())).toBeNull();
+      expect(await rebookPrefill(pool, linkKey("ef".repeat(32)), token, priya.id, new Date())).toBeNull();
+      expect(await rebookPrefill(pool, key, token, priya.id, new Date(Date.now() + 181 * DAY))).toBeNull();
+    });
+
+    it("the feedback page's rebook button uses the token too", async () => {
+      await saveFollowUpSettings(pool, priya.id, coaching.id, { ...FOLLOW_UPS_OFF, thankYou: true, feedback: true }, new Date());
+      const b = await book();
+      const page = await feedbackPage(pool, key, feedbackToken(key, b.id, new Date()), "", new Date());
+      expect(page.state).toBe("form");
+      const url = "rebookUrl" in page ? page.rebookUrl : null;
+      expect(url).toMatch(/^\/priya\/coaching\?rebook=r\./);
+      expect(url).not.toMatch(/email|name=/);
     });
   });
 

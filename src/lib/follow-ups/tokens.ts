@@ -46,6 +46,28 @@ export function readFeedbackToken(key: Buffer, token: unknown, now: Date): Feedb
   return { ok: true, bookingId: m[1].toLowerCase() };
 }
 
+/** How long a rebook link fills the form in. After that it still opens the booking page, just blank. */
+export const REBOOK_LINK_DAYS = 180;
+
+/**
+ * `r.<bookingId>.<expires, unix seconds>.<signature>`: the rebook link's stand-in for ?name=&email=, so no guest's
+ * address sits in URLs, server logs or browser history. The booking page looks the guest up from the booking.
+ */
+export function rebookToken(key: Buffer, bookingId: string, issuedAt: Date): string {
+  const exp = Math.floor((issuedAt.getTime() + REBOOK_LINK_DAYS * DAY) / 1000);
+  const body = `${bookingId}.${exp}`;
+  return `r.${body}.${sign(key, "rebook", body)}`;
+}
+
+/** The booking a rebook link was made for, or null when it is forged, for another purpose, or expired. */
+export function readRebookToken(key: Buffer, token: unknown, now: Date): string | null {
+  if (typeof token !== "string" || token.length > 200) return null;
+  const m = /^r\.([0-9a-f-]{36})\.(\d{1,12})\.([A-Za-z0-9_-]{24})$/i.exec(token);
+  if (!m || !UUID.test(m[1]) || !sigOk(key, "rebook", `${m[1]}.${m[2]}`, m[3])) return null;
+  if (Number(m[2]) * 1000 <= now.getTime()) return null;
+  return m[1].toLowerCase();
+}
+
 /** `o.<hostId>.<email, base64url>.<signature>` */
 export function optOutToken(key: Buffer, hostId: string, email: string): string {
   const body = `${hostId}.${b64(email.trim().toLowerCase())}`;

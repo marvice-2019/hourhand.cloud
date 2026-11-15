@@ -5,7 +5,7 @@ import { isLocale, type Locale } from "../i18n/guest";
 import { ft } from "../i18n/follow-up";
 import { listUnsubscribeHeaders } from "../mail/mailer";
 import { escapeHtml, type RenderedMail } from "../mail/templates";
-import { feedbackToken, optOutToken, readFeedbackToken, readOptOutToken } from "./tokens";
+import { feedbackToken, optOutToken, readFeedbackToken, readOptOutToken, readRebookToken, rebookToken } from "./tokens";
 
 // 2.6 Follow-ups: one email to the guest a while after their session ends, helping the host get rebooked and reviewed.
 // Per event type the host switches on any of: a thank-you with a one-tap rebook link, a private 1–5 feedback form, a
@@ -105,6 +105,29 @@ export async function queueFollowUp(db: Pick<pg.PoolClient, "query">, bookingId:
      where b.id = $1 and (s.thank_you or s.feedback or s.review_ask or s.package_nudge)
      on conflict (dedupe_key) do nothing`,
     [bookingId, followUpKey(bookingId)]);
+}
+
+// ---- Rebooking ----------------------------------------------------------------------------------------------------
+
+/**
+ * The one-tap link to book the same event type again: the booking page with a signed rebook token (and the guest's
+ * language), never their name or email in the address.
+ */
+export function rebookUrl(baseUrl: string, key: Buffer, hostSlug: string, eventSlug: string, bookingId: string, locale: Locale, now: Date): string {
+  const q = new URLSearchParams({ rebook: rebookToken(key, bookingId, now), ...(locale === "en" ? {} : { lang: locale }) });
+  return `${baseUrl}/${hostSlug}/${eventSlug}?${q}`;
+}
+
+/**
+ * What a rebook link fills the booking form with: the guest's name and email from the booking it was made for. Only on
+ * that booking's host's own pages, so a link can't be replayed on another host's page to read someone's details.
+ */
+export async function rebookPrefill(db: Db, key: Buffer, token: unknown, hostId: string, now: Date): Promise<{ name: string; email: string } | null> {
+  const bookingId = readRebookToken(key, token, now);
+  if (!bookingId || !UUID.test(hostId)) return null;
+  const { rows: [r] } = await db.query(
+    "select i.name, i.email from bookings b join invitees i on i.booking_id = b.id where b.id = $1 and b.host_id = $2", [bookingId, hostId]);
+  return r ? { name: String(r.name).slice(0, 100), email: String(r.email).slice(0, 254) } : null;
 }
 
 // ---- What to send ----------------------------------------------------------------------------------------------
@@ -260,12 +283,10 @@ export async function buildFollowUp(db: Db, n: { booking_id: string | null; reci
     }
   }
   const bookable = r.event_active && r.event_kind !== "one_off" && r.host_slug;
-  const rebookUrl = bookable
-    ? `${baseUrl}/${r.host_slug}/${r.event_slug}?${new URLSearchParams({ name: r.guest_name, email: r.guest_email, ...(lang ? { lang: locale } : {}) })}`
-    : null;
+  const rebook = bookable ? rebookUrl(baseUrl, key, r.host_slug, r.event_slug, r.id, locale, now) : null;
   const plan = planFollowUp({
     status: r.status, noShow: r.no_show_at !== null, optedOut: r.opted_out, hostClosed: r.deleted_at !== null, endAt: new Date(r.end_at),
-    settings: toSettings(r), answered: r.answered, reviewsUrl: r.reviews_url ?? null, rebookUrl, nudge,
+    settings: toSettings(r), answered: r.answered, reviewsUrl: r.reviews_url ?? null, rebookUrl: rebook, nudge,
   }, now);
   if ("skip" in plan) return plan;
   const optOut = optOutToken(key, r.host_id, n.recipient);
@@ -284,7 +305,7 @@ export interface FeedbackBooking { bookingId: string; hostId: string; hostName: 
 export interface FeedbackForm extends FeedbackBooking { state: "form" | "answered" }
 export type FeedbackPage = { state: "invalid" } | { state: "expired" } | FeedbackForm;
 
-async function feedbackBooking(db: Db, bookingId: string, baseUrl: string): Promise<FeedbackBooking | null> {
+async function feedbackBooking(db: Db, key: Buffer, bookingId: string, baseUrl: string, now: Date): Promise<FeedbackBooking | null> {
   const { rows: [r] } = await db.query(
     `select b.id, b.host_id, b.status, b.start_at, i.name as guest_name, i.email as guest_email, i.timezone, i.locale,
        e.name as event_name, e.slug as event_slug, e.active as event_active, e.kind as event_kind, coalesce(nullif(u.name, ''), u.email) as host_name, u.slug as host_slug, u.deleted_at,
@@ -299,7 +320,7 @@ async function feedbackBooking(db: Db, bookingId: string, baseUrl: string): Prom
   return {
     bookingId: r.id, hostId: r.host_id, hostName: r.host_name, eventName: r.event_name, startAt: new Date(r.start_at), timezone: r.timezone, locale, answered: r.rating !== null, rating: r.rating ?? null,
     reviewAsk: r.review_ask, reviewsUrl: r.reviews_url ?? null,
-    rebookUrl: bookable ? `${baseUrl}/${r.host_slug}/${r.event_slug}?${new URLSearchParams({ name: r.guest_name, email: r.guest_email, ...(locale === "en" ? {} : { lang: locale }) })}` : null,
+    rebookUrl: bookable ? rebookUrl(baseUrl, key, r.host_slug, r.event_slug, r.id, locale, now) : null,
   };
 }
 
@@ -307,7 +328,7 @@ async function feedbackBooking(db: Db, bookingId: string, baseUrl: string): Prom
 export async function feedbackPage(db: Db, key: Buffer, token: unknown, baseUrl: string, now: Date): Promise<FeedbackPage> {
   const t = readFeedbackToken(key, token, now);
   if (!t.ok) return t.reason === "expired" ? { state: "expired" } : { state: "invalid" };
-  const b = await feedbackBooking(db, t.bookingId, baseUrl);
+  const b = await feedbackBooking(db, key, t.bookingId, baseUrl, now);
   if (!b) return { state: "invalid" };
   return { state: b.answered ? "answered" : "form", ...b };
 }
@@ -336,7 +357,7 @@ export function validateFeedback(input: { rating: unknown; comment: unknown }): 
 export async function submitFeedback(db: Db, key: Buffer, token: unknown, input: { rating: unknown; comment: unknown }, baseUrl: string, now: Date): Promise<FeedbackResult> {
   const t = readFeedbackToken(key, token, now);
   if (!t.ok) return { status: t.reason };
-  const b = await feedbackBooking(db, t.bookingId, baseUrl);
+  const b = await feedbackBooking(db, key, t.bookingId, baseUrl, now);
   if (!b) return { status: "invalid" };
   const v = validateFeedback(input);
   if (!v.ok) return { status: "bad_input", field: v.field, locale: b.locale };

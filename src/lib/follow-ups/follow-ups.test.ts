@@ -5,10 +5,10 @@ import { describe, expect, it } from "vitest";
 import { LOCALES } from "../i18n/guest";
 import { FOLLOW_UP_CATALOGS, ft } from "../i18n/follow-up";
 import {
-  FOLLOW_UPS_OFF, STALE_AFTER_DAYS, packageNudgeKind, planFollowUp, renderFollowUpMail, reviewWording, validateFeedback, validateFollowUpForm,
+  rebookUrl, FOLLOW_UPS_OFF, STALE_AFTER_DAYS, packageNudgeKind, planFollowUp, renderFollowUpMail, reviewWording, validateFeedback, validateFollowUpForm,
   type FollowUpFacts, type FollowUpPlan,
 } from "./follow-ups";
-import { FEEDBACK_LINK_DAYS, feedbackToken, linkKey, optOutToken, readFeedbackToken, readOptOutToken } from "./tokens";
+import { FEEDBACK_LINK_DAYS, REBOOK_LINK_DAYS, feedbackToken, linkKey, optOutToken, readFeedbackToken, readOptOutToken, readRebookToken, rebookToken } from "./tokens";
 
 const key = randomBytes(32);
 const BOOKING = "0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d";
@@ -49,6 +49,29 @@ describe("feedback links", () => {
   });
 });
 
+describe("rebook links", () => {
+  it("carry a signed booking id instead of the guest's name and email, and keep the guest's language", () => {
+    const url = new URL(rebookUrl("https://hourhand.test", key, "priya", "coaching", BOOKING, "ta", issued));
+    expect(url.pathname).toBe("/priya/coaching");
+    expect([...url.searchParams.keys()].sort()).toEqual(["lang", "rebook"]);
+    expect(url.searchParams.get("lang")).toBe("ta");
+    expect(readRebookToken(key, url.searchParams.get("rebook"), issued)).toBe(BOOKING);
+    expect(new URL(rebookUrl("https://hourhand.test", key, "priya", "coaching", BOOKING, "en", issued)).searchParams.has("lang")).toBe(false);
+  });
+
+  it("stop filling the form in after 180 days, and refuse forged or swapped tokens", () => {
+    const token = rebookToken(key, BOOKING, issued);
+    expect(readRebookToken(key, token, new Date(issued.getTime() + (REBOOK_LINK_DAYS - 1) * DAY))).toBe(BOOKING);
+    expect(readRebookToken(key, token, new Date(issued.getTime() + REBOOK_LINK_DAYS * DAY))).toBeNull();
+    const [, , exp, sig] = token.split(".");
+    expect(readRebookToken(key, `r.ffffffff-2222-4333-8444-555555555555.${exp}.${sig}`, issued)).toBeNull();
+    expect(readRebookToken(randomBytes(32), token, issued)).toBeNull();
+    // A feedback token for the same booking is signed for another purpose and doesn't open the form.
+    expect(readRebookToken(key, feedbackToken(key, BOOKING, issued).replace(/^f\./, "r."), issued)).toBeNull();
+    for (const junk of ["", null, 7, `${token}x`]) expect(readRebookToken(key, junk, issued)).toBeNull();
+  });
+});
+
 describe("opt-out links", () => {
   it("name the host and the guest's email, case-insensitively, and can't be altered", () => {
     const token = optOutToken(key, HOST, " Guest@Example.com ");
@@ -62,7 +85,7 @@ describe("opt-out links", () => {
 const facts = (over: Partial<FollowUpFacts> = {}): FollowUpFacts => ({
   status: "confirmed", noShow: false, optedOut: false, hostClosed: false, endAt: new Date("2030-01-01T10:00:00Z"),
   settings: { thankYou: true, feedback: true, reviewAsk: true, packageNudge: true, delayHours: 2 }, answered: false,
-  reviewsUrl: "https://g.page/r/abc/review", rebookUrl: "https://hourhand.test/priya/coaching?name=A&email=a%40b.c", nudge: null, ...over,
+  reviewsUrl: "https://g.page/r/abc/review", rebookUrl: "https://hourhand.test/priya/coaching?rebook=r.tok", nudge: null, ...over,
 });
 const twoHoursLater = new Date("2030-01-01T12:00:00Z");
 
@@ -155,7 +178,7 @@ describe("in every guest language", () => {
   });
 
   const full: FollowUpPlan = {
-    thankYou: true, rebookUrl: "https://hourhand.test/priya/coaching?name=Kiran", feedback: true, review: "https://g.page/r/abc/review",
+    thankYou: true, rebookUrl: "https://hourhand.test/priya/coaching?rebook=r.tok", feedback: true, review: "https://g.page/r/abc/review",
     nudge: { kind: "one_left", packageName: "5 sessions", bookUrl: "https://hourhand.test/p/tok", buyUrl: "https://hourhand.test/pkg/pk" },
   };
   const ctx = {
@@ -169,7 +192,7 @@ describe("in every guest language", () => {
     for (const body of [m.subject, m.text, m.html]) expect(body).not.toMatch(/\{\w+\}|undefined|null/);
     expect(m.text).toContain(ft(locale, "intro", { host: "Priya & Co", event: "Coaching" }));
     for (const n of [1, 2, 3, 4, 5]) expect(m.text).toContain(`https://hourhand.test/b/feedback/f.tok?r=${n}`);
-    for (const url of ["https://g.page/r/abc/review", "https://hourhand.test/p/tok", "https://hourhand.test/pkg/pk", "https://hourhand.test/priya/coaching?name=Kiran", "https://hourhand.test/b/stop/o.tok"]) {
+    for (const url of ["https://g.page/r/abc/review", "https://hourhand.test/p/tok", "https://hourhand.test/pkg/pk", "https://hourhand.test/priya/coaching?rebook=r.tok", "https://hourhand.test/b/stop/o.tok"]) {
       expect(m.text).toContain(url);
       expect(m.html).toContain(url);
     }
