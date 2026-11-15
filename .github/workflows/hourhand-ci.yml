@@ -91,7 +91,8 @@ jobs:
             echo "::error::COOLIFY_WEBHOOK and COOLIFY_TOKEN must be set as secrets of the Production environment"; exit 1
           fi
           auth="Authorization: Bearer $COOLIFY_TOKEN"
-          resp=$(curl -fsS --retry 3 --retry-all-errors -H "$auth" "$COOLIFY_WEBHOOK")
+          # Coolify 4.7+ only accepts POST on /api/v1/deploy; a GET returns "This endpoint has changed to a POST request."
+          resp=$(curl -fsS --retry 3 --retry-all-errors -X POST -H "$auth" "$COOLIFY_WEBHOOK")
           echo "Coolify: $resp"
           id=$(echo "$resp" | jq -r '.deployments[0].deployment_uuid // empty')
           [ -n "$id" ] || { echo "::error::Coolify returned no deployment_uuid"; exit 1; }
