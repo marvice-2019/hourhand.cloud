@@ -3,6 +3,7 @@ import { datesInRange } from "../availability";
 import { kickJobs } from "../jobs/kick";
 import { closeAccount, purgeClosedAccounts } from "./account-lifecycle";
 import { queueBookingNotifications } from "./notifications";
+import { pollHolds } from "../polls/holds";
 import { PackageUnavailableError, takeCredits } from "../packages/packages";
 import { attachMembershipCredits, checkMovedMembershipCredit, isMembershipToken, takeMembershipCredits } from "../memberships/memberships";
 import { hashLinkToken, newLinkToken } from "../links";
@@ -417,6 +418,9 @@ export function createPgStore(pool: pg.Pool): DataStore {
       });
       const [{ link }] = await linkRows(pool, "l.id = $1", [linkId], now);
       return { eventType, link, token };
+    },
+    async listPollHolds(userId, from, to, now) {
+      return pollHolds(pool, userId, from, to, now);
     },
     async listOneOffTimes(eventTypeId) {
       if (!isId(eventTypeId)) return [];
