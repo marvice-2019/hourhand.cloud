@@ -61,3 +61,7 @@ create index voice_messages_host_created on voice_messages (host_id, created_at 
 
 -- Where a booking came from. Everything before this was made on the booking pages.
 alter table bookings add column source text not null default 'web' check (source ~ '^[a-z_]{1,20}$');
+
+-- The receptionist is sold as an add-on, billed like the custom domain (src/lib/billing/addons.ts).
+alter table addon_subscriptions drop constraint addon_subscriptions_addon_check;
+alter table addon_subscriptions add constraint addon_subscriptions_addon_check check (addon in ('domain', 'voice'));
