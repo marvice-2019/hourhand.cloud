@@ -8,10 +8,7 @@ import { buildIcs } from "./ics";
 import { LOCATION_KEYS, isLocale, t, type Locale } from "../i18n/guest";
 import { mt, type MailKey } from "../i18n/mail";
 import type { Attachment } from "./mailer";
-import { PROVIDER_NAMES, type CalendarProviderId } from "../calendar/provider";
-
-/** What hosts call each calendar, for alert subjects. */
-const CALENDAR_NAMES: Record<CalendarProviderId, string> = { google: "Google Calendar", microsoft: "Outlook calendar", icloud: "iCloud Calendar" };
+import { CALENDAR_NAMES, PROVIDER_NAMES, type CalendarProviderId } from "../calendar/provider";
 
 export interface BookingMailContext {
   bookingId: string;

@@ -1,7 +1,7 @@
 import type pg from "pg";
 import { accessTokenFor } from "../calendar/connections";
 import type { GoogleClient } from "../calendar/google";
-import { CalendarApiError, PROVIDER_NAMES, type CalendarProvider, type CalendarProviderId, type CalendarProviders } from "../calendar/provider";
+import { CALENDAR_NAMES, CalendarApiError, PROVIDER_NAMES, type CalendarProvider, type CalendarProviderId, type CalendarProviders } from "../calendar/provider";
 import { recordConnectionFailure } from "../calendar/sync";
 import type { BookingEmailKind, CalendarJobKind, NotificationKind } from "../data/notifications";
 import type { InviteeAnswer, LocationKind } from "../data/types";
@@ -15,7 +15,7 @@ import { PLAN_NAMES, PRICES, priceLine, type BillingInterval, type PaidPlan } fr
 import { freeSlots } from "../booking";
 import { createPgStore } from "../data/pg-store";
 import { hostPlan } from "../billing/account";
-import { isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
+import { hostAlertMessage, isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
 
 // Runs due rows of the notifications queue: emails, and writes to the host's calendar (Google or Microsoft). Several workers can run
 // at once: each claims rows with FOR UPDATE SKIP LOCKED and a lease (locked_until), so a row is never run by two
@@ -159,6 +159,12 @@ const isCalendarJob = (kind: NotificationKind): kind is CalendarJobKind => kind.
 /** Why a WhatsApp row shouldn't go (checked as it sends), or null: set up here, not opted out, within the host's plan. */
 async function whatsappSkipReason(pool: pg.Pool, c: Claimed, cfg: WhatsAppConfig | null, now: Date): Promise<string | null> {
   if (!cfg) return "WhatsApp is not configured on this server";
+  // The host's own sync alert: an ops message they asked for, on every plan and outside the guest allowance.
+  if (c.kind === "calendar_alert_host") {
+    if ((await pool.query("select 1 from whatsapp_opt_outs where phone = $1", [c.recipient])).rowCount) return "host replied STOP on WhatsApp";
+    const { rows: [u] } = await pool.query("select whatsapp_alerts from users where id = $1 and deleted_at is null", [c.user_id]);
+    return u?.whatsapp_alerts ? null : "host turned WhatsApp alerts off";
+  }
   if (!isWhatsAppKind(c.kind)) return "not a WhatsApp message";
   if ((await pool.query("select 1 from whatsapp_opt_outs where phone = $1", [c.recipient])).rowCount) return "guest replied STOP on WhatsApp";
   const limit = WHATSAPP_MONTHLY_LIMITS[await hostPlan(pool, c.user_id)];
@@ -291,6 +297,19 @@ async function renderAlert(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<
   if (!conn) return { skip: "calendar connection removed" };
   if (conn.status === "ok") return { skip: "calendar connection recovered" };
   return renderCalendarAlert({ provider: conn.provider, accountEmail: conn.account_email, disconnected: conn.status === "disconnected", lastError: conn.last_error, calendarsUrl: `${baseUrl}/dashboard/calendars` });
+}
+
+/** The WhatsApp version of the sync alert: same connection checks as the email, so a recovered calendar sends nothing. */
+async function hostAlertFor(pool: pg.Pool, c: Claimed): Promise<{ message: ReturnType<typeof hostAlertMessage> } | { skip: string }> {
+  const connectionId = /^calendar:([0-9a-f-]{36}):alert:/.exec(c.dedupe_key)?.[1];
+  const { rows: [conn] } = connectionId
+    ? await pool.query(
+      `select cc.provider, cc.account_email, cc.status, u.name from calendar_connections cc join users u on u.id = cc.user_id where cc.id = $1`, [connectionId])
+    : { rows: [] };
+  if (!conn) return { skip: "calendar connection removed" };
+  if (conn.status === "ok") return { skip: "calendar connection recovered" };
+  const provider = conn.provider as CalendarProviderId;
+  return { message: hostAlertMessage({ hostName: conn.name ?? "", calendarName: CALENDAR_NAMES[provider], accountEmail: conn.account_email }, c.recipient) };
 }
 
 /** The renewal reminder goes only if that same period is still about to renew: not after a cancel, pause or renewal. */
@@ -448,7 +467,11 @@ export async function processDueNotifications(
 
     let providerId: string;
     try {
-      if (c.channel === "whatsapp") {
+      if (c.channel === "whatsapp" && c.kind === "calendar_alert_host") {
+        const out = await hostAlertFor(pool, c);
+        if ("skip" in out) { await skip(c, out.skip); continue; }
+        ({ id: providerId } = await sendWhatsApp(opts.whatsapp!, out.message, opts.fetch));
+      } else if (c.channel === "whatsapp") {
         const message = templateMessage(c.kind as Parameters<typeof templateMessage>[0], {
           guestName: r.guest_name as string, hostName: r.host_name as string, eventName: r.event_name as string, startAt: new Date(r.start_at as Date),
           guestTimezone: r.guest_timezone as string, locale: (r.guest_locale as string | null) ?? "en", manageToken: r.manage_token as string,
