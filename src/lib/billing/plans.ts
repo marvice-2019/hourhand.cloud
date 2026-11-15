@@ -26,12 +26,14 @@ export interface PlanLimits {
   checkedCalendars: number;
   /** "Booked with Hourhand" footer on the booking pages. */
   footer: boolean;
+  /** Monthly memberships sold to clients through the host's own payment account. */
+  memberships: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true },
-  solo: { checkedCalendars: Infinity, footer: false },
-  duo: { checkedCalendars: Infinity, footer: false },
+  free: { checkedCalendars: 2, footer: true, memberships: false },
+  solo: { checkedCalendars: Infinity, footer: false, memberships: true },
+  duo: { checkedCalendars: Infinity, footer: false, memberships: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {

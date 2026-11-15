@@ -353,3 +353,50 @@ export function renderMagicLink(url: string): RenderedMail {
     footer: "Sent by Hourhand.",
   });
 }
+
+export interface MembershipMailContext {
+  what: "joined" | "renewed" | "payment_failed" | "halted" | "cancel_requested" | "ended";
+  hostName: string; hostEmail: string; guestName: string; guestEmail: string; planName: string; sessions: number; priceMinor: number;
+  creditsLeft: number; paidThrough: Date | null; timezone: string; memberUrl: string; dashboardUrl: string;
+}
+
+/** A membership's life to its client (sessions added, a payment failed, cancelled) and to the host (new member, failures, ends). */
+export function renderMembershipMail(to: "guest" | "host", c: MembershipMailContext): RenderedMail {
+  const until = c.paidThrough ? formatDate(c.paidThrough, c.timezone) : null;
+  const price = `${formatMoney(c.priceMinor, "INR")} a month`;
+  const rows: Row[] = [["Membership", c.planName], ["Each month", `${c.sessions} sessions for ${price}`], ...(until ? [["Paid until", until] as Row] : [])];
+  if (to === "guest") {
+    const sign = { footer: `Sent by Hourhand for ${c.hostName}. Reply to this email to reach them.` };
+    const link = { label: "Book your sessions", url: c.memberUrl };
+    const mail = (subject: string, heading: string, intro: string, note?: string) =>
+      render(subject, { heading, intro, rows: [...rows, ["Sessions left", String(c.creditsLeft)]], link, ...(note ? { note } : {}), ...sign }, { replyTo: c.hostEmail });
+    switch (c.what) {
+      case "joined": return mail(`Your ${c.planName} membership with ${c.hostName}`, "You're a member",
+        `Hi ${c.guestName}, your first payment went through and ${c.sessions} sessions are ready to book.`,
+        "Keep this email: the link is yours alone. It shows your sessions left and lets you cancel at any time; a cancelled membership runs to the end of the paid month.");
+      case "renewed": return mail(`${c.sessions} new sessions with ${c.hostName}`, "Your membership renewed",
+        `Hi ${c.guestName}, this month's payment went through and ${c.sessions} sessions were added.`);
+      case "payment_failed": return mail(`Payment failed for your ${c.planName} membership`, "Your payment didn't go through",
+        `Hi ${c.guestName}, this month's payment for ${c.planName} failed. Razorpay will try again over the next few days; check your card or UPI app has funds and the mandate is active.`,
+        until ? `Your sessions left stay bookable for sessions before ${until}. New sessions are added once a payment goes through.` : undefined);
+      case "halted": return mail(`Your ${c.planName} membership is on hold`, "Renewal stopped",
+        `Hi ${c.guestName}, Razorpay couldn't collect this month's payment after several tries, so your membership is on hold and no new sessions will be added.`,
+        `${until ? `Sessions you have left can still be booked for times before ${until}. ` : ""}Reply to this email to sort out the payment with ${c.hostName}.`);
+      case "cancel_requested": return mail(`You've cancelled ${c.planName}`, "Membership cancelled",
+        `Hi ${c.guestName}, your ${c.planName} membership won't renew and you won't be charged again.`,
+        until ? `You can still book the sessions you have left for times before ${until}.` : undefined);
+      case "ended": return mail(`Your ${c.planName} membership has ended`, "Membership ended",
+        `Hi ${c.guestName}, your ${c.planName} membership with ${c.hostName} has ended and won't be charged again. Thanks for being a member.`);
+    }
+  }
+  const host = (subject: string, heading: string, intro: string) =>
+    render(subject, { heading, intro, rows: [...rows, ["Member", `${c.guestName} <${c.guestEmail}>`]], link: { label: "Open in Hourhand", url: c.dashboardUrl }, footer: "Sent by Hourhand about your memberships." }, { replyTo: c.guestEmail });
+  switch (c.what) {
+    case "joined": return host(`New member: ${c.guestName}, ${c.planName}`, "You have a new member", `${c.guestName} joined ${c.planName}. The first month's payment went to your Razorpay account.`);
+    case "payment_failed": return host(`Payment failed: ${c.guestName}, ${c.planName}`, "A member's payment failed", `${c.guestName}'s renewal for ${c.planName} failed. Razorpay retries automatically; no new sessions are added until it goes through.`);
+    case "halted": return host(`Membership on hold: ${c.guestName}`, "A membership is on hold", `Razorpay stopped retrying ${c.guestName}'s payment for ${c.planName}. They've been told; sessions they have left stay bookable until the paid month ends.`);
+    case "cancel_requested": return host(`${c.guestName} cancelled ${c.planName}`, "A member cancelled", `${c.guestName} cancelled ${c.planName}. It won't renew; they keep their sessions until the paid month ends.`);
+    case "renewed": return host(`Membership renewed: ${c.guestName}`, "A membership renewed", `${c.guestName}'s ${c.planName} payment went through and ${c.sessions} sessions were added.`);
+    case "ended": return host(`Membership ended: ${c.guestName}`, "A membership ended", `${c.guestName}'s ${c.planName} membership has ended.`);
+  }
+}

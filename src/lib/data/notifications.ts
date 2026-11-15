@@ -15,9 +15,11 @@ export type CalendarJobKind = "calendar_create" | "calendar_move" | "calendar_de
 export type PackageEmailKind = "package_guest" | "package_host";
 /** A GST invoice or credit note, emailed to the guest with a link to view and print it. */
 export type InvoiceEmailKind = "invoice_guest";
+/** A membership's sign-up, renewals, failed payments and end, to the client and the host. */
+export type MembershipEmailKind = "membership_guest" | "membership_host";
 /** Last month's earnings, to the host on the 1st. */
 export type EarningsEmailKind = "earnings_host";
-export type NotificationKind = BookingEmailKind | CalendarJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | "calendar_alert_host" | "renewal_reminder_host";
+export type NotificationKind = BookingEmailKind | CalendarJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | "calendar_alert_host" | "renewal_reminder_host" | MembershipEmailKind;
 
 /** Guest reminders, in minutes before the start. A reminder whose time has already passed at booking is not queued. */
 export const REMINDER_OFFSETS_MINUTES = [1440, 60] as const;

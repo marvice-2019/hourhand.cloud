@@ -4,6 +4,7 @@ import { kickJobs } from "../jobs/kick";
 import { closeAccount, purgeClosedAccounts } from "./account-lifecycle";
 import { queueBookingNotifications } from "./notifications";
 import { PackageUnavailableError, takeCredits } from "../packages/packages";
+import { attachMembershipCredits, checkMovedMembershipCredit, isMembershipToken, takeMembershipCredits } from "../memberships/memberships";
 import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
 import { queueWaitlistFor } from "../waitlist";
@@ -370,7 +371,10 @@ export function createPgStore(pool: pg.Pool): DataStore {
           const linkId = input.bookingLinkToken === undefined ? null : await takeLink(client, input, input.bookingLinkToken);
           const weekStarts = Array.from({ length: input.weeks ?? 1 }, (_, i) => new Date(input.startAt.getTime() + i * WEEK));
           await checkLimits(client, input.eventTypeId, weekStarts);
-          const purchaseId = input.packageToken === undefined ? null : await takeCredits(client, input.packageToken, input.eventTypeId, weekStarts);
+          // A member's link rides in packageToken too; its token format tells the two apart.
+          const memberToken = input.packageToken !== undefined && isMembershipToken(input.packageToken);
+          const purchaseId = input.packageToken === undefined || memberToken ? null : await takeCredits(client, input.packageToken, input.eventTypeId, weekStarts);
+          const grantIds = memberToken ? await takeMembershipCredits(client, input.packageToken!, input.eventTypeId, weekStarts) : null;
           const newId = await insertBooking(client, input, null, linkId);
           // A held booking says nothing yet: its emails and calendar write go out once the payment is confirmed.
           if (!input.holdUntil) await queueBookingNotifications(client, newId, "booked", new Date());
@@ -386,6 +390,7 @@ export function createPgStore(pool: pg.Pool): DataStore {
             }
           }
           if (purchaseId) await client.query("update bookings set package_purchase_id = $2 where id = $1 or series_id = $1", [newId, purchaseId]);
+          if (grantIds) await attachMembershipCredits(client, newId, grantIds);
           return newId;
         });
         kickJobs();
@@ -437,11 +442,12 @@ export function createPgStore(pool: pg.Pool): DataStore {
           // A moved week stays its series' week: same series, same place in it. A package session stays paid for by its
           // package (or its credit would come back while still booked), and can't move past the package's end date.
           await client.query(
-            "update bookings n set series_id = o.series_id, series_index = o.series_index, package_purchase_id = o.package_purchase_id from bookings o where n.id = $1 and o.id = $2",
+            "update bookings n set series_id = o.series_id, series_index = o.series_index, package_purchase_id = o.package_purchase_id, membership_grant_id = o.membership_grant_id from bookings o where n.id = $1 and o.id = $2",
             [newId, bookingId]);
           const { rows: [pk] } = await client.query(
             "select p.expires_at from package_purchases p where p.id = (select package_purchase_id from bookings where id = $1) for update", [bookingId]);
           if (pk && startAt.getTime() >= new Date(pk.expires_at).getTime()) throw new PackageUnavailableError("expired");
+          await checkMovedMembershipCredit(client, newId, startAt);
           // Nothing more goes out about the old time; the new booking gets its own emails and reminders.
           // A calendar write already running for the old booking is left to finish; the move waits for it and then moves its event.
           await client.query(
