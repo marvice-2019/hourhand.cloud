@@ -353,3 +353,18 @@ export function renderMagicLink(url: string): RenderedMail {
     footer: "Sent by Hourhand.",
   });
 }
+
+/** A referral paid out: the host who shared the link, or the host who signed up through it, gets a free month. */
+export function renderReferralRewardMail(c: { role: "referrer" | "referred"; otherName: string | null; value: string; planUrl: string }): RenderedMail {
+  const other = c.otherName?.trim() || (c.role === "referrer" ? "A host you invited" : "the host who invited you");
+  const intro = c.role === "referrer"
+    ? `${other} just started a paid Hourhand plan through your link. Thank you: your next renewal has a free month of Solo (${c.value}) taken off.`
+    : `Thanks for joining Hourhand through ${other}'s link. Your next renewal has a free month of Solo (${c.value}) taken off.`;
+  return render(c.role === "referrer" ? "You earned a free month of Hourhand" : "Your free month of Hourhand", {
+    heading: "A free month of Solo", intro,
+    rows: [["Free month", `One month of Solo (${c.value})`], ["When", "Your next renewal"]],
+    link: { label: "See your plan and referrals", url: c.planUrl },
+    note: "If you pay by UPI AutoPay or eMandate, Razorpay can't discount a renewal, so the month is added as Solo after your paid plan ends. Free months can't be exchanged for cash.",
+    footer: "Sent by Hourhand about your subscription.",
+  });
+}

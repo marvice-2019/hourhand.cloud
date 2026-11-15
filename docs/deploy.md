@@ -76,6 +76,7 @@ Generate the two random values on your own machine with `openssl rand -hex 32` (
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | from Google Cloud | for Google sign-in and calendars |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | from Razorpay (test first) | for paid plans |
 | `RAZORPAY_PLAN_SOLO_MONTH`, `_SOLO_YEAR`, `_DUO_MONTH`, `_DUO_YEAR` | the 4 Plan ids | for paid plans |
+| `RAZORPAY_REFERRAL_OFFER_ID` | the Single Use referral Offer id (README → Referrals) | for referral free months on Razorpay |
 | `STRIPE_*` | only if you get Stripe (see backend.md) | no |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | from Entra (section 6) | for Outlook and Sign in with Microsoft |
 | `TRUSTED_PROXIES` | leave unset (defaults cover Coolify's Docker network) | no |

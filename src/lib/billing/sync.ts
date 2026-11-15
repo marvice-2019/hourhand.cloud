@@ -2,6 +2,7 @@ import type pg from "pg";
 import { planForPriceId, type Provider } from "./plans";
 import { BillingApiError, type BillingProvider, type ProviderSubscription } from "./providers";
 import type { WebhookEvent } from "./webhooks";
+import { afterBillingWebhook, envRewardDeps } from "../referrals/rewards";
 
 // Saving a subscription's state. Webhooks only say "subscription X changed"; Hourhand re-reads X from the provider under
 // a per-subscription lock and saves what it finds, so events arriving late, twice or out of order still end correct.
@@ -97,8 +98,11 @@ export async function handleWebhook(pool: pg.Pool, provider: BillingProvider, ev
     let outcome: WebhookOutcome = "ignored";
     if (event.subscriptionId) {
       const r = await syncSubscription(pool, provider, event.subscriptionId, env, now);
-      if (r.saved) outcome = "processed";
-      else console.warn(`[billing] ${providerName} event ${event.eventId} (${event.type}) not applied: ${r.reason}`);
+      if (r.saved) {
+        outcome = "processed";
+        // Referrals: a first payment pays out a referral; a renewal uses up or hands over free months.
+        await afterBillingWebhook(pool, event, payload, envRewardDeps(env), now);
+      } else console.warn(`[billing] ${providerName} event ${event.eventId} (${event.type}) not applied: ${r.reason}`);
     }
     await pool.query("update webhook_events set processed_at = $3, error = null where provider = $1 and external_id = $2", [providerName, event.eventId, now]);
     return outcome;

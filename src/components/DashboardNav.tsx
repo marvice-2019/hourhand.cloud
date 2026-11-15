@@ -19,6 +19,7 @@ const items = [
   { href: "/dashboard/integrations", label: "Integrations" },
   { href: "/dashboard/domain", label: "Custom domain" },
   { href: "/dashboard/plan", label: "Plan" },
+  { href: "/dashboard/referrals", label: "Referrals" },
   { href: "/dashboard/settings", label: "Settings" },
 ];
 

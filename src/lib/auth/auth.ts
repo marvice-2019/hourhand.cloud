@@ -8,6 +8,7 @@ import { rateLimiter, SIGN_IN_LIMITS, trustedProxies } from "@/lib/rate-limit";
 export { trustedProxies };
 import { deliverMagicLink } from "./outbox";
 import { uniqueSlug } from "./slug";
+import { onSessionCreated, onUserCreated } from "@/lib/referrals/signup";
 
 /** Sign-in needs the database. In HOURHAND_DATA=memory (the default for local work) there is no auth instance. */
 export function authEnabled(): boolean {
@@ -145,6 +146,8 @@ function createAuth() {
             });
             return { data: { ...user, slug } };
           },
+          // Referrals: credit the link this browser came in through (after the account exists).
+          after: async (user, ctx) => onUserCreated(pool, user, ctx),
         },
       },
       session: {
@@ -154,6 +157,7 @@ function createAuth() {
             const { rows } = await pool.query("select deleted_at from users where id = $1", [session.userId]);
             return rows[0] && rows[0].deleted_at === null ? { data: session } : false;
           },
+          after: async (session, ctx) => onSessionCreated(pool, session.userId, ctx),
         },
       },
     },
