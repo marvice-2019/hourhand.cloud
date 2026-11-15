@@ -4,6 +4,7 @@ import { tokenKey } from "../crypto/seal";
 import type { PaymentDeps } from "../booking";
 import { getPool } from "../data/pg-store";
 import { loadHostRazorpay } from "./host-razorpay";
+import { paymentAccountFor } from "../clinic/payments";
 import { razorpayOrders } from "./razorpay-orders";
 
 /** What the booking routes use to reach hosts' Razorpay, or null when this server can't take payments (no Postgres or no TOKEN_ENCRYPTION_KEY). */
@@ -18,7 +19,8 @@ export function requestPaymentDeps(): PaymentDeps | null {
   const pool = getPool(process.env.DATABASE_URL!);
   return {
     pool,
-    authFor: (hostId) => loadHostRazorpay(pool, key, hostId),
+    // New payments go to the account collecting for the host now: a Clinic practice's owner, or the host's own.
+    authFor: async (hostId) => loadHostRazorpay(pool, key, await paymentAccountFor(pool, hostId)),
     ordersFor: (auth) => razorpayOrders(auth),
     planFor: (hostId) => hostPlan(pool, hostId),
   };

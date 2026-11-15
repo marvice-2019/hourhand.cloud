@@ -56,6 +56,8 @@ export async function saveSubscription(db: Db, sub: ProviderSubscription, env: E
     [sub.userId, price.plan, price.interval, sub.provider, sub.id, sub.customerId, sub.providerStatus, sub.status,
       sub.currentPeriodEnd, cancelAtPeriodEnd, now, periodChanged || !sameSub],
   );
+  // Clinic: the Razorpay Plan says how many practitioner places are paid for (clinic/practices reads extra_seats).
+  if (price.plan === "clinic") await db.query("update subscriptions set extra_seats = $2 where user_id = $1", [sub.userId, Math.max(0, (price.practitioners ?? 3) - 3)]);
   return { saved: true, userId: sub.userId };
 }
 

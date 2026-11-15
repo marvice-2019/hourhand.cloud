@@ -6,6 +6,7 @@ import { getPool } from "../data/pg-store";
 import { createMailer } from "../mail/mailer";
 import type { PaymentCheckDeps } from "../payments/booking-payments";
 import { loadHostRazorpay } from "../payments/host-razorpay";
+import { paymentAccountFor } from "../clinic/payments";
 import { razorpayOrders } from "../payments/razorpay-orders";
 import { startJobRunner, type JobRunner } from "./runner";
 
@@ -27,7 +28,12 @@ export function startJobsFromEnv(env: Record<string, string | undefined> = proce
   let payments: PaymentCheckDeps | null = null;
   try {
     const key = tokenKey();
-    payments = { authFor: (hostId) => loadHostRazorpay(pool, key, hostId), ordersFor: (auth) => razorpayOrders(auth) };
+    payments = {
+      // Existing payments are checked and refunded on the account that collected them (payments.collected_by).
+      authFor: async (hostId) => loadHostRazorpay(pool, key, await paymentAccountFor(pool, hostId)),
+      accountAuth: (accountId) => loadHostRazorpay(pool, key, accountId),
+      ordersFor: (auth) => razorpayOrders(auth),
+    };
   } catch {
     payments = null;
   }

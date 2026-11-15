@@ -9,6 +9,7 @@ import { billingFor } from "@/lib/billing/env";
 import { addonPriceLine, effectivePlan, LIMITS, PLAN_NAMES, PROVIDER_FOR, priceLine, providerPriceId, type BillingInterval, type Currency, type PaidPlan } from "@/lib/billing/plans";
 import { getPool } from "@/lib/data/pg-store";
 import { SeatForm } from "@/components/SeatForm";
+import { ClinicPlanCard } from "@/components/clinic/ClinicPlanCard";
 import { seatFor } from "@/lib/seats";
 import { cancelSubscription, choosePlan, openBillingPortal, pauseSubscription, resumeSubscription } from "./actions";
 
@@ -126,6 +127,8 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
           <SeatForm seat={seat} />
         </Card>
       )}
+
+      {live && <ClinicPlanCard userId={user.id} sub={sub} error={params.clinic_error} done={params.clinic_done} />}
 
       {!holding && (
         <>

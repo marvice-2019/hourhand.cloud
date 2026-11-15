@@ -13,6 +13,7 @@ import { packagesForEventType } from "@/lib/packages/packages";
 import { hostPlan } from "@/lib/billing/account";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
 import { razorpayStatus } from "@/lib/payments/host-razorpay";
+import { paymentAccountFor } from "@/lib/clinic/payments";
 
 export default async function PublicEventPage({ params, searchParams }: { params: Promise<{ slug: string; event: string }>; searchParams: Promise<{ at?: string; lang?: string; name?: string; email?: string }> }) {
   const { slug, event } = await params;
@@ -29,7 +30,7 @@ export default async function PublicEventPage({ params, searchParams }: { params
     .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
   // Packages need Postgres, a paid plan and the host's Razorpay; offered only when a buyer could actually pay.
   const pool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
-  const canSell = pool ? (await hostPlan(pool, host.id)) !== "free" && (await razorpayStatus(pool, host.id)) !== null : false;
+  const canSell = pool ? (await hostPlan(pool, host.id)) !== "free" && (await razorpayStatus(pool, await paymentAccountFor(pool, host.id))) !== null : false;
   const packages = pool && canSell ? await packagesForEventType(pool, host.id, eventType.id) : [];
   return (
     <main lang={locale} className="mx-auto max-w-(--hh-booking-max) px-4 py-10">

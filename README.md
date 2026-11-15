@@ -132,6 +132,7 @@ Set up, in test mode first. **Razorpay:** create 4 Plans (Solo and Duo, monthly 
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | Razorpay API keys |
 | `RAZORPAY_WEBHOOK_SECRET` | the value you type when creating the Razorpay webhook |
 | `RAZORPAY_PLAN_SOLO_MONTH`, `RAZORPAY_PLAN_SOLO_YEAR`, `RAZORPAY_PLAN_DUO_MONTH`, `RAZORPAY_PLAN_DUO_YEAR` | the Razorpay Plan ids (`plan_…`) |
+| `RAZORPAY_PLAN_CLINIC_3_MONTH` … `RAZORPAY_PLAN_CLINIC_10_MONTH` | the Clinic plan's Razorpay Plan ids, one per practitioner count (see docs/launch/pricing.md) |
 | `STRIPE_SECRET_KEY` | Stripe API key (`sk_test_…` first) |
 | `STRIPE_WEBHOOK_SECRET` | the signing value Stripe shows for the webhook (`whsec_…`) |
 | `STRIPE_PRICE_SOLO_MONTH`, `STRIPE_PRICE_SOLO_YEAR`, `STRIPE_PRICE_DUO_MONTH`, `STRIPE_PRICE_DUO_YEAR` | the Stripe Price ids (`price_…`) |

@@ -7,6 +7,7 @@ import { SLUG_TAKEN, priceGateError, validateEventType, validateQuestions, type 
 import { requireHost } from "@/lib/auth/session";
 import { authEnabled } from "@/lib/auth/auth";
 import { hostPlan } from "@/lib/billing/account";
+import { paymentAccountFor } from "@/lib/clinic/payments";
 import { getPool } from "@/lib/data/pg-store";
 import { razorpayStatus } from "@/lib/payments/host-razorpay";
 
@@ -25,7 +26,8 @@ async function priceError(userId: string, priceMinor: number | null): Promise<st
   if (priceMinor === null) return null;
   if (!authEnabled()) return priceGateError({ priceMinor, demo: true, plan: "free", razorpayConnected: false });
   const pool = getPool(process.env.DATABASE_URL as string);
-  const [plan, razorpay] = await Promise.all([hostPlan(pool, userId), razorpayStatus(pool, userId)]);
+  // In a Clinic practice the practice's Razorpay account takes the payment, so that's the one that must be connected.
+  const [plan, razorpay] = await Promise.all([hostPlan(pool, userId), paymentAccountFor(pool, userId).then((id) => razorpayStatus(pool, id))]);
   return priceGateError({ priceMinor, demo: false, plan, razorpayConnected: razorpay !== null });
 }
 

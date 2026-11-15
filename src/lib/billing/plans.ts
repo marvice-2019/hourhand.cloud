@@ -2,13 +2,16 @@
 // environment: Razorpay Plans for INR, Stripe Prices for USD. Prices here are for display; what is charged is
 // whatever the Razorpay Plan or Stripe Price says, so keep the two in step.
 
+import { clinicCountForPriceId } from "../clinic/pricing";
+
 export type PaidPlan = "solo" | "duo";
-export type Plan = "free" | PaidPlan;
+/** Clinic (src/lib/clinic) is priced per practitioner count, so it isn't in PRICES; see clinic/pricing.ts. */
+export type Plan = "free" | PaidPlan | "clinic";
 export type BillingInterval = "month" | "year";
 export type Currency = "INR" | "USD";
 export type Provider = "razorpay" | "stripe";
 
-export const PLAN_NAMES: Record<Plan, string> = { free: "Free", solo: "Solo", duo: "Duo" };
+export const PLAN_NAMES: Record<Plan, string> = { free: "Free", solo: "Solo", duo: "Duo", clinic: "Clinic" };
 
 /** Prices before tax, in minor units (paise, cents). INR is charged through Razorpay, USD through Stripe. */
 export const PRICES: Record<PaidPlan, Record<BillingInterval, Record<Currency, number>>> = {
@@ -32,6 +35,7 @@ export const LIMITS: Record<Plan, PlanLimits> = {
   free: { checkedCalendars: 2, footer: true },
   solo: { checkedCalendars: Infinity, footer: false },
   duo: { checkedCalendars: Infinity, footer: false },
+  clinic: { checkedCalendars: Infinity, footer: false },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {
@@ -52,8 +56,13 @@ export function providerPriceId(provider: Provider, plan: PaidPlan, interval: Bi
   return env[ENV_NAMES[provider][plan][interval]] || null;
 }
 
-/** Which plan and interval a provider-side id stands for. Null for an id Hourhand doesn't know, which is never granted. */
-export function planForPriceId(provider: Provider, id: string, env: Env = process.env): { plan: PaidPlan; interval: BillingInterval } | null {
+/**
+ * Which plan and interval a provider-side id stands for. Null for an id Hourhand doesn't know, which is never granted.
+ * A Clinic id also says how many practitioners it pays for.
+ */
+export function planForPriceId(provider: Provider, id: string, env: Env = process.env): { plan: PaidPlan | "clinic"; interval: BillingInterval; practitioners?: number } | null {
+  const clinic = clinicCountForPriceId(provider, id, env);
+  if (clinic !== null) return { plan: "clinic", interval: "month", practitioners: clinic };
   for (const plan of ["solo", "duo"] as const) {
     for (const interval of ["month", "year"] as const) {
       if (providerPriceId(provider, plan, interval, env) === id) return { plan, interval };

@@ -16,6 +16,7 @@ import { freeSlots } from "../booking";
 import { createPgStore } from "../data/pg-store";
 import { hostPlan } from "../billing/account";
 import { isClinicMail, renderClinicMail } from "../clinic/mail";
+import { CLINIC_INCLUDED, CLINIC_MAX, clinicPriceLine } from "../clinic/pricing";
 import { isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
 
 // Runs due rows of the notifications queue: emails, and writes to the host's calendar (Google or Microsoft). Several workers can run
@@ -298,12 +299,16 @@ async function renderAlert(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<
 async function renderRenewal(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
   const m = /^renewal:([^:]+):(\d+)$/.exec(c.dedupe_key);
   const { rows: [s] } = await pool.query(
-    `select s.plan, s.interval, s.provider, s.provider_subscription_id, s.status, s.current_period_end, s.cancel_at_period_end, u.timezone
+    `select s.plan, s.interval, s.provider, s.provider_subscription_id, s.status, s.current_period_end, s.cancel_at_period_end, s.extra_seats, u.timezone
        from subscriptions s join users u on u.id = s.user_id where s.user_id = $1`,
     [c.user_id]);
   if (!m || !s || s.provider_subscription_id !== m[1]) return { skip: "subscription changed" };
   if (s.status !== "active" || s.cancel_at_period_end) return { skip: "subscription no longer renewing" };
   if (!s.current_period_end || s.current_period_end.getTime() !== Number(m[2])) return { skip: "period already renewed" };
+  if (s.plan === "clinic") {
+    return renderRenewalReminder({ planName: PLAN_NAMES.clinic, price: clinicPriceLine(Math.min(CLINIC_MAX, CLINIC_INCLUDED + Number(s.extra_seats ?? 0))),
+      renewsOn: s.current_period_end, timezone: s.timezone, planUrl: `${baseUrl}/dashboard/plan` });
+  }
   if (!(s.plan in PRICES)) return { skip: "not a paid plan" };
   return renderRenewalReminder({
     planName: PLAN_NAMES[s.plan as PaidPlan], price: priceLine(s.plan as PaidPlan, s.interval as BillingInterval, s.provider === "stripe" ? "USD" : "INR"),
