@@ -1,61 +1,148 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { saveClientNoteAction } from "../actions";
-import { Button } from "@/components/ui/Button";
+import { notFound, redirect } from "next/navigation";
+import { saveClientNoteAction, saveSessionNoteFromFile, setKeepVersionsAction } from "../actions";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { authEnabled } from "@/lib/auth/auth";
-import { getHostContext, requireHost } from "@/lib/auth/session";
-import { getPool } from "@/lib/data/pg-store";
-import { CHANNEL_LABELS, listConsents, PURPOSE_LABELS } from "@/lib/privacy/consent";
-import { MAX_NOTE } from "@/lib/privacy/notes";
-import { clientKey, summarizeClients } from "@/lib/clients";
-import { store } from "@/lib/data";
-import { formatDate, formatTime } from "@/lib/format";
 import { focusRing } from "@/components/ui/focus";
+import { authEnabled, resolveBaseUrl } from "@/lib/auth/auth";
+import { getHostContext } from "@/lib/auth/session";
+import { formatMoney } from "@/lib/billing/plans";
+import { loadClientFile, quickActions, type BookingEntry, type InvoiceView, type PackageEntry, type PaymentView } from "@/lib/client-file";
+import { store } from "@/lib/data";
+import { getPool } from "@/lib/data/pg-store";
+import { formatDate, formatTime } from "@/lib/format";
+import { CHANNEL_LABELS, listConsents, PURPOSE_LABELS } from "@/lib/privacy/consent";
+import type { NoteRevision } from "@/lib/privacy/note-history";
+import { MAX_NOTE } from "@/lib/privacy/notes";
 
 export const dynamic = "force-dynamic";
 
-export default async function ClientPage({ params, searchParams }: { params: Promise<{ key: string }>; searchParams: Promise<{ saved?: string; error?: string }> }) {
-  const user = await requireHost();
+const SAVED: Record<string, string> = { "1": "Client note saved.", session: "Session note saved.", versions: "Saved." };
+const ERRORS: Record<string, string> = {
+  too_long: `Keep the note under ${MAX_NOTE} characters.`,
+  session_too_long: `Keep the session note under ${MAX_NOTE} characters.`,
+};
+
+/** The data-rights export (privacy/client-rights) adds /dashboard/clients/[key]/export. Until it ships here, the slot stays empty. */
+const EXPORT_PATH: ((key: string) => string) | null = null;
+
+type Search = { saved?: string; error?: string; cursor?: string };
+
+export default async function ClientFilePage({ params, searchParams }: { params: Promise<{ key: string }>; searchParams: Promise<Search> }) {
+  const ctx = await getHostContext();
+  if (!ctx) redirect("/sign-in");
+  const user = ctx.host;
+  // Notes are the owner's alone: a Duo second person managing this account sees the timeline but never a note.
+  const owner = !ctx.acting;
   const { key } = await params;
-  const { saved, error } = await searchParams;
-  const all = await store.listBookings(user.id);
-  const client = summarizeClients(all, new Date()).find((c) => c.key === key);
-  if (!client) notFound();
-  const history = all.filter((b) => clientKey(b.invitee.email) === key && b.status !== "pending_payment").sort((a, b) => b.startAt.getTime() - a.startAt.getTime());
-  // The note is decrypted for the account owner only, never for a Duo second person managing the account.
-  const owner = !(await getHostContext())?.acting;
-  const note = owner ? await store.getClientNote(user.id, client.email) : "";
-  const consents = authEnabled() ? await listConsents(getPool(process.env.DATABASE_URL as string), user.id, client.email) : [];
+  const { saved, error, cursor } = await searchParams;
+  const db = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
+  const now = new Date();
+  const file = await loadClientFile(db, store, user.id, key, { owner }, { now, cursor });
+  if (!file) notFound();
+  const { header: client, entries, nextCursor, notes } = file;
+  const [consents, eventTypes] = await Promise.all([
+    db ? listConsents(db, user.id, client.email) : [],
+    store.listEventTypes(user.id),
+  ]);
+  const actions = quickActions({
+    baseUrl: resolveBaseUrl() ?? "http://localhost:3000", host: { slug: user.slug, name: user.name ?? "" }, client,
+    eventTypes: eventTypes.filter((e) => e.active && e.kind !== "one_off"),
+  });
   const tz = user.timezone;
+  const when = (d: Date) => `${formatDate(d, tz)}, ${formatTime(d, tz)}`;
+  const money = (m: number) => formatMoney(m, "INR");
+
   return (
     <div>
       <Link href="/dashboard/clients" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent underline">All clients</Link>
       <h1 className="font-display text-xl text-text">{client.name}</h1>
-      <p className="mt-1 text-text-muted">{client.email}{client.phone && ` · ${client.phone}`}</p>
-      <dl className="mt-4 flex flex-wrap gap-6">
-        <div><dt className="text-sm text-text-muted">Sessions</dt><dd className="text-lg font-semibold text-text">{client.sessions}</dd></div>
-        <div><dt className="text-sm text-text-muted">Coming up</dt><dd className="text-lg font-semibold text-text">{client.upcoming}</dd></div>
-        <div><dt className="text-sm text-text-muted">No-shows</dt><dd className="text-lg font-semibold text-text">{client.noShows}</dd></div>
-        <div><dt className="text-sm text-text-muted">Client since</dt><dd className="text-lg font-semibold text-text">{formatDate(client.firstAt, tz)}</dd></div>
+      <p className="mt-1 text-text-muted">
+        <a href={`mailto:${client.email}`} className="underline">{client.email}</a>
+        {client.phone && <> · <a href={`tel:${client.phone}`} className="underline">{client.phone}</a></>}
+      </p>
+      {saved && SAVED[saved] && <p className="mt-3 text-success" role="status">{SAVED[saved]}</p>}
+      {error && ERRORS[error] && <p className="mt-3 text-danger" role="alert">{ERRORS[error]}</p>}
+
+      <dl className="mt-4 grid grid-cols-2 gap-4 sm:flex sm:flex-wrap sm:gap-6">
+        <Stat label="Sessions" value={String(client.sessions)} />
+        <Stat label="Coming up" value={String(client.upcoming)} />
+        <Stat label="No-shows" value={String(client.noShows)} />
+        <Stat label="First session" value={client.firstAt ? formatDate(client.firstAt, tz) : "None yet"} />
+        <Stat label="Last session" value={client.lastAt ? formatDate(client.lastAt, tz) : "None yet"} />
+        {client.nextAt && <Stat label="Next session" value={when(client.nextAt)} />}
+        {client.lifetimePaidMinor !== null && <Stat label="Paid in total" value={money(client.lifetimePaidMinor)} />}
       </dl>
 
-      {owner ? (
+      <section aria-labelledby="quick" className="mt-6">
+        <h2 id="quick" className="sr-only">Quick actions</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          {actions.book[0] && (
+            <Link href={actions.book[0].path} target="_blank" className={buttonClasses()}>
+              Book for {client.name.split(/\s+/)[0]}
+            </Link>
+          )}
+          {actions.mailto && <a href={actions.mailto} className={buttonClasses({ variant: "secondary" })}>Email a rebook link</a>}
+          {actions.whatsapp && <a href={actions.whatsapp} target="_blank" rel="noreferrer" className={buttonClasses({ variant: "secondary" })}>WhatsApp a rebook link</a>}
+          {/* Export slot: links to the data-rights export once that route exists on this branch. */}
+          <span data-slot="client-export">
+            {EXPORT_PATH ? <Link href={EXPORT_PATH(key)} className="text-sm font-semibold text-accent underline">Export</Link> : null}
+          </span>
+        </div>
+        {actions.book.length > 1 && (
+          <p className="mt-2 text-sm text-text-muted">
+            Or book: {actions.book.slice(1).map((b, i) => (
+              <span key={b.path}>{i > 0 && " · "}<Link href={b.path} target="_blank" className="text-accent underline">{b.name}</Link></span>
+            ))}
+          </p>
+        )}
+        {actions.book.length === 0 && <p className="text-sm text-text-muted">Turn on an event type to book for {client.name} or send them a link.</p>}
+      </section>
+
+      {notes ? (
         <Card className="mt-6 max-w-xl">
           <form action={saveClientNoteAction} className="grid gap-3">
             <input type="hidden" name="key" value={key} />
             <label htmlFor="note" className="font-semibold text-text">Private note</label>
             <p className="text-sm text-text-muted">Only you see this: it is encrypted when stored and a second person on your Duo plan can&apos;t read it. It shows on each of {client.name}&apos;s bookings.</p>
-            <textarea id="note" name="note" rows={6} maxLength={MAX_NOTE} defaultValue={note} placeholder="What you're working on together, preferences, what you agreed."
+            <textarea id="note" name="note" rows={6} maxLength={MAX_NOTE} defaultValue={notes.client} placeholder="What you're working on together, preferences, what you agreed."
               className={`block w-full rounded-md border border-border-input bg-card p-3 text-base text-text ${focusRing}`} />
-            {saved && <p className="text-success" role="status">Saved.</p>}
-            {error === "too_long" && <p className="text-danger" role="alert">Keep the note under 5000 characters.</p>}
             <div><Button type="submit">Save note</Button></div>
+          </form>
+          <History revisions={notes.clientHistory} when={when} />
+          <form action={setKeepVersionsAction} className="mt-4 border-t border-border pt-3 text-sm">
+            <input type="hidden" name="key" value={key} />
+            <input type="hidden" name="keep" value={notes.keepVersions ? "0" : "1"} />
+            <p className="text-text-muted">
+              {notes.keepVersions
+                ? "Earlier versions of your notes are kept (encrypted) so you can read back what you wrote."
+                : "Only who changed a note and when is kept, not the earlier text."}
+            </p>
+            <Button type="submit" variant="secondary" size="sm" className="mt-2">
+              {notes.keepVersions ? "Stop keeping versions (deletes the ones kept)" : "Keep earlier versions"}
+            </Button>
           </form>
         </Card>
       ) : (
         <p className="mt-6 max-w-xl text-sm text-text-muted">Notes about this client are private to the account owner.</p>
       )}
+
+      <section aria-labelledby="timeline" className="mt-8">
+        <h2 id="timeline" className="font-semibold text-text">Timeline</h2>
+        <p className="mt-1 text-sm text-text-muted">Bookings, answers, payments, packages and invoices, newest first.</p>
+        {entries.length === 0 ? <p className="mt-2 text-text-muted">Nothing here yet.</p> : (
+          <ol className="mt-3 grid gap-3">
+            {entries.map((e) => e.kind === "booking"
+              ? <BookingItem key={e.id} e={e} now={now} when={when} money={money} owner={owner} fileKey={key}
+                  note={notes?.sessions[e.id] ?? ""} history={notes?.sessionHistory[e.id] ?? []} />
+              : <PackageItem key={e.id} e={e} when={when} money={money} />)}
+          </ol>
+        )}
+        <nav aria-label="Timeline pages" className="mt-4 flex gap-4">
+          {cursor && <Link href={`/dashboard/clients/${key}`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">Newest</Link>}
+          {nextCursor && <Link href={`/dashboard/clients/${key}?cursor=${nextCursor}`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">Older</Link>}
+        </nav>
+      </section>
 
       <section aria-labelledby="consent" className="mt-8 max-w-2xl">
         <h2 id="consent" className="font-semibold text-text">Consent log</h2>
@@ -70,7 +157,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                 </p>
                 <p className="mt-1 text-text">&ldquo;{c.statement}&rdquo;</p>
                 <p className="mt-1 text-text-muted">
-                  {formatDate(c.recordedAt, tz)}, {formatTime(c.recordedAt, tz)} · {CHANNEL_LABELS[c.channel]} · notice {c.noticeVersion} · {c.locale} ·{" "}
+                  {when(c.recordedAt)} · {CHANNEL_LABELS[c.channel]} · notice {c.noticeVersion} · {c.locale} ·{" "}
                   <Link href={`/dashboard/bookings/${c.bookingId}`} className="text-accent underline">booking</Link>
                 </p>
               </li>
@@ -78,21 +165,125 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
           </ul>
         )}
       </section>
-
-      <section aria-labelledby="history" className="mt-8">
-        <h2 id="history" className="font-semibold text-text">History</h2>
-        <ul className="mt-2 grid gap-2">
-          {history.map((b) => (
-            <li key={b.id} className="flex flex-wrap items-center gap-x-4">
-              <Link href={`/dashboard/bookings/${b.id}`} className={`inline-flex min-h-11 items-center font-semibold text-accent underline ${b.status === "cancelled" ? "line-through" : ""}`}>
-                {formatDate(b.startAt, tz)}, {formatTime(b.startAt, tz)}
-              </Link>
-              {b.status === "cancelled" && <span className="text-sm text-text-muted">Cancelled</span>}
-              {b.invitee.noShowAt && <span className="rounded-md bg-warning-bg px-2 py-0.5 text-sm text-warning">No-show</span>}
-            </li>
-          ))}
-        </ul>
-      </section>
     </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return <div><dt className="text-sm text-text-muted">{label}</dt><dd className="text-lg font-semibold text-text">{value}</dd></div>;
+}
+
+function bookingStatus(e: BookingEntry, now: Date): string {
+  if (e.status === "cancelled") return e.cancelReason === "Rescheduled" ? "Moved" : e.cancelledBy === "guest" ? "Cancelled by client" : "Cancelled by you";
+  if (e.noShowAt) return "No-show";
+  return e.startAt > now ? "Upcoming" : "Done";
+}
+
+const PAYMENT_WORDS: Record<string, string> = {
+  pending: "awaiting payment", paid: "paid", failed: "not completed", refund_pending: "refund on its way", refunded: "refunded",
+};
+
+function PaymentLine({ p, when, money }: { p: PaymentView; when: (d: Date) => string; money: (m: number) => string }) {
+  const what = p.kind === "deposit" ? "Deposit" : "Payment";
+  return (
+    <li>
+      {what} {money(p.amountMinor)}: {PAYMENT_WORDS[p.status] ?? p.status}{p.paidAt && `, ${when(p.paidAt)}`}
+      {p.refundedMinor > 0 && <> · refunded {money(p.refundedMinor)}{p.refundedAt && `, ${when(p.refundedAt)}`}</>}
+    </li>
+  );
+}
+
+function Invoices({ list, money }: { list: InvoiceView[]; money: (m: number) => string }) {
+  if (list.length === 0) return null;
+  return (
+    <li>
+      {list.map((v, i) => (
+        <span key={v.id}>{i > 0 && " · "}{v.kind === "credit_note" ? "Credit note" : "Invoice"}{" "}
+          <Link href={`/invoice/${v.token}`} className="text-accent underline">{v.number}</Link> ({money(v.totalMinor)})</span>
+      ))}
+    </li>
+  );
+}
+
+function BookingItem({ e, now, when, money, owner, fileKey, note, history }: {
+  e: BookingEntry; now: Date; when: (d: Date) => string; money: (m: number) => string; owner: boolean; fileKey: string; note: string; history: NoteRevision[];
+}) {
+  const status = bookingStatus(e, now);
+  return (
+    <li id={`b-${e.id}`} className="rounded-md border border-border bg-card px-4 py-3">
+      <p className="flex flex-wrap items-center gap-x-3">
+        <Link href={`/dashboard/bookings/${e.id}`} className={`font-semibold text-accent underline ${e.status === "cancelled" ? "line-through" : ""}`}>{when(e.startAt)}</Link>
+        <span className="text-text">{e.eventName}</span>
+        <span className={status === "No-show" ? "rounded-md bg-warning-bg px-2 py-0.5 text-sm text-warning" : "text-sm text-text-muted"}>{status}</span>
+        {e.packagePurchaseId && <span className="text-sm text-text-muted">from a package</span>}
+      </p>
+      {e.answers.length > 0 && (
+        <dl className="mt-2 grid gap-1 text-sm">
+          {e.answers.map((a, i) => (
+            <div key={i}><dt className="text-text-muted">{a.label}</dt><dd className="whitespace-pre-wrap text-text">{a.answer}</dd></div>
+          ))}
+        </dl>
+      )}
+      {(e.payments.length > 0 || e.invoices.length > 0) && (
+        <ul className="mt-2 grid gap-1 text-sm text-text">
+          {e.payments.map((p) => <PaymentLine key={p.id} p={p} when={when} money={money} />)}
+          <Invoices list={e.invoices} money={money} />
+        </ul>
+      )}
+      {owner && (
+        <details className="mt-2" open={note !== ""}>
+          <summary className="cursor-pointer text-sm font-semibold text-text">Session note{note === "" ? " (none yet)" : ""}</summary>
+          <form action={saveSessionNoteFromFile} className="mt-2 grid gap-2">
+            <input type="hidden" name="key" value={fileKey} />
+            <input type="hidden" name="bookingId" value={e.id} />
+            <label htmlFor={`sn-${e.id}`} className="sr-only">Session note for {when(e.startAt)}</label>
+            <textarea id={`sn-${e.id}`} name="note" rows={3} maxLength={MAX_NOTE} defaultValue={note}
+              className={`block w-full rounded-md border border-border-input bg-card p-2 text-base text-text ${focusRing}`} />
+            <div><Button type="submit" variant="secondary" size="sm">Save session note</Button></div>
+          </form>
+          <History revisions={history} when={when} />
+        </details>
+      )}
+    </li>
+  );
+}
+
+function PackageItem({ e, when, money }: { e: PackageEntry; when: (d: Date) => string; money: (m: number) => string }) {
+  return (
+    <li className="rounded-md border border-border bg-card px-4 py-3">
+      <p className="flex flex-wrap items-center gap-x-3">
+        <span className="font-semibold text-text">{when(e.at)}</span>
+        <span className="text-text">Package: {e.name}</span>
+        <span className="text-sm text-text-muted">{e.status === "paid" ? `paid ${money(e.priceMinor)}` : "awaiting payment"}</span>
+      </p>
+      {e.status === "paid" && (
+        <p className="mt-1 text-sm text-text">
+          {e.used} of {e.sessions} booked · {e.remaining} left
+          {e.expiresAt && ` · ${e.expiresAt > new Date() ? "use by" : "expired"} ${when(e.expiresAt)}`}
+        </p>
+      )}
+      {e.invoices.length > 0 && <ul className="mt-1 text-sm text-text"><Invoices list={e.invoices} money={money} /></ul>}
+    </li>
+  );
+}
+
+/** Who changed a note and when; the text of a version only if the owner keeps versions. */
+function History({ revisions, when }: { revisions: NoteRevision[]; when: (d: Date) => string }) {
+  if (revisions.length === 0) return null;
+  const latest = revisions[0];
+  return (
+    <details className="mt-3 text-sm">
+      <summary className="cursor-pointer text-text-muted">
+        {revisions.length === 1 ? "1 change" : `${revisions.length} changes`} · last {when(latest.at)}{latest.actorName ? ` by ${latest.actorName}` : ""}
+      </summary>
+      <ol className="mt-2 grid gap-2">
+        {revisions.map((r) => (
+          <li key={r.id} className="border-l-2 border-border pl-3">
+            <p className="text-text-muted">{r.action === "cleared" ? "Cleared" : "Saved"} · {when(r.at)}{r.actorName ? ` · ${r.actorName}` : ""}</p>
+            {r.text !== null && <p className="mt-1 whitespace-pre-wrap text-text">{r.text}</p>}
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }

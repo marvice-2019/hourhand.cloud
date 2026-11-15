@@ -67,7 +67,7 @@ const key = /href="\/dashboard\/clients\/([0-9a-f]{20})"/.exec(html)?.[1];
 check(Boolean(key), "client has a page");
 const page = `/dashboard/clients/${key}`;
 html = await (await get(page, pj)).text();
-check(html.includes("Private note") && html.includes("History"), "client page shows note and history");
+check(html.includes("Private note") && html.includes("Timeline"), "client page shows note and timeline");
 const res = await submitForm(pj, page, 'name="note"', { key, note: "Working on interview prep. Prefers mornings." });
 check(res?.status === 303 && res.headers.get("location")?.includes("saved=1"), `note saved (${res?.status})`);
 const who = (await pool.query("select i.email from invitees i join bookings b on b.id = i.booking_id where b.host_id = $1", [priya.id])).rows.find((r) => r.email.toLowerCase() === g.email.toLowerCase());

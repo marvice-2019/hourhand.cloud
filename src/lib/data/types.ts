@@ -1,4 +1,5 @@
 import type { ConsentInput } from "../privacy/consent";
+import type { NoteRevision } from "../privacy/note-history";
 
 // Entities mirror docs/schema.sql (snake_case columns -> camelCase fields). Times are UTC Date objects.
 
@@ -359,12 +360,23 @@ export interface DataStore {
   markRunningLate(manageToken: string, minutes: number, now: Date): Promise<BookingWithInvitee>;
   /** The host's private note about a client (by email, any case); "" when none. */
   getClientNote(hostId: string, email: string): Promise<string>;
-  /** Saves it; an empty note removes it. Postgres seals it (AES-256-GCM, TOKEN_ENCRYPTION_KEY) before it is stored. */
-  saveClientNote(hostId: string, email: string, note: string): Promise<void>;
+  /**
+   * Saves it; an empty note removes it. Postgres seals it (AES-256-GCM, TOKEN_ENCRYPTION_KEY) before it is stored. A
+   * change records a history line (who: `actorId`, default the host; when); saving the same text records nothing.
+   */
+  saveClientNote(hostId: string, email: string, note: string, actorId?: string): Promise<void>;
   /** The host's private session note on one of their bookings; "" when none or not theirs. */
   getBookingNote(hostId: string, bookingId: string): Promise<string>;
-  /** Saves it, sealed like client notes; an empty note removes it. Throws NotFoundError unless the booking is `hostId`'s. */
-  saveBookingNote(hostId: string, bookingId: string, note: string): Promise<void>;
+  /** Session notes on several of the host's bookings, by booking id; bookings without one (or not theirs) are absent. */
+  listBookingNotes(hostId: string, bookingIds: string[]): Promise<Record<string, string>>;
+  /** Saves it, sealed like client notes, with a history line; an empty note removes it. Throws NotFoundError unless the booking is `hostId`'s. */
+  saveBookingNote(hostId: string, bookingId: string, note: string, actorId?: string): Promise<void>;
+  /** Edit history of the host's notes on a client (by email) or on some bookings, newest first (src/lib/privacy/note-history.ts). */
+  listNoteRevisions(hostId: string, subject: { email: string } | { bookingIds: string[] }): Promise<NoteRevision[]>;
+  /** Whether the host keeps the text of earlier note versions (off: only who/when). */
+  getKeepNoteVersions(hostId: string): Promise<boolean>;
+  /** Turns it on or off; off deletes the version texts already kept. */
+  setKeepNoteVersions(hostId: string, on: boolean): Promise<void>;
   /**
    * A hidden one_off event type at the given times, with a single-use link to it that expires at the last time; all in one
    * write. Throws InvalidOneOffError unless there are 1–20 distinct future times and the duration is 5–720 minutes.
