@@ -96,3 +96,21 @@ export async function sendBookingSms(
   const { id } = await smsProvider(cfg, fetchFn).send({ to: c.recipient, kind: c.kind as SmsKind, filled: usable });
   return id;
 }
+
+export interface SmsUsage {
+  /** Texts sent this calendar month (IST). */
+  used: number;
+  /** The host's monthly allowance (0 on Free). */
+  limit: number;
+  /** Midnight IST on the 1st of next month, when `used` starts again from 0. */
+  resetsAt: Date;
+}
+
+/** A host's texts this month against their plan's allowance, for the dashboard. */
+export async function smsUsage(db: Db, userId: string, now: Date): Promise<SmsUsage> {
+  const [used, plan] = await Promise.all([smsUsedThisMonth(db, userId, now), hostPlan(db, userId)]);
+  // IST has no daylight saving: the month in India is the UTC month of now + 5:30, and it starts at 18:30 UTC the day before.
+  const ist = new Date(now.getTime() + 330 * 60_000);
+  const resetsAt = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth() + 1, 1) - 330 * 60_000);
+  return { used, limit: LIMITS[plan].smsPerMonth, resetsAt };
+}

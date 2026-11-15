@@ -1,6 +1,9 @@
 // Booking texts (roadmap 1.2): the texts and their limits, MSG91's request, and (with TEST_DATABASE_URL, own database
 // <name>_sms) who gets a text, when, over which channel, and what delivery reports and the manage-page switch do.
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { SmsUsageMeter } from "../../components/SmsUsageMeter";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { migrate } from "../../../scripts/migrate";
@@ -16,6 +19,7 @@ import { handleWhatsAppWebhook } from "../whatsapp-webhook";
 import { createHmac } from "node:crypto";
 import { SMS_KINDS, smsConfig, smsNumber, type SmsConfig } from "./config";
 import { handleSmsToggle, manageTokenForCode } from "./manage";
+import { smsUsage } from "./outbox";
 import { msg91Body, sendMsg91 } from "./msg91";
 import { SmsError } from "./provider";
 import { dltText, DLT_VAR_MAX, fillSms, isGsm, segments, smsLength } from "./templates";
@@ -158,6 +162,25 @@ describe("booking form", () => {
 
   it("gives texts to paid plans only", () => {
     expect([LIMITS.free.smsPerMonth, LIMITS.solo.smsPerMonth, LIMITS.duo.smsPerMonth]).toEqual([0, 100, 200]);
+  });
+});
+
+describe("dashboard usage meter", () => {
+  const html = (used: number, limit: number) =>
+    renderToStaticMarkup(createElement(SmsUsageMeter, { usage: { used, limit, resetsAt: new Date("2031-02-28T18:30:00Z") }, resets: "1 Mar" }));
+
+  it("shows texts used against the allowance, and warns near and at the limit", () => {
+    expect(html(37, 100)).toContain("37</span> of 100 used · resets 1 Mar");
+    expect(html(37, 100)).toContain('aria-valuenow="37"');
+    expect(html(37, 100)).not.toContain('role="status"');
+    expect(html(85, 100)).toContain("Nearly at this month");
+    expect(html(85, 100)).toContain("bg-warning");
+    // Over the limit (texts sent before a downgrade) still reads as full, never over 100%.
+    const full = html(230, 200);
+    expect(full).toContain("200</span> of 200");
+    expect(full).toContain("width:100%");
+    expect(full).toContain("Guests still get every email");
+    expect(html(0, 0)).toContain("come with Solo and Duo");
   });
 });
 
@@ -319,6 +342,24 @@ describe.skipIf(!BASE)("SMS sending (Postgres)", () => {
     const e = await book();
     await run();
     expect((await rows(e.id))[0]).toMatchObject({ status: "sent" });
+  });
+
+  it("counts the host's texts this month in India against their plan, for the dashboard", async () => {
+    // 31 Jan 2031 19:00 UTC is already 1 Feb in India: January's texts no longer count, and the count resets on 1 Mar IST.
+    const now = new Date("2031-01-31T19:00:00Z");
+    const sent = (at: string, status = "sent", channel = "sms") => pool.query(
+      `insert into notifications (user_id, channel, kind, recipient, send_at, status, sent_at, dedupe_key) values ($1, $2, 'booked_guest', '91', $3, $4, $3, $5)`,
+      [priya.id, channel, at, status, `usage:${Math.random()}`]);
+    await sent("2031-01-31T18:00:00Z"); // 31 Jan 23:30 IST: last month
+    await sent("2031-01-31T18:31:00Z"); // 1 Feb 00:01 IST
+    await sent("2031-01-31T18:45:00Z");
+    await sent("2031-01-31T18:50:00Z", "failed");
+    await sent("2031-01-31T18:55:00Z", "sent", "whatsapp");
+    expect(await smsUsage(pool, priya.id, now)).toEqual({ used: 2, limit: 100, resetsAt: new Date("2031-02-28T18:30:00Z") });
+    await plan("duo");
+    expect((await smsUsage(pool, priya.id, now)).limit).toBe(200);
+    await plan("free");
+    expect((await smsUsage(pool, priya.id, now)).limit).toBe(0);
   });
 
   it("retries when MSG91 is down, and gives up when it refuses", async () => {
