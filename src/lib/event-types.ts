@@ -101,13 +101,13 @@ export function priceInput(minor: number | null): string {
 
 /**
  * Why this host may not charge guests yet, or null when they may. Charging is a paid-plan feature and the money goes to
- * the host's own Razorpay account. Making an event free is always allowed.
+ * the host's own Razorpay or Stripe account (Stripe only once its onboarding is finished). Making an event free is always allowed.
  */
-export function priceGateError(input: { priceMinor: number | null; demo: boolean; plan: Plan; razorpayConnected: boolean }): string | null {
+export function priceGateError(input: { priceMinor: number | null; demo: boolean; plan: Plan; paymentsReady: boolean }): string | null {
   if (input.priceMinor === null) return null;
   if (input.demo) return "Prices can't be set on the demo data.";
   if (input.plan === "free") return "Charging guests needs the Solo or Duo plan.";
-  if (!input.razorpayConnected) return "Connect Razorpay first, so payments go to your account.";
+  if (!input.paymentsReady) return "Connect Razorpay (India) or Stripe under Integrations first, so payments go to your account.";
   return null;
 }
 
@@ -201,7 +201,7 @@ export function validateEventType(form: EventTypeForm, takenSlugs: readonly stri
     value: {
       name, slug, description: form.description.trim() || null, durationMinutes, minNoticeMinutes, bookingWindowDays,
       startIncrementMinutes, bufferBeforeMinutes, bufferAfterMinutes, dailyLimit, cancelCutoffMinutes, maxRepeats, depositMinor,
-      priceMinor, currency: priceMinor === null ? null : "INR", hidden: form.hidden === true, redirectUrl: redirectUrl ?? null, weeklyLimit, cancelPolicy: cancelPolicy || null,
+      priceMinor, currency: priceMinor === null && depositMinor === null ? null : "INR", hidden: form.hidden === true, redirectUrl: redirectUrl ?? null, weeklyLimit, cancelPolicy: cancelPolicy || null,
       seatLimit: seats,
       location: form.locationKind ? { kind: form.locationKind, value: valueLabel ? locationValue : null } : null,
     },
