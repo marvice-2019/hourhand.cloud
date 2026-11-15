@@ -8,6 +8,8 @@ export type OAuthProviderId = Exclude<CalendarProviderId, "icloud">;
 
 /** How a provider is named in messages a host may read. */
 export const PROVIDER_NAMES: Record<CalendarProviderId, string> = { google: "Google", microsoft: "Microsoft", icloud: "iCloud" };
+/** What hosts call each calendar, for alerts. */
+export const CALENDAR_NAMES: Record<CalendarProviderId, string> = { google: "Google Calendar", microsoft: "Outlook calendar", icloud: "iCloud Calendar" };
 
 /** Thrown by every provider. `revoked`: only a reconnect fixes it (grant revoked, permission removed). */
 export class CalendarApiError extends Error {

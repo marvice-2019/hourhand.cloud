@@ -8,6 +8,8 @@ import { validateBookingRequest } from "./booking";
 import { createPgStore } from "./data/pg-store";
 import type { DataStore, EventType, User } from "./data/types";
 import { processDueNotifications } from "./jobs/worker";
+import { recordConnectionFailure } from "./calendar/sync";
+import { CalendarApiError } from "./calendar/provider";
 import type { Mail } from "./mail/mailer";
 import { isStop, templateMessage, verifyWebhookSignature, whatsappConfig, type WhatsAppConfig } from "./whatsapp-cloud";
 import { handleWhatsAppWebhook, verifyWhatsAppSubscription } from "./whatsapp-webhook";
@@ -158,6 +160,68 @@ describe.skipIf(!BASE)("WhatsApp sending (Postgres)", () => {
     expect(rows.map((r) => [r.kind, r.status])).toEqual([["booked_guest", "skipped"], ["cancelled_guest", "queued"], ["reminder_guest", "skipped"]]);
     await run();
     expect(sent.map((s) => (s.body.template as { name: string }).name)).toEqual(["hh_booking_changed"]);
+  });
+
+  describe("host calendar sync alert", () => {
+    const outage = async (opts: { phone: string | null; alerts: boolean; provider?: string }) => {
+      await pool.query("delete from calendar_connections where user_id = $1", [priya.id]);
+      await pool.query("update users set whatsapp_number = $2, whatsapp_alerts = $3 where id = $1", [priya.id, opts.phone, opts.alerts]);
+      const { rows: [c] } = await pool.query(
+        "insert into calendar_connections (user_id, provider, account_email, credentials_encrypted) values ($1, $2, 'priya@outlook.com', '') returning id",
+        [priya.id, opts.provider ?? "microsoft"]);
+      await recordConnectionFailure(pool, c.id, new CalendarApiError("invalid_grant", { status: 400, revoked: true }), new Date());
+      return c.id as string;
+    };
+    const alertRows = async () =>
+      (await pool.query("select channel, recipient, status, last_error from notifications where kind = 'calendar_alert_host' order by channel")).rows;
+    afterAll(async () => {
+      await pool.query("delete from calendar_connections where user_id = $1", [priya.id]);
+      await pool.query("update users set whatsapp_number = null, whatsapp_alerts = false where id = $1", [priya.id]);
+    });
+
+    it("queues a WhatsApp next to the email only when the host saved a number and ticked alerts", async () => {
+      await outage({ phone: "919876543210", alerts: false });
+      expect((await alertRows()).map((r) => r.channel)).toEqual(["email"]);
+      await pool.query("delete from notifications");
+      await outage({ phone: null, alerts: true });
+      expect((await alertRows()).map((r) => r.channel)).toEqual(["email"]);
+      await pool.query("delete from notifications");
+      await outage({ phone: "919876543210", alerts: true });
+      expect(await alertRows()).toMatchObject([{ channel: "email" }, { channel: "whatsapp", recipient: "919876543210", status: "queued" }]);
+    });
+
+    it("sends the alert template on the free plan, outside the guest allowance, naming the right calendar", async () => {
+      await plan("free");
+      await outage({ phone: "919876543210", alerts: true });
+      await run();
+      expect(sent).toHaveLength(1);
+      const t = sent[0].body.template as { name: string; components: { parameters: { text: string }[] }[] };
+      expect(sent[0].body.to).toBe("919876543210");
+      expect(t.name).toBe("hh_calendar_alert");
+      expect(t.components[0].parameters.map((p) => p.text)).toEqual(["Priya", "Outlook calendar", "priya@outlook.com"]);
+      expect((await alertRows()).find((r) => r.channel === "whatsapp")).toMatchObject({ status: "sent" });
+    });
+
+    it("skips it when the calendar recovered, alerts were turned off, or the host replied STOP", async () => {
+      const id = await outage({ phone: "919876543210", alerts: true });
+      await pool.query("update calendar_connections set status = 'ok' where id = $1", [id]);
+      await run();
+      expect(sent).toHaveLength(0);
+      expect((await alertRows()).find((r) => r.channel === "whatsapp")).toMatchObject({ status: "skipped", last_error: "calendar connection recovered" });
+
+      await pool.query("delete from notifications");
+      await outage({ phone: "919876543210", alerts: true });
+      await pool.query("update users set whatsapp_alerts = false where id = $1", [priya.id]);
+      await run();
+      expect((await alertRows()).find((r) => r.channel === "whatsapp")).toMatchObject({ status: "skipped", last_error: "host turned WhatsApp alerts off" });
+
+      await pool.query("delete from notifications");
+      await outage({ phone: "919876543210", alerts: true });
+      await pool.query("insert into whatsapp_opt_outs (phone) values ('919876543210')");
+      await run();
+      expect(sent).toHaveLength(0);
+      expect((await alertRows()).find((r) => r.channel === "whatsapp")).toMatchObject({ status: "skipped", last_error: "host replied STOP on WhatsApp" });
+    });
   });
 
   it("sends nothing for a host on the free plan, and stops at the monthly limit", async () => {

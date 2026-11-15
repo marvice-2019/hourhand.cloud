@@ -45,8 +45,29 @@ export const TEMPLATES = {
     en: { body: "Hi {{1}}, your {{2}} with {{3}} has changed: {{4}}. Use the button below for details.", button: "View booking" },
     hi: { body: "नमस्ते {{1}}, {{3}} के साथ आपके {{2}} में बदलाव हुआ है: {{4}}। जानकारी के लिए नीचे का बटन दबाएँ।", button: "बुकिंग देखें" },
   },
+  // To the host, not a guest: {{1}} host first name, {{2}} calendar ("Google Calendar"), {{3}} account email. Static button to /dashboard/calendars.
+  hh_calendar_alert: {
+    en: { body: "Hi {{1}}, Hourhand can't read your {{2}} ({{3}}), so your booking pages show no times until it's fixed. Use the button below to reconnect it.", button: "Fix calendar" },
+    hi: { body: "नमस्ते {{1}}, Hourhand आपका {{2}} ({{3}}) नहीं पढ़ पा रहा है, इसलिए ठीक होने तक आपके बुकिंग पेज पर कोई समय नहीं दिखेगा। दोबारा जोड़ने के लिए नीचे का बटन दबाएँ।", button: "कैलेंडर ठीक करें" },
+  },
 } as const;
 export type TemplateName = keyof typeof TEMPLATES;
+
+/** The Cloud API request body for a host's calendar sync alert to `to` (digits with country code). Always English: the dashboard is. */
+export function hostAlertMessage(a: { hostName: string; calendarName: string; accountEmail: string }, to: string) {
+  const first = a.hostName.trim().split(/\s+/)[0] || a.hostName;
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "template",
+    template: {
+      name: "hh_calendar_alert" satisfies TemplateName,
+      language: { code: "en" },
+      components: [{ type: "body", parameters: [param(first, 60), param(a.calendarName, 40), param(a.accountEmail, 120)].map((text) => ({ type: "text", text })) }],
+    },
+  };
+}
 
 const TEMPLATE_FOR: Record<WhatsAppKind, TemplateName> = {
   booked_guest: "hh_booking_confirmed", reminder_guest: "hh_booking_reminder", cancelled_guest: "hh_booking_changed", rescheduled_guest: "hh_booking_changed",

@@ -86,10 +86,19 @@ describe("booking emails", () => {
   });
 
   it("the calendar alert says bookings are paused and links to the fix", () => {
-    const m = renderCalendarAlert({ accountEmail: "priya@gmail.com", disconnected: true, lastError: "invalid_grant", calendarsUrl: "https://hourhand.test/dashboard/calendars" });
+    const m = renderCalendarAlert({ provider: "google", accountEmail: "priya@gmail.com", disconnected: true, lastError: "invalid_grant", calendarsUrl: "https://hourhand.test/dashboard/calendars" });
     expect(m.subject).toBe("Reconnect your Google Calendar");
     expect(m.text).toContain("https://hourhand.test/dashboard/calendars");
     expect(m.text).toContain("show no times");
+  });
+
+  it("calendar alert names the host's own calendar, not always Google", () => {
+    const outlook = renderCalendarAlert({ provider: "microsoft", accountEmail: "priya@outlook.com", disconnected: true, lastError: null, calendarsUrl: "https://hourhand.test/dashboard/calendars" });
+    expect(outlook.subject).toBe("Reconnect your Outlook calendar");
+    expect(outlook.text).toContain("Microsoft no longer lets Hourhand use priya@outlook.com");
+    expect(outlook.text).not.toContain("Google");
+    const icloud = renderCalendarAlert({ provider: "icloud", accountEmail: "priya@icloud.com", disconnected: false, lastError: "timeout", calendarsUrl: "https://hourhand.test/dashboard/calendars" });
+    expect(icloud.subject).toBe("Hourhand can't read your iCloud Calendar");
   });
 
   it("sign-in email carries the link", () => {
