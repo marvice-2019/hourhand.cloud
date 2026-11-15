@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
 import { deleteEventType, saveEventType } from "@/app/dashboard/event-types/actions";
 import type { CustomQuestion, LocationKind, QuestionDraft } from "@/lib/data/types";
+import { MAX_DURATION_OPTIONS } from "@/lib/durations";
 import { LOCATION_VALUE_LABEL, START_INCREMENTS, slugify, type EventTypeErrors, type EventTypeForm, type QuestionErrors } from "@/lib/event-types";
 import { Button } from "./ui/Button";
 import { Card } from "./ui/Card";
@@ -18,7 +19,7 @@ const TABS = [
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
-const DETAIL_FIELDS: (keyof EventTypeForm)[] = ["name", "slug", "durationMinutes", "price", "deposit", "description", "locationKind", "locationValue"];
+const DETAIL_FIELDS: (keyof EventTypeForm)[] = ["name", "slug", "durationMinutes", "durations", "price", "deposit", "description", "locationKind", "locationValue"];
 const PRESET_DURATIONS = [15, 30, 45, 60];
 
 const LOCATIONS: { kind: LocationKind | ""; label: string }[] = [
@@ -68,7 +69,12 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
   const [deleting, startDeleting] = useTransition();
   const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
 
-  const set = (key: Exclude<keyof EventTypeForm, "hidden">) => (value: string) => {
+  const durations = form.durations ?? [];
+  const setDurations = (rows: { minutes: string; price: string }[]) => {
+    setForm((f) => ({ ...f, durations: rows }));
+    setStatus("idle");
+  };
+  const set = (key: Exclude<keyof EventTypeForm, "hidden" | "durations">) => (value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
     setStatus("idle");
   };
@@ -145,7 +151,7 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
     });
   }
 
-  const numberField = (key: Exclude<keyof EventTypeForm, "hidden" | "redirectUrl" | "cancelPolicy">, label: string, unit: string, hint?: string) => (
+  const numberField = (key: Exclude<keyof EventTypeForm, "hidden" | "redirectUrl" | "cancelPolicy" | "durations">, label: string, unit: string, hint?: string) => (
     <div>
       <Label htmlFor={`f-${key}`}>{label}</Label>
       <div className="flex items-center gap-2">
@@ -204,6 +210,36 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
           {customDuration ? (
             <div className="mt-3">{numberField("durationMinutes", "Custom length", "minutes", "Between 5 minutes and 12 hours.")}</div>
           ) : errors.durationMinutes && <p className="mt-1 text-sm text-danger">{errors.durationMinutes}</p>}
+        </fieldset>
+        <fieldset aria-describedby="f-durations-hint">
+          <legend className="text-sm font-semibold text-text">Other lengths guests can pick</legend>
+          <p id="f-durations-hint" className="mt-1 text-sm text-text-muted">
+            Optional. Guests choose a length before they see times; buffers and limits work the same for every length. Leave a price blank to charge the event&apos;s price.
+          </p>
+          {durations.map((row, i) => (
+            <div key={i} className="mt-2 flex flex-wrap items-end gap-2">
+              <div>
+                <Label htmlFor={`f-dur-${i}`}>Length {i + 2}</Label>
+                <div className="flex items-center gap-2">
+                  <Input id={`f-dur-${i}`} inputMode="numeric" value={row.minutes} className="max-w-24" aria-invalid={errors.durations ? true : undefined}
+                    onChange={(e) => setDurations(durations.map((r, j) => (j === i ? { ...r, minutes: e.target.value } : r)))} />
+                  <span className="mt-1 text-sm text-text-muted">min</span>
+                </div>
+              </div>
+              <div>
+                <Label htmlFor={`f-dur-price-${i}`}>Price (₹)</Label>
+                <Input id={`f-dur-price-${i}`} inputMode="decimal" value={row.price} className="max-w-32" placeholder="Event price" aria-invalid={errors.durations ? true : undefined}
+                  onChange={(e) => setDurations(durations.map((r, j) => (j === i ? { ...r, price: e.target.value } : r)))} />
+              </div>
+              <button type="button" onClick={() => setDurations(durations.filter((_, j) => j !== i))}
+                className={`min-h-11 text-sm font-semibold text-accent underline ${focusRing}`}>Remove</button>
+            </div>
+          ))}
+          {durations.length + 1 < MAX_DURATION_OPTIONS && (
+            <button type="button" onClick={() => setDurations([...durations, { minutes: "", price: "" }])}
+              className={`mt-2 min-h-11 text-sm font-semibold text-accent underline ${focusRing}`}>Add a length</button>
+          )}
+          {errors.durations && <p className="mt-1 text-sm text-danger" role="alert">{errors.durations}</p>}
         </fieldset>
         <div>
           <Label htmlFor="f-price">Price (₹)</Label>

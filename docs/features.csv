@@ -8,7 +8,7 @@ Weekly working hours with time zone,availability,must,yes,yes,"S09: per-weekday 
 Date-specific overrides (custom hours or unavailable),availability,must,yes,yes,"S09: add/remove per date, custom hours or unavailable"
 Several named availability schedules,availability,should,yes,no,S09; API list schedules
 "One-on-one event type with name, slug, duration, description",event types,must,yes,yes,"S05-S07: create/edit, unique slug, on/off switch; delete blocked while bookings reference it"
-Multiple duration options on one event type,event types,should,yes,no,S05; help multiple durations
+Multiple duration options on one event type,event types,should,yes,yes,"S05; up to 4 lengths per one-on-one type, optional price per length; guest picks the length before times"
 "Event location: video, phone, in person, custom, ask invitee",event types,must,yes,yes,"S05: Meet, Zoom, Teams, phone either way, in person, custom, guest picks; Meet link auto-created, Teams link with B6"
 "Minimum notice, booking window, start increments",event types,must,yes,yes,"slot engine, tested"
 Buffers before and after meetings,event types,must,yes,yes,"slot engine + booking overlap check, tested"
