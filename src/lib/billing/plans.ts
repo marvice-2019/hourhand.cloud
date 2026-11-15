@@ -26,12 +26,16 @@ export interface PlanLimits {
   checkedCalendars: number;
   /** "Booked with Hourhand" footer on the booking pages. */
   footer: boolean;
+  /** Days of history the business reports show (counting today); Infinity for all of it. */
+  reportDays: number;
+  /** Downloading the GST and P&L CSVs. */
+  reportExport: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true },
-  solo: { checkedCalendars: Infinity, footer: false },
-  duo: { checkedCalendars: Infinity, footer: false },
+  free: { checkedCalendars: 2, footer: true, reportDays: 30, reportExport: false },
+  solo: { checkedCalendars: Infinity, footer: false, reportDays: Infinity, reportExport: true },
+  duo: { checkedCalendars: Infinity, footer: false, reportDays: Infinity, reportExport: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {
