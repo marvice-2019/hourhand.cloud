@@ -31,6 +31,10 @@ export interface BookingMailContext {
   paidMinor?: number | null;
   /** The payment was a refundable no-show deposit, not a price. */
   paidIsDeposit?: boolean;
+  /** One week's share of a paid weekly series this booking belongs to (paise), or null. */
+  seriesUnitMinor?: number | null;
+  /** For a cancelled week of a paid series: what this cancellation refunds (its week and those cancelled with it). */
+  refundMinor?: number | null;
   /** For reschedules: when the booking used to be. */
   previousStartAt: Date | null;
   /** For a rescheduled booking: who moved it (who cancelled the old one). */
@@ -157,12 +161,14 @@ const dashboardLink = (c: BookingMailContext) => ({ label: "Open in Hourhand", u
 
 function cancelNote(c: BookingMailContext, to: "guest" | "host"): string | undefined {
   if (to === "guest") {
-    const refund = !c.paidMinor ? "" : g(c, c.paidIsDeposit ? "refundDeposit" : "refundPayment", { amount: formatMoney(c.paidMinor, "INR") });
+    const refund = c.refundMinor ? g(c, "refundShare", { amount: formatMoney(c.refundMinor, "INR") })
+      : !c.paidMinor ? "" : g(c, c.paidIsDeposit ? "refundDeposit" : "refundPayment", { amount: formatMoney(c.paidMinor, "INR") });
     return [refund, c.cancelReason ? g(c, "reason", { reason: c.cancelReason }) : ""].filter(Boolean).join(" ") || undefined;
   }
   // A paid booking is refunded in full on cancellation; say so, since that's what each side wants to know first.
   const reason = c.cancelReason ? `Reason given: ${c.cancelReason}` : "";
-  const refund = !c.paidMinor ? "" : `The guest's ${formatMoney(c.paidMinor, "INR")} is being refunded from your Razorpay account.`;
+  const refund = c.refundMinor ? `${formatMoney(c.refundMinor, "INR")} for the cancelled ${c.alsoCancelled?.length ? "sessions" : "session"} is being refunded to the guest from your Razorpay account.`
+    : !c.paidMinor ? "" : `The guest's ${formatMoney(c.paidMinor, "INR")} is being refunded from your Razorpay account.`;
   return [refund, reason].filter(Boolean).join(" ") || undefined;
 }
 

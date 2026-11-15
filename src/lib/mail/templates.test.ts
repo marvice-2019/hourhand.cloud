@@ -72,6 +72,17 @@ describe("booking emails", () => {
     expect(renderBookingMail("booked_guest", free).text).not.toContain("Paid");
   });
 
+  it("a cancelled week of a paid series names its own refund, not the whole series' payment", () => {
+    // As the worker builds it: the refund line carries the amount, with no series-total "Paid" row.
+    const week = { ...ctx, paidMinor: null, seriesUnitMinor: 50000, refundMinor: 50000, cancelReason: null };
+    expect(renderBookingMail("cancelled_guest", week).text).toContain("₹500 for the cancelled sessions is being refunded to the way you paid");
+    expect(renderBookingMail("cancelled_guest", week).text).not.toContain("₹2,000");
+    expect(renderBookingMail("cancelled_host", week).text).toContain("₹500 for the cancelled session is being refunded to the guest");
+    const withLater = { ...week, refundMinor: 150000, alsoCancelled: [new Date(ctx.startAt.getTime() + 7 * 86_400_000), new Date(ctx.startAt.getTime() + 14 * 86_400_000)] };
+    expect(renderBookingMail("cancelled_host", withLater).text).toContain("₹1,500 for the cancelled sessions");
+    expect(renderBookingMail("cancelled_guest", { ...week, locale: "hi" }).text).toContain("₹500");
+  });
+
   it("a moved booking says who moved it", () => {
     const moved = { ...ctx, previousStartAt: new Date(ctx.startAt.getTime() - 86_400_000) };
     expect(renderBookingMail("rescheduled_guest", { ...moved, movedBy: "host" }).text).toContain("moved your booking to a new time");

@@ -65,6 +65,9 @@ const CONTEXT = `
       order by p.created_at desc limit 1) as paid_minor,
     (select p.kind from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
       order by p.created_at desc limit 1) as paid_kind,
+    -- One week's share of a paid weekly series (its payment is held by the first week): what cancelling a week refunds.
+    (select p.amount_minor / p.sessions from payments p where p.booking_id = b.series_id and p.sessions > 1
+      and p.status in ('paid', 'refund_pending', 'refunded') limit 1) as series_unit_minor,
     coalesce(u.name, '') as host_name, u.email as host_email, u.timezone as host_timezone, u.time_format as host_time_format,
     loc.kind as location_kind, loc.value as location_value, atc.provider as add_to_provider, atc.can_teams as add_to_can_teams,
     -- a calendar write that hasn't been tried yet or is running right now; one waiting to retry doesn't hold emails back
@@ -100,6 +103,7 @@ function toContext(r: ContextRow, baseUrl: string): BookingMailContext {
     answers: (r.answers as InviteeAnswer[]) ?? [],
     cancelledBy: (r.cancelled_by as BookingMailContext["cancelledBy"]) ?? null, cancelReason: (r.cancel_reason as string | null) ?? null,
     paidMinor: (r.paid_minor as number | null) ?? null, paidIsDeposit: r.paid_kind === "deposit",
+    seriesUnitMinor: (r.series_unit_minor as number | null) ?? null,
     previousStartAt: r.previous_start_at ? new Date(r.previous_start_at as Date) : null,
     movedBy: (r.previous_cancelled_by as BookingMailContext["movedBy"]) ?? null,
     issuedAt: new Date(r.queued_at as Date),
@@ -111,11 +115,28 @@ function toContext(r: ContextRow, baseUrl: string): BookingMailContext {
 
 const REBOOK_DAYS = 21;
 
-/** Later weeks of the same series cancelled in the same transaction as this one (same cancelled_at). */
+/**
+ * A cancelled week of a series: the later weeks cancelled with it, and for a paid series what this cancellation refunds
+ * (one share per week cancelled, as queueRefunds queued it), rather than the whole series' payment.
+ */
+async function seriesCancel(pool: pg.Pool, r: ContextRow): Promise<Pick<BookingMailContext, "alsoCancelled" | "refundMinor" | "paidMinor">> {
+  const alsoCancelled = await cancelledWith(pool, r.id as string);
+  const unit = (r.series_unit_minor as number | null) ?? null;
+  // The series' total "Paid" row would sit oddly next to a one-week refund (and only the first week has it): the refund
+  // line carries the amount instead.
+  return { alsoCancelled, ...(unit ? { refundMinor: unit * (1 + alsoCancelled.length), paidMinor: null } : {}) };
+}
+
+/**
+ * Later weeks of the same series cancelled in the same transaction as this one (same cancelled_at), that have no
+ * cancellation email of their own: closing an account emails every week, and each would otherwise list (and, for a paid
+ * series, count the refund of) the weeks after it again.
+ */
 async function cancelledWith(pool: pg.Pool, bookingId: string): Promise<Date[]> {
   const { rows } = await pool.query(
     `select w.start_at from bookings b join bookings w on w.series_id = b.series_id and w.id <> b.id and w.cancelled_at = b.cancelled_at and w.series_index > b.series_index
-     where b.id = $1 order by w.series_index`, [bookingId]);
+     where b.id = $1 and not exists (select 1 from notifications nw where nw.booking_id = w.id and nw.kind = 'cancelled_guest')
+     order by w.series_index`, [bookingId]);
   return rows.map((w) => new Date(w.start_at));
 }
 
@@ -471,7 +492,7 @@ export async function processDueNotifications(
             extraGuest: c.recipient.toLowerCase() !== String(r.guest_email).toLowerCase() && c.kind.endsWith("_guest"),
             ...(c.kind === "cancelled_guest" ? { rebook: await rebookSuggestions(pool, r, opts.baseUrl) } : {}),
             ...((c.kind === "booked_guest" || c.kind === "booked_host") && r.series_id === r.id ? { series: await seriesWeeks(pool, r.id as string, opts.baseUrl) } : {}),
-            ...((c.kind === "cancelled_guest" || c.kind === "cancelled_host") && r.series_id ? { alsoCancelled: await cancelledWith(pool, r.id as string) } : {}),
+            ...((c.kind === "cancelled_guest" || c.kind === "cancelled_host") && r.series_id ? await seriesCancel(pool, r) : {}),
           });
         if ("skip" in mail) { await skip(c, mail.skip); continue; }
         ({ id: providerId } = await mailer.send({ ...mail, to: c.recipient, idempotencyKey: `notification-${c.id}` }));
