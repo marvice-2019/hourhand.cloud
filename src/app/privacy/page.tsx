@@ -21,7 +21,7 @@ export default function PrivacyPage() {
       </Link>
       <main>
         <h1 className="mt-6 font-display text-xl text-text">Privacy policy</h1>
-        <p className="mt-2 text-sm text-text-muted">Last updated 11 October 2026</p>
+        <p className="mt-2 text-sm text-text-muted">Last updated 15 November 2026</p>
 
         <p className={p}>
           This page explains what Hourhand collects, why, who helps us handle it, how long we keep it and what you can ask us to do with it. We have tried to write it in plain words. If anything is unclear, write to us and a person will answer.
@@ -54,6 +54,9 @@ export default function PrivacyPage() {
           <li>Your name and email address, and your phone number if the host asks for it.</li>
           <li>Your answers to any questions the host adds to the booking form.</li>
           <li>Your time zone, so times show correctly for you.</li>
+          <li>
+            Anonymous visit counts on booking pages, so a host can see which channels bring their bookings: the page, the step reached (viewed, picked a time, booked), the day, the link&apos;s campaign tags and the referring website&apos;s domain. We count this ourselves, with no cookies and no third parties. We don&apos;t store your IP address or browser details. To avoid counting the same visit twice in a day, we keep a scrambled code made with a key that is deleted at the end of that day, after which the code can&apos;t be linked to you. If your browser sends Do Not Track or Global Privacy Control, we don&apos;t count your visit at all. Raw counts are kept 90 days, daily totals 2 years.
+          </li>
         </ul>
 
         <h2 className={h2}>Why we use it</h2>
