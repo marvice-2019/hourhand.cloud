@@ -29,13 +29,15 @@ export interface PlanLimits {
   checkedCalendars: number;
   /** "Booked with Hourhand" footer on the booking pages. */
   footer: boolean;
+  /** Meeting polls open (taking votes) at once. */
+  openPolls: number;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true },
-  solo: { checkedCalendars: Infinity, footer: false },
-  duo: { checkedCalendars: Infinity, footer: false },
-  clinic: { checkedCalendars: Infinity, footer: false },
+  free: { checkedCalendars: 2, footer: true, openPolls: 1 },
+  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity },
+  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity },
+  clinic: { checkedCalendars: Infinity, footer: false, openPolls: Infinity },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {
