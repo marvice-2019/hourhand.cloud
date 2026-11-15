@@ -8,6 +8,7 @@ import { waNumber } from "./whatsapp";
 import { BOOKING_LIMITS, type createRateLimiter } from "./rate-limit";
 import type { Plan } from "./billing/plans";
 import { startPaidBooking } from "./payments/booking-payments";
+import { seriesCharge } from "./payments/series";
 import type { HostRazorpayAuth } from "./payments/host-razorpay";
 import type { RazorpayOrders } from "./payments/razorpay-orders";
 
@@ -286,16 +287,17 @@ export async function handleCreateBooking(
   const eventType = withDuration(found.eventType, minutes);
   if (req.packageToken && found.linkToken) return { status: 400, body: { error: "invalid_request", fields: { packageToken: "Use your package link or the single-use link, not both." } } };
   // A package buyer may book their sessions weekly (up to what's left, checked in the write); otherwise the host's setting
-  // rules, and a price or deposit holds one booking at a time.
+  // rules. A priced series is paid in one go for every week; a deposit holds one booking at a time.
   const maxWeeks = req.packageToken ? 12 : eventType.maxRepeats;
-  if (req.weeks > 1 && (req.weeks > maxWeeks || found.linkToken || (!req.packageToken && (eventType.priceMinor || eventType.depositMinor)))) {
+  if (req.weeks > 1 && (req.weeks > maxWeeks || found.linkToken || (!req.packageToken && eventType.priceMinor === null && eventType.depositMinor))) {
     return { status: 400, body: { error: "invalid_request", fields: { weeks: maxWeeks > 1 ? `Book up to ${maxWeeks} weeks at a time.` : "This event can't be repeated." } } };
   }
 
   // A repeated submit returns the booking it already made, before the slot re-check (which it would now fail).
   const existing = (await store.listBookings(host.id)).find((b) => b.idempotencyKey === req.idempotencyKey);
   // What the guest pays now: the price, or else a refundable no-show deposit. Paid for with a package: nothing at booking.
-  const priceMinor = req.packageToken ? null : priceFor(found.eventType, minutes) ?? eventType.depositMinor;
+  const unitMinor = priceFor(found.eventType, minutes);
+  const priceMinor = req.packageToken ? null : unitMinor !== null ? seriesCharge(unitMinor, req.weeks) : eventType.depositMinor;
   const paymentKind = eventType.priceMinor === null ? "deposit" as const : "payment" as const;
   // A priced repeat goes through startPaidBooking below instead, so a still-held booking gets its payment details back.
   if (existing && !priceMinor) return { status: 200, body: { bookingId: existing.id, manageToken: existing.invitee.manageToken } };

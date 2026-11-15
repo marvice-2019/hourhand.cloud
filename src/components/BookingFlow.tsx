@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { focusRing } from "@/components/ui/focus";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
+import { formatMoney } from "@/lib/billing/plans";
 import { t, tNodes, type GuestKey, type Locale } from "@/lib/i18n/guest";
 import { zoneCheck } from "@/lib/tz-confirm";
 import { LocalTime } from "./LocalTime";
@@ -22,7 +23,7 @@ interface Props {
   bookingWindowDays: number;
   questions: FlowQuestion[];
   /** For a priced event: the price as shown ("₹499") and the names Checkout shows the guest. */
-  paid?: { price: string; hostName: string; eventName: string; deposit?: boolean } | null;
+  paid?: { price: string; hostName: string; eventName: string; deposit?: boolean; /** Paise, for the total of a weekly series. */ priceMinor?: number } | null;
   /** Booking through a single-use link: times and the booking go through the link, which is used up by the booking. */
   linkToken?: string;
   /** Open the picker on this suggested time's day. */
@@ -43,7 +44,7 @@ interface Props {
   /** Offer automatic WhatsApp updates to the phone the guest gives. */
   whatsapp?: boolean;
   /** Lengths to pick from (2 or more), shortest first, each with its price as shown (null = free). Left out = one length. */
-  durations?: { minutes: number; price: string | null }[];
+  durations?: { minutes: number; price: string | null; priceMinor?: number | null }[];
 }
 
 /** Public booking: pick a time, then fill in details. The picker stays mounted so "Pick another time" keeps the month and day. */
@@ -53,7 +54,7 @@ export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = 
   const choosing = durations !== undefined && durations.length > 1;
   const [duration, setDuration] = useState<number | null>(null);
   const chosen = choosing ? durations.find((d) => d.minutes === duration) ?? null : null;
-  const shownPaid = paid && chosen?.price ? { ...paid, price: chosen.price } : paid;
+  const shownPaid = paid && chosen?.price ? { ...paid, price: chosen.price, priceMinor: chosen.priceMinor ?? paid.priceMinor } : paid;
   return (
     <>
       <div hidden={picked !== null}>
@@ -153,6 +154,8 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
   const [weeks, setWeeks] = useState(1);
   const [weeksTaken, setWeeksTaken] = useState<string[] | null>(null);
   const [packageRefused, setPackageRefused] = useState<string | null>(null);
+  // A priced weekly series is paid in one go: the button shows the total for every week.
+  const seriesPrice = paid && !paid.deposit && weeks > 1 && paid.priceMinor ? formatMoney(paid.priceMinor * weeks, "INR") : paid?.price ?? "";
   const [showGuests, setShowGuests] = useState(false);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -314,10 +317,10 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
             {t(locale, checkoutFailed ? "checkoutFailed" : notPaid ? "notPaid" : "notPaidYet")}{" "}
             {tNodes(locale, "heldUntil", { time: <LocalTime date={held.payment.holdExpiresAt} tz={tz} locale={locale} /> })}
           </p>
-          <Button type="button" loading={busy} onClick={() => { const h = held; setHeld(null); void pay(h); }}>{t(locale, "pay", { price: paid?.price ?? "" })}</Button>
+          <Button type="button" loading={busy} onClick={() => { const h = held; setHeld(null); void pay(h); }}>{t(locale, "pay", { price: formatMoney(held.payment.amount, "INR") })}</Button>
         </div>
       ) : (
-        <Button type="submit" loading={busy}>{busy ? t(locale, "booking") : paid ? t(locale, paid.deposit ? "continuePayDeposit" : "continuePay", { price: paid.price }) : packageToken ? (weeks > 1 ? t(locale, "bookSessions", { n: weeks }) : t(locale, "bookWithPackage")) : t(locale, "bookThisTime")}</Button>
+        <Button type="submit" loading={busy}>{busy ? t(locale, "booking") : paid ? t(locale, paid.deposit ? "continuePayDeposit" : "continuePay", { price: seriesPrice }) : packageToken ? (weeks > 1 ? t(locale, "bookSessions", { n: weeks }) : t(locale, "bookWithPackage")) : t(locale, "bookThisTime")}</Button>
       )}
     </form>
   );

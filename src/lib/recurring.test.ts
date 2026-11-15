@@ -103,10 +103,11 @@ describe("managing a week", () => {
 
 describe("event type setting", () => {
   const form = { ...NEW_EVENT_TYPE_FORM, name: "Weekly call", slug: "weekly" };
-  it("takes 1 to 12 weeks, on free event types only", () => {
+  it("takes 1 to 12 weeks, on free and priced event types, but not with a deposit", () => {
     expect(validateEventType({ ...form, maxRepeats: "6" }, [])).toMatchObject({ ok: true, value: { maxRepeats: 6 } });
     expect(validateEventType({ ...form, maxRepeats: "13" }, [])).toMatchObject({ ok: false, errors: { maxRepeats: expect.any(String) } });
-    expect(validateEventType({ ...form, maxRepeats: "4", price: "499" }, [])).toMatchObject({ ok: false, errors: { maxRepeats: expect.stringContaining("free") } });
+    expect(validateEventType({ ...form, maxRepeats: "4", price: "499" }, [])).toMatchObject({ ok: true, value: { maxRepeats: 4, priceMinor: 49_900 } });
+    expect(validateEventType({ ...form, maxRepeats: "4", deposit: "200" }, [])).toMatchObject({ ok: false, errors: { maxRepeats: expect.stringContaining("deposit") } });
     expect(validateEventType({ ...form, maxRepeats: "1", price: "499" }, [])).toMatchObject({ ok: true });
   });
 });

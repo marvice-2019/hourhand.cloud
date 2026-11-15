@@ -63,8 +63,8 @@ export default async function PublicEventPage({ params, searchParams }: { params
         </ul>
       )}
       <BookingFlow
-        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} durations={guestDurations(eventType, (m) => formatMoney(m, "INR"))} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)}
-        paid={eventType.priceMinor !== null ? { price: formatMoney(eventType.priceMinor, "INR"), hostName: host.name, eventName: eventType.name }
+        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} durations={guestDurations(eventType, (m) => formatMoney(m, "INR"))} maxWeeks={eventType.priceMinor === null && eventType.depositMinor !== null ? 1 : eventType.maxRepeats} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)}
+        paid={eventType.priceMinor !== null ? { price: formatMoney(eventType.priceMinor, "INR"), priceMinor: eventType.priceMinor, hostName: host.name, eventName: eventType.name }
           : eventType.depositMinor !== null ? { price: formatMoney(eventType.depositMinor, "INR"), hostName: host.name, eventName: eventType.name, deposit: true } : null}
       />
       <BookingFooter hostId={host.id} locale={locale} />

@@ -176,7 +176,6 @@ export function validateEventType(form: EventTypeForm, takenSlugs: readonly stri
   if (price === "invalid") errors.price = PRICE_INVALID;
   const priceMinor = price === "invalid" ? null : price;
   const maxRepeats = number("maxRepeats", 1, MAX_WEEKS, `Enter 1 (no repeats) up to ${MAX_WEEKS} weeks.`);
-  if (!errors.maxRepeats && maxRepeats > 1 && priceMinor !== null) errors.maxRepeats = "Weekly repeats work on free event types for now. Sell a package for paid sessions.";
   const deposit = parsePrice(form.deposit);
   if (deposit === "invalid") errors.deposit = PRICE_INVALID;
   const depositMinor = deposit === "invalid" ? null : deposit;

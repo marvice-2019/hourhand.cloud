@@ -304,11 +304,22 @@ create table payments (
   currency text not null,
   status text not null check (status in ('pending','paid','failed','refunded')),
   refunded_minor int not null default 0 check (refunded_minor >= 0),
+  sessions int not null default 1,                -- weeks a paid series covers; amount_minor / sessions each (0031)
+  refund_due_minor int not null default 0,        -- queued for refund, not yet refunded: cancelled weeks of a series (0031)
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create index on payments (booking_id);
 create index on payments (host_id, created_at);
+
+-- Partial refunds (some weeks of a paid series), dated for earnings. A refund completing the payment is on payments. (0031)
+create table payment_refunds (
+  id uuid primary key default gen_random_uuid(),
+  payment_id uuid not null references payments(id) on delete cascade,
+  amount_minor int not null check (amount_minor > 0),
+  provider_refund_id text,
+  refunded_at timestamptz not null
+);
 
 -- Notifications (outbox: the job runner sends due rows and records the result)
 

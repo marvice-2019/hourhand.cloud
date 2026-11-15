@@ -13,6 +13,10 @@ import type { Plan } from "../billing/plans";
 import { handleConfirmPayment } from "./confirm-handler";
 import { keyPairAuth } from "./host-razorpay";
 import { razorpayOrders } from "./razorpay-orders";
+import { handleCancel } from "../manage";
+import { monthlyEarnings, monthOf } from "../earnings";
+import { gstinCheckChar } from "../gst/gst";
+import { removeTaxProfile, saveTaxProfile } from "../gst/invoices";
 import { applyCapturedPayment, bookingPayment, confirmPayment, DEPOSIT_HOLD_MS, HOLD_MINUTES, PaymentStartError, PaymentVerifyError, processRefunds, reconcilePayments, releaseDeposits, startPaidBooking } from "./booking-payments";
 
 const BASE = process.env.TEST_DATABASE_URL;
@@ -645,6 +649,201 @@ describe.skipIf(!BASE)("paid bookings (Postgres)", () => {
       const main = et.durationMinutes;
       await expect(pool.query("update event_types set duration_options = $2, duration_prices = '{NULL,90000}' where id = $1", [eventTypeId, [main, main + 30]])).rejects.toThrow(/duration_prices/);
       await expect(pool.query("update event_types set duration_options = $2, duration_prices = '{NULL,NULL}' where id = $1", [eventTypeId, [main + 15, main + 30]])).rejects.toThrow(/duration_options/);
+    });
+
+    describe("a paid weekly series", () => {
+      const WEEK = 7 * 86_400_000;
+      const UNIT = 50_000;
+      beforeEach(async () => {
+        await pool.query("update event_types set max_repeats = 4, cancel_cutoff_minutes = 0 where id = $1", [eventTypeId]);
+        et = (await store.listEventTypes(priya.id)).find((e) => e.id === eventTypeId)!;
+      });
+      afterAll(async () => { await pool.query("update event_types set max_repeats = 1 where id = $1", [eventTypeId]); });
+
+      /** A request for the first time open `weeks` weeks running, booked for that many weeks. */
+      async function seriesRequest(weeks: number, key = randomUUID()) {
+        const open = await freeSlots(store, priya, et, now(), new Date(Date.now() + 50 * 86_400_000), now());
+        const set = new Set(open.map((d) => d.getTime()));
+        const start = open.find((d) => Array.from({ length: weeks - 1 }, (_, i) => i + 1).every((w) => set.has(d.getTime() + w * WEEK)))!;
+        return { ...(await request(key)), start: start.toISOString(), weeks };
+      }
+      const weeksOf = async (firstId: string) =>
+        (await pool.query("select id, status, series_index, start_at from bookings where series_id = $1 order by series_index", [firstId])).rows;
+      /** Books and pays a series of `weeks`; returns its first booking, the payment row and the fake Razorpay. */
+      async function paidSeries(weeks: number, fake = fakeRazorpay()) {
+        const res = await handleCreateBooking(store, await seriesRequest(weeks), now(), undefined, deps(fake));
+        expect(res.status).toBe(201);
+        const body = res.body as Created & { payment: { orderId: string; amount: number } };
+        const pay: FakePayment = { id: `pay_s${Math.random().toString(36).slice(2, 10)}`, order_id: body.payment.orderId, amount: body.payment.amount, currency: "INR", status: "captured" };
+        fake.state.payments.set(pay.id, pay);
+        expect(await confirmPayment({ pool, auth, orders: fake.orders }, { bookingId: body.bookingId, paymentId: pay.id, signature: sign(pay.order_id, pay.id) }, now())).toBe("confirmed");
+        return { body, pay, fake };
+      }
+      const manageToken = async (bookingId: string) => (await pool.query("select manage_token from invitees where booking_id = $1", [bookingId])).rows[0].manage_token as string;
+      const refundDeps = (fake: ReturnType<typeof fakeRazorpay>) => ({ pool, authFor: async () => auth, ordersFor: () => fake.orders });
+
+      it("holds every week together under one payment for the whole series, then confirms them all", async () => {
+        const fake = fakeRazorpay();
+        const res = await handleCreateBooking(store, await seriesRequest(3), now(), undefined, deps(fake));
+        expect(res.status).toBe(201);
+        const body = res.body as Created & { payment: { amount: number } };
+        expect(body.payment.amount).toBe(3 * UNIT);
+        expect(fake.state.creates).toBe(1);
+        const held = await weeksOf(body.bookingId);
+        expect(held.map((w) => [w.status, w.series_index])).toEqual([["pending_payment", 1], ["pending_payment", 2], ["pending_payment", 3]]);
+        expect(await payment(body.bookingId)).toEqual([expect.objectContaining({ amount_minor: 3 * UNIT, sessions: 3, status: "pending" })]);
+        for (const w of held) expect(await notifications(w.id)).toBe(0); // nothing goes out until it's paid
+
+        const pay: FakePayment = { id: "pay_series_ok", order_id: (await payment(body.bookingId))[0].provider_order_id, amount: 3 * UNIT, currency: "INR", status: "captured" };
+        fake.state.payments.set(pay.id, pay);
+        expect(await confirmPayment({ pool, auth, orders: fake.orders }, { bookingId: body.bookingId, paymentId: pay.id, signature: sign(pay.order_id, pay.id) }, now())).toBe("confirmed");
+        const done = await weeksOf(body.bookingId);
+        expect(done.map((w) => w.status)).toEqual(["confirmed", "confirmed", "confirmed"]);
+        for (const w of done) expect(await notifications(w.id)).toBeGreaterThan(0);
+        expect(await bookingPayment(pool, priya.id, done[2].id)).toMatchObject({ amountMinor: 3 * UNIT, sessions: 3, status: "paid" });
+      });
+
+      it("checks every week before taking payment: one week unavailable books and charges nothing", async () => {
+        const fake = fakeRazorpay();
+        const req = await seriesRequest(3);
+        // Someone else takes the third week first.
+        const third = new Date(new Date(req.start).getTime() + 2 * WEEK);
+        await store.createBooking({ eventTypeId, startAt: third, idempotencyKey: `blocker-${randomUUID()}`, invitee: guest });
+        const res = await handleCreateBooking(store, req, now(), undefined, deps(fake));
+        expect(res).toMatchObject({ status: 409, body: { error: "weeks_unavailable", unavailable: [third.toISOString()] } });
+        expect(fake.state.creates).toBe(0);
+        expect((await pool.query("select count(*)::int as n from bookings where idempotency_key like $1", [`${req.idempotencyKey}%`])).rows[0].n).toBe(0);
+      });
+
+      it("creates all weeks or none: a week taken between the check and the write leaves nothing held", async () => {
+        const fake = fakeRazorpay();
+        const req = await seriesRequest(3);
+        const startAt = new Date(req.start);
+        await startPaidBooking({ pool, store, auth, orders: fake.orders }, { eventTypeId, startAt: new Date(startAt.getTime() + 2 * WEEK), idempotencyKey: `race-${randomUUID()}`, invitee: guest, priceMinor: UNIT }, now());
+        await expect(startPaidBooking({ pool, store, auth, orders: fake.orders }, { eventTypeId, startAt, idempotencyKey: req.idempotencyKey, weeks: 3, invitee: guest, priceMinor: 3 * UNIT }, now()))
+          .rejects.toBeInstanceOf(SlotTakenError);
+        expect((await pool.query("select count(*)::int as n from bookings where idempotency_key like $1", [`${req.idempotencyKey}%`])).rows[0].n).toBe(0);
+        expect(fake.state.creates).toBe(1); // only the other guest's order
+      });
+
+      it("a lapsed hold frees every week of the series", async () => {
+        const fake = fakeRazorpay();
+        const body = (await handleCreateBooking(store, await seriesRequest(2), now(), undefined, deps(fake))).body as Created;
+        await pool.query("update bookings set hold_expires_at = now() - interval '1 minute' where id = $1 or series_id = $1", [body.bookingId]);
+        await pool.query("update payments set created_at = now() - interval '5 minutes' where booking_id = $1", [body.bookingId]);
+        await reconcilePayments({ pool, authFor: async () => auth, ordersFor: () => fake.orders }, now());
+        expect((await weeksOf(body.bookingId)).map((w) => w.status)).toEqual(["cancelled", "cancelled"]);
+      });
+
+      it("cancelling one future week refunds that week's share once; the rest of the series stays paid", async () => {
+        const { body, pay, fake } = await paidSeries(3);
+        const [, second] = await weeksOf(body.bookingId);
+        expect(await handleCancel(store, await manageToken(second.id), null, now())).toMatchObject({ status: 200 });
+        expect((await payment(body.bookingId))[0]).toMatchObject({ status: "paid", refund_due_minor: UNIT, refunded_minor: 0 });
+        expect((await processRefunds(refundDeps(fake), now())).refunded).toBeGreaterThanOrEqual(1);
+        expect(fake.state.refundCalls).toEqual([{ paymentId: pay.id, body: expect.objectContaining({ amount: UNIT }) }]);
+        expect((await payment(body.bookingId))[0]).toMatchObject({ status: "paid", refund_due_minor: 0, refunded_minor: UNIT });
+        expect((await pool.query("select amount_minor from payment_refunds where payment_id = (select id from payments where booking_id = $1)", [body.bookingId])).rows).toEqual([{ amount_minor: UNIT }]);
+        // Run again: nothing more is refunded.
+        await pool.query("update payments set checked_at = null where booking_id = $1", [body.bookingId]);
+        await processRefunds(refundDeps(fake), now());
+        expect(fake.state.refundCalls).toHaveLength(1);
+        expect((await weeksOf(body.bookingId)).map((w) => w.status)).toEqual(["confirmed", "cancelled", "confirmed"]);
+      });
+
+      it("cancelling the series refunds every remaining future week, after an earlier partial refund", async () => {
+        const { body, pay, fake } = await paidSeries(4);
+        const [first, second] = await weeksOf(body.bookingId);
+        await handleCancel(store, await manageToken(second.id), null, now());
+        await processRefunds(refundDeps(fake), now());
+        // Now the rest: the first week and every later one.
+        expect(await handleCancel(store, await manageToken(first.id), null, now(), { laterWeeks: true })).toMatchObject({ status: 200 });
+        expect((await weeksOf(body.bookingId)).map((w) => w.status)).toEqual(["cancelled", "cancelled", "cancelled", "cancelled"]);
+        expect((await payment(body.bookingId))[0]).toMatchObject({ status: "refund_pending", refunded_minor: UNIT });
+        await processRefunds(refundDeps(fake), now());
+        expect(fake.state.refundCalls.map((c) => c.body.amount)).toEqual([UNIT, 3 * UNIT]);
+        expect(new Set(fake.state.refundCalls.map((c) => c.body.receipt)).size).toBe(2);
+        expect((await payment(body.bookingId))[0]).toMatchObject({ status: "refunded", refunded_minor: 4 * UNIT, refund_due_minor: 0, refunded_at: expect.any(Date) });
+        expect(fake.state.refunds.get(pay.id)!.reduce((s2, r) => s2 + r.amount, 0)).toBe(4 * UNIT);
+      });
+
+      it("cancelling the series from a later week refunds only the weeks still to come", async () => {
+        const { body, fake } = await paidSeries(3);
+        const [, second] = await weeksOf(body.bookingId);
+        await handleCancel(store, await manageToken(second.id), null, now(), { laterWeeks: true });
+        expect((await weeksOf(body.bookingId)).map((w) => w.status)).toEqual(["confirmed", "cancelled", "cancelled"]);
+        expect((await payment(body.bookingId))[0]).toMatchObject({ status: "paid", refund_due_minor: 2 * UNIT });
+        await processRefunds(refundDeps(fake), now());
+        expect(fake.state.refundCalls.map((c) => c.body.amount)).toEqual([2 * UNIT]);
+      });
+
+      it("a week inside the cancel cutoff can't be cancelled by the guest, so nothing is refunded", async () => {
+        const { body } = await paidSeries(2);
+        const [first] = await weeksOf(body.bookingId);
+        const tooLate = new Date(new Date(first.start_at).getTime() - 30 * 60_000);
+        await pool.query("update event_types set cancel_cutoff_minutes = 120 where id = $1", [eventTypeId]);
+        expect(await handleCancel(store, await manageToken(first.id), null, tooLate)).toEqual({ status: 409, body: { error: "past_cutoff" } });
+        expect((await payment(body.bookingId))[0]).toMatchObject({ status: "paid", refund_due_minor: 0 });
+      });
+
+      it("a moved week keeps the series payment on the first booking, and its cancel still refunds its share", async () => {
+        const { body } = await paidSeries(2);
+        const [first] = await weeksOf(body.bookingId);
+        const open = await freeSlots(store, priya, et, now(), new Date(Date.now() + 50 * 86_400_000), now(), first.id);
+        const moved = await store.rescheduleBooking(priya.id, first.id, open.find((d) => d.getTime() !== new Date(first.start_at).getTime())!, `move-${randomUUID()}`);
+        expect(await payment(body.bookingId)).toHaveLength(1);
+        await handleCancel(store, moved.invitee.manageToken, null, now());
+        expect((await payment(body.bookingId))[0]).toMatchObject({ status: "paid", refund_due_minor: UNIT });
+      });
+
+      it("invoices per-session price × count, and credits each partial refund", async () => {
+        const gstin = "29AAPFU0939F1Z" + gstinCheckChar("29AAPFU0939F1Z");
+        await saveTaxProfile(pool, priya.id, { legalName: "Priya Sharma Coaching LLP", address: "12 MG Road, Bengaluru 560001", stateCode: "29", gstin, sac: "999293", rateBp: 1800, invoicePrefix: "PRS" });
+        try {
+          const { body, fake } = await paidSeries(3);
+          const paymentId = (await payment(body.bookingId))[0].id;
+          const inv = async () => (await pool.query("select kind, description, total_minor, taxable_minor, cgst_minor, sgst_minor from invoices where payment_id = $1 order by issued_at, kind desc", [paymentId])).rows;
+          expect(await inv()).toEqual([expect.objectContaining({ kind: "invoice", total_minor: 3 * UNIT, description: expect.stringMatching(/× 3 weekly sessions at ₹500\.00 each, from /) })]);
+          const [, second] = await weeksOf(body.bookingId);
+          await handleCancel(store, await manageToken(second.id), null, now());
+          await processRefunds(refundDeps(fake), now());
+          const [, note] = await inv();
+          expect(note).toMatchObject({ kind: "credit_note", total_minor: UNIT, description: expect.stringMatching(/^Part refund of /) });
+          expect(note.taxable_minor + note.cgst_minor + note.sgst_minor).toBe(UNIT);
+          // Refunding the rest credits exactly what's left of the invoice.
+          await handleCancel(store, await manageToken(body.bookingId), null, now(), { laterWeeks: true });
+          await processRefunds(refundDeps(fake), now());
+          const notes = (await inv()).filter((v) => v.kind === "credit_note");
+          expect(notes.map((v) => v.total_minor)).toEqual([UNIT, 2 * UNIT]);
+        } finally {
+          await removeTaxProfile(pool, priya.id);
+        }
+      });
+
+      it("earnings count a partial refund in its month, and the final refund only for what it added", async () => {
+        const month = monthOf(new Date());
+        const before = (await monthlyEarnings(pool, priya.id, month, now()))!.refundsMinor;
+        const { body, fake } = await paidSeries(2);
+        const [, second] = await weeksOf(body.bookingId);
+        await handleCancel(store, await manageToken(second.id), null, now());
+        await processRefunds(refundDeps(fake), now());
+        expect((await monthlyEarnings(pool, priya.id, month, now()))!.refundsMinor - before).toBe(UNIT);
+        await handleCancel(store, await manageToken(body.bookingId), null, now());
+        await processRefunds(refundDeps(fake), now());
+        expect((await monthlyEarnings(pool, priya.id, month, now()))!.refundsMinor - before).toBe(2 * UNIT);
+      });
+
+      it("a deposit still holds one booking: no series", async () => {
+        await setPrice(null);
+        await pool.query("update event_types set max_repeats = 1, deposit_minor = 20000 where id = $1", [eventTypeId]);
+        et = (await store.listEventTypes(priya.id)).find((e) => e.id === eventTypeId)!;
+        try {
+          expect(await handleCreateBooking(store, { ...(await request()), weeks: 2 }, now(), undefined, deps())).toMatchObject({ status: 400 });
+          await expect(pool.query("update event_types set max_repeats = 3 where id = $1", [eventTypeId])).rejects.toThrow(/event_types_repeat_free/);
+        } finally {
+          await pool.query("update event_types set deposit_minor = null where id = $1", [eventTypeId]);
+        }
+      });
     });
 
     it("a free event still books and confirms straight away, with or without payments", async () => {

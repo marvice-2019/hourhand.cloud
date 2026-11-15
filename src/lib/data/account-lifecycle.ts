@@ -18,9 +18,21 @@ export async function closeAccount(client: Client, userId: string, now: Date): P
     `update bookings set status = 'cancelled', cancelled_at = $2, cancelled_by = 'host', cancel_reason = 'The host closed their account'
      where host_id = $1 and status = 'confirmed' and start_at > $2 returning id`, [userId, now]);
   // Guests who already paid are refunded from the host's Razorpay account, like any host cancellation.
+  // Same rules as queueRefunds in payments/series.ts (inlined: no runtime imports here). A booking paid on its own is
+  // refunded in full; the upcoming weeks of a paid series refund their share, or the whole payment once all are due.
+  const ids = cancelled.rows.map((r) => r.id as string);
   await client.query(
     `update payments set status = 'refund_pending', checked_at = null, updated_at = $2
-     where booking_id = any($1::uuid[]) and status = 'paid'`, [cancelled.rows.map((r) => r.id), now]);
+     where booking_id = any($1::uuid[]) and status = 'paid' and sessions = 1`, [ids, now]);
+  await client.query(
+    `update payments p set refund_due_minor = least(p.amount_minor - p.refunded_minor, p.refund_due_minor + (p.amount_minor / p.sessions) * w.n),
+       checked_at = null, updated_at = $2
+     from (select series_id, count(*)::int as n from bookings where id = any($1::uuid[]) and series_id is not null group by series_id) w
+     where p.booking_id = w.series_id and p.sessions > 1 and p.status = 'paid'`, [ids, now]);
+  await client.query(
+    `update payments p set status = 'refund_pending', refund_due_minor = 0, checked_at = null, updated_at = $2
+     where p.sessions > 1 and p.status = 'paid' and p.refunded_minor + p.refund_due_minor >= p.amount_minor
+       and p.booking_id in (select series_id from bookings where id = any($1::uuid[]) and series_id is not null)`, [ids, now]);
   // Holds waiting on a guest's payment are released too. They never sent any email, so they aren't returned for one;
   // a payment that still lands is caught by the reconciler and refunded.
   await client.query(
@@ -35,7 +47,7 @@ export async function purgeClosedAccounts(client: Client, now: Date): Promise<nu
   // the payment rows and the keys needed to refund them.
   const { rows } = await client.query(
     `select id from users u where deleted_at < $1::timestamptz - interval '30 days'
-       and not exists (select 1 from payments p where p.host_id = u.id and p.status in ('pending', 'refund_pending'))
+       and not exists (select 1 from payments p where p.host_id = u.id and (p.status in ('pending', 'refund_pending') or p.refund_due_minor > 0))
        and not exists (select 1 from package_purchases k where k.host_id = u.id and k.status = 'pending')
      for update`, [now]);
   const ids = rows.map((r) => r.id as string);
