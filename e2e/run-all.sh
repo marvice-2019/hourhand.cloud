@@ -139,11 +139,11 @@ summary GST $OUT/out-gst.txt
 sleep 2
 
 fresh
-node e2e/fake-rzp-host.mjs 3797 > $OUT/fakerh5.log 2>&1 & FR=$!
+node e2e/fake-rzp-host.mjs 3889 > $OUT/fakerh5.log 2>&1 & FR=$!
 : > $OUT/srv-offers.log
-node e2e/start-e2e-b5b.mjs 3195 $DB 3797 3798 > $OUT/srv-offers.log 2>&1 & SRV=$!
-up 3195
-node e2e/e2e-offers.mjs 3195 $OUT/srv-offers.log $DB 3797 > $OUT/out-offers.txt 2>&1
+node e2e/start-e2e-b5b.mjs 3189 $DB 3889 3890 > $OUT/srv-offers.log 2>&1 & SRV=$!
+up 3189
+node e2e/e2e-offers.mjs 3189 $OUT/srv-offers.log $DB 3889 > $OUT/out-offers.txt 2>&1
 kill $SRV $FR
 summary Offers $OUT/out-offers.txt
 sleep 2
