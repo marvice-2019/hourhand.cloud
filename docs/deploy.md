@@ -76,12 +76,16 @@ Generate the two random values on your own machine with `openssl rand -hex 32` (
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | from Google Cloud | for Google sign-in and calendars |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | from Razorpay (test first) | for paid plans |
 | `RAZORPAY_PLAN_SOLO_MONTH`, `_SOLO_YEAR`, `_DUO_MONTH`, `_DUO_YEAR` | the 4 Plan ids | for paid plans |
+| `STRIPE_SECRET_KEY`, `STRIPE_CONNECT_WEBHOOK_SECRET` | from Stripe (sandbox first), Runtime only | for hosts outside India taking payments through Stripe Connect. Both are needed; without them the Stripe option on Integrations says "not set up on this server" |
+| other `STRIPE_*` | only if you get Stripe for Hourhand plans (see backend.md) | no |
 | `RAZORPAY_REFERRAL_OFFER_ID` | the Single Use referral Offer id (README → Referrals) | for referral free months on Razorpay |
-| `STRIPE_*` | only if you get Stripe (see backend.md) | no |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | from Entra (section 6) | for Outlook and Sign in with Microsoft |
 | `TRUSTED_PROXIES` | leave unset (defaults cover Coolify's Docker network) | no |
+| `RAZORPAY_PLAN_DOMAIN_MONTH` | the Razorpay Plan id of the custom-domain add-on (section 5c) | for custom domains |
+| `TRAEFIK_DYNAMIC_DIR` | `/traefik-dynamic` (the mount in section 5c) | for custom domains |
+| `HOURHAND_UPSTREAM_URL` | `http://hourhand-app:3000` (section 5c) | for custom domains |
 
-Never set `HOURHAND_ALLOW_MEMORY`, `HOURHAND_MAIL_TO_LOG`, `HOURHAND_E2E`, `GOOGLE_API_BASE_URL`, `RAZORPAY_API_BASE_URL`, `MICROSOFT_LOGIN_BASE_URL`, `MICROSOFT_GRAPH_BASE_URL` or `ICLOUD_CALDAV_URL` in production; they exist for local testing only.
+Never set `HOURHAND_ALLOW_MEMORY`, `HOURHAND_MAIL_TO_LOG`, `HOURHAND_E2E`, `GOOGLE_API_BASE_URL`, `RAZORPAY_API_BASE_URL`, `STRIPE_API_BASE_URL`, `MICROSOFT_LOGIN_BASE_URL`, `MICROSOFT_GRAPH_BASE_URL` or `ICLOUD_CALDAV_URL` in production; they exist for local testing only.
 
 iCloud calendars need no server keys: each host connects with their own Apple ID and app-specific password, sealed with `TOKEN_ENCRYPTION_KEY`.
 
@@ -352,6 +356,58 @@ Check after go-live: book on your own page with your phone and the WhatsApp tick
   ]
 }
 ```
+
+## 5c. Custom domains (roadmap 1.1: book.coachname.com)
+
+Hosts on Solo or Duo buy the **Custom domain add-on** (₹199 + 18% GST = ₹234.82 a month) and serve their booking pages at their own domain. It costs nothing extra to run: certificates come from the same Coolify Traefik that serves hourhand.cloud, through one small config file per domain that the app writes. No Cloudflare.
+
+Until `TRAEFIK_DYNAMIC_DIR` and `HOURHAND_UPSTREAM_URL` are set, the Custom domain page says "Custom domains are not set up on this server" and nothing can be bought or added; the rest of Hourhand is unaffected. Migrations `0027` (domains) and `0028` (add-on subscriptions) run on deploy either way.
+
+**1. DNS at Hostinger (hourhand.cloud's DNS).** Add one record. Hosts point their domains at this name, so it must exist before anyone can verify.
+
+| Type | Name | Value |
+| --- | --- | --- |
+| A | `domains` | your Coolify server's public IPv4 (the same IP as `@`) |
+
+Check: `dig +short domains.hourhand.cloud` prints the IP.
+
+**2. Razorpay Plan.** Razorpay → Subscriptions → Plans → Create: name "Hourhand Custom domain", **₹199**, monthly, every 1 month. It's set before tax, like the other plans; GST is invoiced at 18% on top, so the host pays ₹234.82. Test mode first, then live. Copy the Plan id (`plan_…`) into `RAZORPAY_PLAN_DOMAIN_MONTH`. The webhook is the existing one (`subscription.*`), and no change is needed.
+
+**3. Let the app write into Traefik's dynamic folder.** On the server (SSH, once):
+
+```sh
+ls /data/coolify/proxy/dynamic            # Coolify's own files are here; Traefik watches this folder
+sudo apt-get install -y acl               # if setfacl is missing
+sudo setfacl -m u:1000:rwx /data/coolify/proxy/dynamic   # the app runs as user "node" (uid 1000)
+```
+
+This gives the app write access without changing who owns the folder or Coolify's files. The app only ever creates, rewrites or deletes files named `hourhand-domain-<hash>.yaml`.
+
+**4. Coolify → app → Persistent storage → Add → Directory mount:** source `/data/coolify/proxy/dynamic`, destination `/traefik-dynamic`.
+
+**5. A fixed container name for Traefik to reach.** Coolify → app → Advanced: set **Custom container name** to `hourhand-app` (or turn on "Consistent container name" and use the name it shows; the exact label differs between Coolify versions, so check `docker ps` after the next deploy shows the same name as before). Without it, the name changes on every deploy and the domain files would point nowhere.
+
+**6. Environment variables** (Coolify → app → Environment). Mark each one **Runtime only**, never "Build Variable": production broke once before because keys were set for the build only, and the running server never saw them.
+
+| Name | Value |
+| --- | --- |
+| `TRAEFIK_DYNAMIC_DIR` | `/traefik-dynamic` |
+| `HOURHAND_UPSTREAM_URL` | `http://hourhand-app:3000` |
+| `RAZORPAY_PLAN_DOMAIN_MONTH` | the Plan id from step 2 |
+
+Then **Redeploy**. The log should **not** contain `Custom domains are not set up on this server`.
+
+**7. Check it end to end** (with a domain you own, on a Solo test account):
+
+1. `docker exec coolify-proxy wget -qO- http://hourhand-app:3000/api/health` returns `{"ok":true…}`. If it doesn't, Traefik can't reach the app by that name: fix step 5.
+2. Dashboard → Custom domain → Add custom domain → pay in Razorpay test mode. Within a minute the card says Active.
+3. Add `book.yourdomain.com`. At your DNS provider, create a CNAME `book` → `domains.hourhand.cloud`. Click Check now until it says **Active**.
+4. `ls /data/coolify/proxy/dynamic` shows a `hourhand-domain-….yaml`. Within about a minute Traefik's log shows the Let's Encrypt certificate, and `https://book.yourdomain.com` shows your booking page. `/dashboard` there redirects to hourhand.cloud.
+5. Cancel the add-on. The domain keeps working to the end of the paid month. After that, within 5 minutes the file is deleted and the domain redirects to `hourhand.cloud/<slug>`.
+
+How it runs: every 5 minutes the job runner re-checks DNS (pending and failed domains every 5 minutes, active ones every 30) and makes the folder match the domains that should serve. A domain serves only while DNS is verified, the add-on is active and the host is on a paid plan. A DNS lookup that times out never takes a live domain down; a record that's gone or pointing elsewhere does, and the host sees why.
+
+Watch: `[domains]` lines in the app log. Let's Encrypt allows 50 certificates per registered domain a week and 300 new orders per 3 hours per account, far above what this needs.
 
 ## 6. Microsoft Entra (for B6: Outlook, Teams links, Sign in with Microsoft)
 

@@ -17,7 +17,9 @@ export type PackageEmailKind = "package_guest" | "package_host";
 export type InvoiceEmailKind = "invoice_guest";
 /** Last month's earnings, to the host on the 1st. */
 export type EarningsEmailKind = "earnings_host";
-export type NotificationKind = BookingEmailKind | CalendarJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | "calendar_alert_host" | "renewal_reminder_host" | "referral_reward_host";
+export type NotificationKind = BookingEmailKind | CalendarJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | "calendar_alert_host" | "renewal_reminder_host" | PollEmailKind | "referral_reward_host";
+/** Meeting polls: an invitee's link to change their answers, and the host's nudge to pick a time once voting closes. */
+export type PollEmailKind = "poll_voter_link" | "poll_host_closed";
 
 /** Guest reminders, in minutes before the start. A reminder whose time has already passed at booking is not queued. */
 export const REMINDER_OFFSETS_MINUTES = [1440, 60] as const;

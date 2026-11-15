@@ -1,5 +1,5 @@
 import type pg from "pg";
-import { planForPriceId, type Provider } from "./plans";
+import { addonForPriceId, planForPriceId, type Addon, type Provider } from "./plans";
 import { BillingApiError, type BillingProvider, type ProviderSubscription } from "./providers";
 import type { WebhookEvent } from "./webhooks";
 import { afterBillingWebhook, envRewardDeps } from "../referrals/rewards";
@@ -60,6 +60,39 @@ export async function saveSubscription(db: Db, sub: ProviderSubscription, env: E
   return { saved: true, userId: sub.userId };
 }
 
+/**
+ * Writes an add-on subscription onto the host's add-on row (one per host and add-on), with the same rule as plans: a
+ * different subscription replaces the one on file only if it is live, or the one on file has ended. It never touches
+ * the host's plan row.
+ */
+export async function saveAddonSubscription(db: Db, sub: ProviderSubscription, addon: Addon, now = new Date()): Promise<SyncOutcome> {
+  if (!sub.userId || !/^[0-9a-f-]{36}$/i.test(sub.userId)) return { saved: false, reason: "no_user" };
+  const user = await db.query("select 1 from users where id = $1", [sub.userId]);
+  if (!user.rowCount) return { saved: false, reason: "no_user" };
+  if (!sub.status) return { saved: false, reason: "not_started" };
+
+  const { rows } = await db.query<{ provider_subscription_id: string; status: string; cancel_at_period_end: boolean }>(
+    "select provider_subscription_id, status, cancel_at_period_end from addon_subscriptions where user_id = $1 and addon = $2 for update", [sub.userId, addon]);
+  const current = rows[0];
+  const sameSub = current?.provider_subscription_id === sub.id;
+  if (current && !sameSub && current.status !== "cancelled" && sub.status === "cancelled") return { saved: false, reason: "older_subscription" };
+  if (current && !sameSub && current.status !== "cancelled") {
+    console.error(`[billing] host ${sub.userId} has two open ${addon} add-on subscriptions: ${current.provider_subscription_id} and ${sub.id}. Cancel and refund one.`);
+  }
+  // Razorpay doesn't report "cancels at period end"; keep what Hourhand recorded when the host cancelled.
+  const cancelAtPeriodEnd = sub.status === "cancelled" ? false : sub.cancelAtPeriodEnd ?? (sameSub ? current.cancel_at_period_end : false);
+  await db.query(
+    `insert into addon_subscriptions (user_id, addon, provider, provider_subscription_id, provider_customer_id, provider_status, status,
+       current_period_end, cancel_at_period_end, synced_at, updated_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+     on conflict (user_id, addon) do update set provider = excluded.provider, provider_subscription_id = excluded.provider_subscription_id,
+       provider_customer_id = coalesce(excluded.provider_customer_id, addon_subscriptions.provider_customer_id),
+       provider_status = excluded.provider_status, status = excluded.status, current_period_end = excluded.current_period_end,
+       cancel_at_period_end = excluded.cancel_at_period_end, synced_at = excluded.synced_at, updated_at = excluded.updated_at`,
+    [sub.userId, addon, sub.provider, sub.id, sub.customerId, sub.providerStatus, sub.status, sub.currentPeriodEnd, cancelAtPeriodEnd, now]);
+  return { saved: true, userId: sub.userId };
+}
+
 /** Re-reads a subscription from its provider and saves it, holding a lock so two events for it can't interleave. */
 export async function syncSubscription(pool: pg.Pool, provider: BillingProvider, subscriptionId: string, env: Env = process.env, now = new Date()): Promise<SyncOutcome> {
   const client = await pool.connect();
@@ -68,7 +101,9 @@ export async function syncSubscription(pool: pg.Pool, provider: BillingProvider,
     await client.query("select pg_advisory_xact_lock(hashtext($1))", [`billing:${provider.provider}:${subscriptionId}`]);
     // Read inside the lock: whichever event goes second reads the newer state.
     const sub = await provider.getSubscription(subscriptionId);
-    const outcome = await saveSubscription(client, sub, env, now);
+    // An add-on's price goes to its own row; everything else is a plan.
+    const addon = sub.priceId ? addonForPriceId(sub.provider, sub.priceId, env) : null;
+    const outcome = addon ? await saveAddonSubscription(client, sub, addon, now) : await saveSubscription(client, sub, env, now);
     await client.query("commit");
     return outcome;
   } catch (error) {
