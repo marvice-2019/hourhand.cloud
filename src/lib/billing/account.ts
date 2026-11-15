@@ -50,7 +50,7 @@ export async function checkedCalendarLimit(db: Db, userId: string): Promise<numb
   return LIMITS[await hostPlan(db, userId)].checkedCalendars;
 }
 
-export type BillingError = "already_subscribed" | "not_configured" | "no_subscription" | "cannot_pause" | "provider";
+export type BillingError = "already_subscribed" | "not_configured" | "no_subscription" | "cannot_pause" | "provider" | "needs_plan";
 
 export class BillingActionError extends Error {
   constructor(readonly code: BillingError, message: string) {
