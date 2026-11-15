@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { focusRing } from "@/components/ui/focus";
 import { formatMoney } from "@/lib/billing/plans";
 import { store, type LocationKind } from "@/lib/data";
-import { requireHost } from "@/lib/auth/session";
+import { getHostContext, requireHost } from "@/lib/auth/session";
 
 const locationLabel: Record<LocationKind, string> = {
   google_meet: "Google Meet",
@@ -23,6 +23,8 @@ export const dynamic = "force-dynamic";
 
 export default async function EventTypesPage() {
   const user = await requireHost();
+  // Importing uses the owner's own Calendly or Cal.com token, so a Duo second person doesn't get the link.
+  const acting = (await getHostContext())?.acting === true;
   const eventTypes = [...(await store.listEventTypes(user.id))].sort((a, b) => a.position - b.position);
   const locations = await Promise.all(eventTypes.map((et) => store.listEventLocations(user.id, et.id)));
 
@@ -33,7 +35,10 @@ export default async function EventTypesPage() {
           <h1 className="font-display text-xl text-text">Event types</h1>
           <p className="mt-2 text-text-muted">Each event type is a booking link people use to pick a time with you.</p>
         </div>
-        <Link href="/dashboard/event-types/new" className={buttonClasses()}>New event type</Link>
+        <div className="flex flex-wrap gap-2">
+          {!acting && <Link href="/dashboard/event-types/import" className={buttonClasses({ variant: "secondary" })}>Import from Calendly / Cal.com</Link>}
+          <Link href="/dashboard/event-types/new" className={buttonClasses()}>New event type</Link>
+        </div>
       </div>
 
       {eventTypes.length === 0 ? (
