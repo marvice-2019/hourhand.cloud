@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { domainEntitled } from "../billing/addons";
 import type { DnsCheck } from "./dns";
 
 // Reading and writing custom_domains. Every write is scoped to one host's user_id; the dashboard never passes a row id
@@ -88,14 +89,17 @@ export interface DomainRoute {
   serving: boolean;
 }
 
-/** The host behind a custom domain, or null when no host (that still has an account) has claimed it. */
-export async function lookupDomainRoute(db: Db, host: string): Promise<DomainRoute | null> {
+/**
+ * The host behind a custom domain, or null when no host (that still has an account) has claimed it. It serves only
+ * when DNS is verified, the add-on is live and the host is on a paid plan.
+ */
+export async function lookupDomainRoute(db: Db, host: string, now = new Date()): Promise<DomainRoute | null> {
   const { rows } = await db.query<{ user_id: string; slug: string; status: DomainStatus }>(
     `select d.user_id, u.slug::text as slug, d.status from custom_domains d join users u on u.id = d.user_id
      where d.domain = $1 and u.deleted_at is null`, [host]);
   const r = rows[0];
   if (!r) return null;
-  return { userId: r.user_id, slug: r.slug, serving: r.status === "active" };
+  return { userId: r.user_id, slug: r.slug, serving: r.status === "active" && (await domainEntitled(db, r.user_id, now)) };
 }
 
 /** Whose booking a manage link (/b/<token>) belongs to, or null. */

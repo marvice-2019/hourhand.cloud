@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { authEnabled } from "@/lib/auth/auth";
+import { authEnabled, resolveBaseUrl } from "@/lib/auth/auth";
 import { requireOwnAccount } from "@/lib/auth/session";
+import { BillingActionError } from "@/lib/billing/account";
+import { cancelAddon, startAddonCheckout } from "@/lib/billing/addons";
 import { getPool } from "@/lib/data/pg-store";
 import { systemResolver } from "@/lib/domains/dns";
 import { addDomain, checkHostDomain, deleteDomain } from "@/lib/domains/service";
@@ -40,4 +42,31 @@ export async function removeDomainAction(): Promise<void> {
   await deleteDomain(pool(), user.id);
   revalidatePath("/dashboard/domain");
   redirect("/dashboard/domain?removed=1");
+}
+
+/** Runs an add-on change and sends the host back with its outcome. redirect() must stay outside the try. */
+async function runAddon(change: () => Promise<string | void>, done: string): Promise<never> {
+  let target = `/dashboard/domain?done=${done}`;
+  try {
+    const url = await change();
+    if (url) target = url;
+  } catch (error) {
+    if (!(error instanceof BillingActionError)) throw error;
+    target = `/dashboard/domain?error=${error.code}`;
+  }
+  revalidatePath("/dashboard/domain");
+  redirect(target);
+}
+
+export async function buyDomainAddon(): Promise<void> {
+  const user = await requireOwnAccount();
+  if (!authEnabled()) redirect("/dashboard/domain");
+  const base = (resolveBaseUrl() ?? "http://localhost:3000").replace(/\/+$/, "");
+  await runAddon(() => startAddonCheckout(pool(), user, "domain", base), "checkout");
+}
+
+export async function cancelDomainAddon(): Promise<void> {
+  const user = await requireOwnAccount();
+  if (!authEnabled()) redirect("/dashboard/domain");
+  await runAddon(() => cancelAddon(pool(), user.id, "domain"), "cancelled");
 }
