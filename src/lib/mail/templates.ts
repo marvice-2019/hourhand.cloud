@@ -110,7 +110,7 @@ function toHtml(b: Block): string {
 </div></body></html>`;
 }
 
-const render = (subject: string, b: Block, extra: Partial<RenderedMail> = {}): RenderedMail =>
+export const render = (subject: string, b: Block, extra: Partial<RenderedMail> = {}): RenderedMail =>
   ({ subject: oneLine(subject), text: toText(b), html: toHtml(b), ...extra });
 
 /** "Every week": the series' dates, one line each, when this is a series confirmation. */

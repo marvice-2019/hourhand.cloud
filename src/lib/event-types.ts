@@ -8,6 +8,8 @@ export const START_INCREMENTS = [5, 10, 15, 20, 30, 45, 60] as const;
 export const BUFFER = { min: 0, max: 240 } as const;
 export const BOOKING_WINDOW = { min: 1, max: 730 } as const;
 export const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,59}$/;
+/** /<host>/portal is the client portal, so no event type can take that link. */
+export const RESERVED_EVENT_SLUGS: ReadonlySet<string> = new Set(["portal"]);
 export const SLUG_TAKEN = "That link is already used by another event type";
 /** Guest prices in paise: ₹1 to ₹5,00,000. */
 export const PRICE = { min: 100, max: 50_000_000 } as const;
@@ -139,6 +141,8 @@ export function validateEventType(form: EventTypeForm, takenSlugs: readonly stri
     if (name) errors.slug = "Add a link using letters or numbers.";
   } else if (!SLUG_PATTERN.test(slug)) {
     errors.slug = "Use lowercase letters, numbers and hyphens, starting with a letter or number (60 characters at most).";
+  } else if (RESERVED_EVENT_SLUGS.has(slug)) {
+    errors.slug = "That link is used by your booking page itself. Pick another.";
   } else if (takenSlugs.includes(slug)) {
     errors.slug = SLUG_TAKEN;
   }
