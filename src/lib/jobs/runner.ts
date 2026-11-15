@@ -9,9 +9,13 @@ import { reconcilePurchases } from "../packages/packages";
 import { queueMonthlyReports } from "../earnings";
 import { pruneWaitlist } from "../waitlist";
 import { rollupAnalytics } from "../analytics/store";
+import { closeDuePolls } from "../polls/polls";
 import { setJobKick } from "./kick";
 import { BATCH_SIZE, processDueNotifications, type CalendarDeps } from "./worker";
 import { whatsappConfig } from "../whatsapp-cloud";
+import type { Resolver } from "../domains/dns";
+import { recheckDomains } from "../domains/recheck";
+import type { TraefikSetup } from "../domains/traefik";
 
 // The job loop: every few seconds (or at once when kicked) it syncs due calendars (Google, Microsoft), settles pending booking payments, then runs due queue rows
 // (email and calendar writes); once an hour it queues plan renewal reminders and purges closed accounts. All of it is safe on several servers at once.
@@ -20,8 +24,9 @@ const HOUR = 3_600_000;
 
 export interface JobRunner { tick(): Promise<void>; stop(): void }
 
-export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: string; calendar?: CalendarDeps | null; payments?: PaymentCheckDeps | null; intervalMs?: number }): JobRunner {
+export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: string; calendar?: CalendarDeps | null; payments?: PaymentCheckDeps | null; domains?: { resolver: Resolver; traefik: TraefikSetup } | null; intervalMs?: number }): JobRunner {
   let busy = false;
+  let lastDomains = 0;
   let again = false;
   let lastPurge = 0;
 
@@ -65,10 +70,17 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
           // Finished days into daily totals, and old rows out (raw 90 days, totals 2 years). Once a day would do; hourly is cheap and idempotent.
           await rollupAnalytics(opts.pool, new Date()).catch((error) => console.error("[jobs] analytics rollup failed", error));
         }
+        // Meeting polls past their deadline close (releasing their held times) and their hosts are emailed to pick a time.
+        await closeDuePolls(opts.pool, new Date()).catch((error) => console.error("[jobs] closing polls failed", error));
         // A full batch means more may be due: keep going until a batch comes back short.
         for (;;) {
           const r = await processDueNotifications(opts.pool, opts.mailer, { baseUrl: opts.baseUrl, calendar: opts.calendar, whatsapp: whatsappConfig() });
           if (r.claimed < BATCH_SIZE && r.released === 0) break;
+        }
+        // Custom domains: DNS re-checks and the Traefik files, every 5 minutes, after the emails so slow DNS can't delay them. A failure here stops nothing else.
+        if (opts.domains && Date.now() - lastDomains >= 5 * 60_000) {
+          lastDomains = Date.now();
+          await recheckDomains(opts.pool, opts.domains.resolver, opts.domains.traefik, new Date()).catch((error) => console.error("[jobs] custom domain check failed", error));
         }
         // Watch channels are a nice-to-have on top of polling: run after the emails, and a failure stops nothing.
         if (opts.calendar?.pushAddress && opts.calendar.google) {
