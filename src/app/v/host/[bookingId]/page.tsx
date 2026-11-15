@@ -15,5 +15,5 @@ export default async function HostJoinPage({ params }: { params: Promise<{ booki
   if (result.reason === "sign_in") redirect("/sign-in");
   if (result.reason === "not_found" || !result.booking) notFound();
   const back = { href: `/dashboard/bookings/${result.booking.id}`, label: "Back to the booking" };
-  return <JoinRefused reason={result.reason} opensAt={result.opensAt} tz={result.booking.invitee.timezone} back={back} />;
+  return <JoinRefused reason={result.reason} opensAt={result.opensAt} tz={result.booking.invitee.timezone} locale="en" back={back} />;
 }
