@@ -4,7 +4,7 @@ import { refusalLines, splitTemplate, type RefusalReason } from "./messages";
 
 const REASONS: RefusalReason[] = ["not_video", "not_set_up", "plan", "cancelled", "not_confirmed", "too_early", "ended"];
 
-describe("the /v/ refusal page in each guest language", () => {
+describe("the video join refusal page in each guest language", () => {
   it.each(LOCALES.filter((l) => l !== "en"))("%s has its own line for every reason, and keeps the 15 and 30 minutes", (locale) => {
     const lines = refusalLines(locale);
     const en = refusalLines("en");

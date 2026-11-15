@@ -26,14 +26,16 @@ export interface PlanLimits {
   checkedCalendars: number;
   /** "Booked with Hourhand" footer on the booking pages. */
   footer: boolean;
+  /** Meeting polls open (taking votes) at once. */
+  openPolls: number;
   /** Private video rooms on the owner's own Jitsi server (the "Hourhand video" location). */
   hourhandVideo: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true, hourhandVideo: false },
-  solo: { checkedCalendars: Infinity, footer: false, hourhandVideo: true },
-  duo: { checkedCalendars: Infinity, footer: false, hourhandVideo: true },
+  free: { checkedCalendars: 2, footer: true, openPolls: 1, hourhandVideo: false },
+  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, hourhandVideo: true },
+  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, hourhandVideo: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {

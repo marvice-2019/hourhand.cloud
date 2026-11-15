@@ -6,7 +6,7 @@ import { HOURHAND_VIDEO } from "./links";
 import type { ExtraGuestLinks } from "./guest-links";
 import { roomKey, type RoomStore } from "./rooms";
 
-// Who may join a booking's room, checked afresh on every visit to /v/<manage token>: the booking as it is now (a
+// Who may join a booking's room, checked afresh on every visit to a join link: the booking as it is now (a
 // cancelled or moved booking's link stops working), the time, the host's plan and the server's setup.
 
 export type JoinRole = "host" | "guest";
@@ -58,7 +58,7 @@ export type JoinResult =
   | { ok: false; reason: JoinRefusal; role: JoinRole; booking: BookingWithInvitee | null; opensAt?: Date; closesAt?: Date };
 
 /**
- * Resolves one visit to /v/<token>. The booking's host (signed in) joins as moderator; anyone else holding the guest's
+ * Resolves one visit to /b/<token>/video, the guest's link. The booking's host (signed in) joins as moderator; anyone else holding the guest's
  * link joins as that guest, a participant who waits in the lobby. Returns the Jitsi URL carrying a fresh token.
  */
 export async function resolveJoin(deps: JoinDeps, token: string): Promise<JoinResult> {
@@ -69,7 +69,7 @@ export async function resolveJoin(deps: JoinDeps, token: string): Promise<JoinRe
 }
 
 /**
- * Resolves one visit to /v/host/<booking id>, the host's own link (host emails, the host's calendar, the dashboard).
+ * Resolves one visit to /dashboard/bookings/<booking id>/video, the host's own link (host emails, the host's calendar, the dashboard).
  * Only the signed-in host of that booking gets in; anyone else is asked to sign in, or finds nothing.
  */
 export async function resolveHostJoin(deps: JoinDeps, bookingId: string): Promise<JoinResult> {
@@ -81,7 +81,7 @@ export async function resolveHostJoin(deps: JoinDeps, bookingId: string): Promis
 }
 
 /**
- * Resolves one visit to /v/g/<token>, an extra guest's own link. They join as a participant under their own email,
+ * Resolves one visit to /b/g/<token>, an extra guest's own link. They join as a participant under their own email,
  * and only while that email is still on the booking. The booking's signed-in host still joins as host.
  */
 export async function resolveExtraGuestJoin(deps: JoinDeps, token: string): Promise<JoinResult> {

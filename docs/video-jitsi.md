@@ -9,7 +9,7 @@ Hourhand video gives each booking a private video room. Host and guests join fro
 1. **The host picks the location.** They choose "Hourhand video" on an event type (Solo and Duo plans only).
    - If the three `JITSI_*` variables are missing, the editor says the feature is "not set up on this server" and refuses to save that choice.
    - There is no fallback to public Jitsi or any other service.
-2. **Emails and pages carry Hourhand links, never tokens.** Each guest email, booking page and `.ics` file shows `https://hourhand.cloud/v/<guest manage token>`. Host emails, the host's calendar event and the dashboard show `https://hourhand.cloud/v/host/<booking id>`.
+2. **Emails and pages carry Hourhand links, never tokens.** Each guest email, booking page and `.ics` file shows `https://hourhand.cloud/b/<guest manage token>/video`. Host emails, the host's calendar event and the dashboard show `https://hourhand.cloud/dashboard/bookings/<booking id>/video`.
 3. **Every visit is checked from scratch.** Hourhand reads the booking as it is now. It has to be confirmed, on Hourhand video, on a host with Solo or Duo, and between 15 minutes before the start and 30 minutes after the end. Hourhand also works out who is joining:
    - The signed-in host of the booking joins as **moderator** and skips the lobby.
    - Whoever holds the guest's link joins as a **participant** and waits in the **lobby** until the host lets them in.
@@ -23,7 +23,7 @@ Hourhand video gives each booking a private video room. Host and guests join fro
    - A rescheduled booking is a new booking, so it gets a new room, and the old link says "cancelled or moved".
 6. **Nothing is recorded.** Recording, live streaming and transcription are off on the server, and the token also switches them off.
 
-Extra guests (people the guest added) get a join link of their own: `https://hourhand.cloud/v/g/<token>`, one per booking and email, made when their email is sent and kept in `video_guest_links`. It carries none of the guest's manage token, so it can join the call and nothing else. It joins them as a participant under their own email, and only while that email is still on the booking; a moved booking gives them a new link.
+Extra guests (people the guest added) get a join link of their own: `https://hourhand.cloud/b/g/<token>`, one per booking and email, made when their email is sent and kept in `video_guest_links`. It carries none of the guest's manage token, so it can join the call and nothing else. It joins them as a participant under their own email, and only while that email is still on the booking; a moved booking gives them a new link.
 
 ## Server size
 
@@ -144,8 +144,8 @@ Hourhand signs these claims (all checked by the vitest suite):
 
 `lobby_autostart` and `token_lobby_bypass` are jitsi-contrib plugins that the prosody image bundles. `token_affiliation` is in jitsi-meet core. That these three load from the image's contrib folder in this release is **not verified** here. Test with two browsers before announcing the feature:
 
-1. As the host, open `/v/host/<id>` from the dashboard. You should land in the room as moderator, without waiting.
-2. As the guest, open `/v/<token>` from the confirmation email. You should land in the lobby and wait until the host lets you in.
+1. As the host, open "Start the call" (`/dashboard/bookings/<id>/video`) from the dashboard. You should land in the room as moderator, without waiting.
+2. As the guest, open the join link (`/b/<token>/video`) from the confirmation email. You should land in the lobby and wait until the host lets you in.
 3. Paste the meet URL without `?jwt=`. You should be refused.
 4. Open the guest link 20 minutes before the start. You should get "the call hasn't opened yet".
 

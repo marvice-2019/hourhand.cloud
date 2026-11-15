@@ -1,7 +1,7 @@
 import type { Locale } from "../i18n/guest";
 import type { JoinRefusal } from "./join";
 
-// The /v/ refusal page in the guest's language. A language without an entry falls back to English, so adding a
+// The video join refusal page in the guest's language. A language without an entry falls back to English, so adding a
 // guest language elsewhere never breaks this page; add its lines here when you can.
 
 export type RefusalReason = Exclude<JoinRefusal, "not_found">;

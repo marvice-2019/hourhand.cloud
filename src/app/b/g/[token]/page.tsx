@@ -2,9 +2,9 @@ import { notFound, redirect } from "next/navigation";
 import { resolveLocale } from "@/lib/i18n/guest";
 import { resolveExtraGuestJoin } from "@/lib/video/join";
 import { joinDeps } from "@/lib/video/server";
-import { JOIN_METADATA, JoinRefused } from "../../refusal";
+import { JOIN_METADATA, JoinRefused } from "@/components/VideoJoinRefused";
 
-// /v/g/<token>: an extra guest's own join link (their emails only). Same checks as the guest's link on every visit,
+// /b/g/<token>: an extra guest's own join link (their emails only). Same checks as the guest's link on every visit,
 // plus: that email must still be on the booking. It never opens the booking's manage page.
 export const dynamic = "force-dynamic";
 export const metadata = JOIN_METADATA;
@@ -21,5 +21,5 @@ export default async function ExtraGuestJoinPage({ params, searchParams }: { par
   }
   // The language the booking was made in; an extra guest has no booking page of their own to go back to.
   const locale = resolveLocale(lang, booking.invitee.locale);
-  return <JoinRefused reason={result.reason} opensAt={result.opensAt} tz={booking.invitee.timezone} locale={locale} switcherPath={`/v/g/${token}`} />;
+  return <JoinRefused reason={result.reason} opensAt={result.opensAt} tz={booking.invitee.timezone} locale={locale} switcherPath={`/b/g/${token}`} />;
 }

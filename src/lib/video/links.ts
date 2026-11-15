@@ -13,18 +13,18 @@ export type VideoAudience = "guest" | "host" | "extra_guest";
 const trim = (baseUrl: string) => baseUrl.replace(/\/+$/, "");
 
 /**
- * The join link for a booking on Hourhand video: Hourhand's own /v/ page, which checks who is joining on every visit
+ * The join link for a booking on Hourhand video: Hourhand's own join page (/b/<manage token>/video), which checks who is joining on every visit
  * and only then sends them on to the room with a fresh token. Null for any other location. Never contains a token.
  */
 export function videoJoinUrl(baseUrl: string, locationKind: string | null | undefined, manageToken: string | null | undefined): string | null {
   if (locationKind !== HOURHAND_VIDEO || !manageToken) return null;
-  return `${trim(baseUrl)}/v/${encodeURIComponent(manageToken)}`;
+  return `${trim(baseUrl)}/b/${encodeURIComponent(manageToken)}/video`;
 }
 
-/** The host's join link: /v/host/<booking id>. */
+/** The host's join link: /dashboard/bookings/<booking id>/video. */
 export function hostVideoJoinUrl(baseUrl: string, locationKind: string | null | undefined, bookingId: string): string | null {
   if (locationKind !== HOURHAND_VIDEO) return null;
-  return `${trim(baseUrl)}/v/host/${encodeURIComponent(bookingId)}`;
+  return `${trim(baseUrl)}/dashboard/bookings/${encodeURIComponent(bookingId)}/video`;
 }
 
 /** The right join link for whoever reads it. */
@@ -34,7 +34,7 @@ export function videoJoinUrlFor(audience: VideoAudience, baseUrl: string, locati
   return videoJoinUrl(baseUrl, locationKind, b.manageToken);
 }
 
-/** An extra guest's own join link: /v/g/<token>. */
+/** An extra guest's own join link: /b/g/<token>. */
 export function extraGuestVideoJoinUrl(baseUrl: string, token: string): string {
-  return `${trim(baseUrl)}/v/g/${encodeURIComponent(token)}`;
+  return `${trim(baseUrl)}/b/g/${encodeURIComponent(token)}`;
 }

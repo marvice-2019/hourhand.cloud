@@ -91,12 +91,12 @@ describe.skipIf(!BASE)("Hourhand video (TEST_DATABASE_URL)", () => {
     const mailer: Mailer = { async send(mail) { sent.push(mail); return { id: `fake-${sent.length}` }; } };
     await processDueNotifications(pool, mailer, { baseUrl });
     const to = (who: string) => sent.find((m) => m.to === who)!;
-    expect(to(guest.email).text).toContain(`Hourhand video: ${baseUrl}/v/${b.invitee.manageToken}`);
-    expect(to(priya.email).text).toContain(`${baseUrl}/v/host/${b.id}`);
+    expect(to(guest.email).text).toContain(`Hourhand video: ${baseUrl}/b/${b.invitee.manageToken}/video`);
+    expect(to(priya.email).text).toContain(`${baseUrl}/dashboard/bookings/${b.id}/video`);
     expect(to(priya.email).text + to(priya.email).html).not.toContain(b.invitee.manageToken);
     const extra = to("friend@example.com");
     const extraToken = (await pool.query("select token from video_guest_links where booking_id = $1 and email = 'friend@example.com'", [b.id])).rows[0].token;
-    expect(extra.text).toContain(`Hourhand video: ${baseUrl}/v/g/${extraToken}`);
+    expect(extra.text).toContain(`Hourhand video: ${baseUrl}/b/g/${extraToken}`);
     expect(extra.text + extra.html).not.toContain(b.invitee.manageToken);
     expect(await pgExtraGuestLinks(pool).linkFor(b.id, b.hostId, "FRIEND@example.com")).toBe(extraToken);
     for (const m of sent) {

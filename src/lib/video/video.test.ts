@@ -298,18 +298,18 @@ describe("join links in emails", () => {
     expect(all).not.toContain("meet.hourhand.test");
   });
 
-  it("gives the guest their /v/ link, the host theirs, and an extra guest their own", () => {
-    expect(renderBookingMail("booked_guest", ctxFor("guest")).text).toContain(`Hourhand video: ${base}/v/${guestToken}`);
+  it("gives the guest their own join link, the host theirs, and an extra guest their own", () => {
+    expect(renderBookingMail("booked_guest", ctxFor("guest")).text).toContain(`Hourhand video: ${base}/b/${guestToken}/video`);
     const hostMail = renderBookingMail("booked_host", ctxFor("host"));
-    expect(hostMail.text).toContain(`${base}/v/host/b1`);
+    expect(hostMail.text).toContain(`${base}/dashboard/bookings/b1/video`);
     expect(hostMail.text + hostMail.html).not.toContain(guestToken);
     const extra = renderBookingMail("booked_guest", { ...ctxFor("extra_guest"), joinUrl: extraGuestVideoJoinUrl(base, "A".repeat(32)) });
-    expect(extra.text).toContain(`Hourhand video: ${base}/v/g/${"A".repeat(32)}`);
+    expect(extra.text).toContain(`Hourhand video: ${base}/b/g/${"A".repeat(32)}`);
     expect(extra.text + extra.html).not.toContain(guestToken);
   });
 
   it("builds links only for Hourhand video bookings", () => {
-    expect(videoJoinUrl(`${base}/`, "hourhand_video", "t")).toBe(`${base}/v/t`);
+    expect(videoJoinUrl(`${base}/`, "hourhand_video", "t")).toBe(`${base}/b/t/video`);
     expect(videoJoinUrl(base, "google_meet", "t")).toBeNull();
     expect(hostVideoJoinUrl(base, "zoom", "b1")).toBeNull();
   });

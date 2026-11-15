@@ -122,7 +122,7 @@ export default async function BookingDetailPage({ params, searchParams }: { para
           <div>
             <dt className="text-sm text-text-muted">Hourhand video</dt>
             <dd className="text-text">
-              <a href={`/v/host/${booking.id}`} className="font-semibold text-accent underline" rel="noopener noreferrer" target="_blank">Start the call</a>
+              <a href={`/dashboard/bookings/${booking.id}/video`} className="font-semibold text-accent underline" rel="noopener noreferrer" target="_blank">Start the call</a>
               <span className="block text-sm text-text-muted">Opens 15 minutes before the start. You join as the host and let {booking.classKey ? "your class" : "your guest"} in from the lobby.</span>
             </dd>
           </div>

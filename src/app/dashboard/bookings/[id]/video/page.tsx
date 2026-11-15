@@ -1,9 +1,9 @@
 import { notFound, redirect } from "next/navigation";
 import { resolveHostJoin } from "@/lib/video/join";
 import { joinDeps } from "@/lib/video/server";
-import { JOIN_METADATA, JoinRefused } from "../../refusal";
+import { JOIN_METADATA, JoinRefused } from "@/components/VideoJoinRefused";
 
-// /v/host/<booking id>: the host's join link (host emails, the host's calendar, the dashboard). Only the signed-in host
+// /dashboard/bookings/<booking id>/video: the host's join link (host emails, the host's calendar, the dashboard). Only the signed-in host
 // of the booking gets through, as moderator; the guest's manage token never appears in it.
 export const dynamic = "force-dynamic";
 export const metadata = JOIN_METADATA;

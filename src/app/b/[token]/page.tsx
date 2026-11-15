@@ -27,7 +27,7 @@ export default async function ManageBookingPage({ params, searchParams }: { para
   const [host, eventType] = await Promise.all([store.getUser(booking.hostId), store.getEventType(booking.hostId, booking.eventTypeId)]);
   if (!host || !eventType) notFound();
   const tz = booking.invitee.timezone;
-  // Hourhand video bookings join through /v/<token>, which checks the booking on every visit.
+  // Hourhand video bookings join through /b/<token>/video, which checks the booking on every visit.
   const joinUrl = booking.joinUrl ?? videoJoinUrl((resolveBaseUrl() ?? "").replace(/\/+$/, ""), booking.locationKind, token);
   const locale = resolveLocale(lang, host.locale);
   const q = typeof lang === "string" && lang === locale ? `?lang=${locale}` : "";

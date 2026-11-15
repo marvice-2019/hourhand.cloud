@@ -28,7 +28,7 @@ export default async function BookedPage({ params, searchParams }: { params: Pro
   // Checked again here: a stored value from before the https rule must never become a link or a redirect.
   const redirectUrl = eventType?.redirectUrl ? cleanRedirectUrl(eventType.redirectUrl) : null;
   const tz = booking.invitee.timezone;
-  // Hourhand video bookings join through /v/<token>, which checks the booking on every visit.
+  // Hourhand video bookings join through /b/<token>/video, which checks the booking on every visit.
   const joinUrl = booking.joinUrl ?? videoJoinUrl((resolveBaseUrl() ?? "").replace(/\/+$/, ""), booking.locationKind, booking.invitee.manageToken);
   const locale = resolveLocale(lang, host.locale);
   const q = typeof lang === "string" && lang === locale ? `?lang=${locale}` : "";
