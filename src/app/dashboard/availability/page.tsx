@@ -43,7 +43,7 @@ export default async function AvailabilityPage({ searchParams }: { searchParams:
   const all = await store.listSchedules(user.id);
   const current = all.find((s) => s.id === params.schedule) ?? all[0];
   const { schedule, rules } = await store.getSchedule(user.id, current.id);
-  const limit = authEnabled() ? await scheduleLimit(getPool(process.env.DATABASE_URL as string), user.id) : LIMITS.free.schedules;
+  const limit = authEnabled() ? await scheduleLimit(getPool(process.env.DATABASE_URL as string), user.id) : LIMITS.solo.schedules; // the demo gets Solo, as in actions.ts
   const atLimit = all.length >= limit;
   const several = all.length > 1;
   const today = todayIn(schedule.timezone, new Date());

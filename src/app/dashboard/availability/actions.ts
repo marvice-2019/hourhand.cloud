@@ -32,9 +32,9 @@ async function mySchedule(form: FormData) {
   return { user, schedule, all };
 }
 
-/** Schedules the host's plan keeps: Free 1, Solo and Duo unlimited. The demo (no sign-in, no billing) is on Free. */
+/** Schedules the host's plan keeps: Free 1, Solo and Duo unlimited. The demo (no sign-in, no billing) gets Solo so visitors can try several. */
 async function myScheduleLimit(userId: string): Promise<number> {
-  if (!authEnabled()) return LIMITS.free.schedules;
+  if (!authEnabled()) return LIMITS.solo.schedules;
   return scheduleLimit(getPool(process.env.DATABASE_URL as string), userId);
 }
 
