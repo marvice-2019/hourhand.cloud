@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { handleWhatsAppBooking, type BookingBotDeps } from "./whatsapp-booking";
 import { isStop, parseWebhook, sendWhatsApp, STOP_REPLY, textMessage, verifyWebhookSignature, type WhatsAppConfig } from "./whatsapp-cloud";
 
 type Result = { status: number; body: string | Record<string, unknown> };
@@ -16,6 +17,7 @@ export function verifyWhatsAppSubscription(cfg: WhatsAppConfig | null, params: U
  */
 export async function handleWhatsAppWebhook(
   pool: pg.Pool, cfg: WhatsAppConfig | null, raw: string, signature: string | null, fetchFn: typeof fetch = fetch,
+  booking: Pick<BookingBotDeps, "now" | "limiter" | "baseUrl"> = {},
 ): Promise<Result> {
   if (!cfg) return { status: 503, body: { error: "not_configured" } };
   if (!verifyWebhookSignature(cfg.appSecret, raw, signature)) return { status: 401, body: { error: "bad_signature" } };
@@ -43,5 +45,8 @@ export async function handleWhatsAppWebhook(
       await sendWhatsApp(cfg, textMessage(m.from, STOP_REPLY), fetchFn).catch((error: Error) => console.warn(`[whatsapp] STOP reply failed: ${error.message}`));
     }
   }
+  // Booking by WhatsApp (3.4): answer clients asking for a host's times. A failure here is logged, not retried by Meta.
+  await handleWhatsAppBooking({ pool, cfg, fetchFn, ...booking }, payload)
+    .catch((error: Error) => console.error(`[whatsapp-booking] failed: ${error.name}: ${error.message}`));
   return { status: 200, body: { ok: true } };
 }
