@@ -149,8 +149,12 @@ describe.skipIf(!BASE)("custom domains (TEST_DATABASE_URL)", () => {
     await setDomain(pool, priya, "book.priya.in");
     await setDomain(pool, arjun, "arjun.coach");
     await recordCheck(pool, (await getDomain(pool, arjun))!, { ok: true, via: "cname" }, new Date("2026-11-15T11:00:00Z"));
-    expect((await domainsDue(pool, now, 30 * 60_000)).map((d) => d.domain)).toEqual(["book.priya.in", "arjun.coach"]);
-    expect((await domainsDue(pool, now, 2 * 3_600_000)).map((d) => d.domain)).toEqual(["book.priya.in"]);
+    // Arjun's is active and was checked an hour ago; Priya's has never been checked.
+    expect((await domainsDue(pool, now, { waitingMs: 5 * 60_000, activeMs: 30 * 60_000 })).map((d) => d.domain)).toEqual(["book.priya.in", "arjun.coach"]);
+    expect((await domainsDue(pool, now, { waitingMs: 5 * 60_000, activeMs: 2 * 3_600_000 })).map((d) => d.domain)).toEqual(["book.priya.in"]);
+    // A failed domain is checked on the shorter wait.
+    await recordCheck(pool, (await getDomain(pool, arjun))!, { ok: false, transient: false, reason: "gone" }, new Date("2026-11-15T11:50:00Z"));
+    expect((await domainsDue(pool, now, { waitingMs: 5 * 60_000, activeMs: 2 * 3_600_000 })).map((d) => d.domain)).toEqual(["book.priya.in", "arjun.coach"]);
   });
 
   describe("routing with the real lookups", () => {
