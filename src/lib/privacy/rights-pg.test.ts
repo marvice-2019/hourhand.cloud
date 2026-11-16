@@ -99,6 +99,9 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
   });
 
   it("exports everything about one client, notes only when asked, and nothing of anyone else", async () => {
+    await pool.query("insert into session_briefs (booking_id, host_id, status, brief, model) values ($1, $2, 'ready', 'Meera: third session, working on anxiety.', 'test')", [past.id, priya.id]);
+    await pool.query("insert into session_briefs (booking_id, host_id, status, brief, model) values ($1, $2, 'ready', 'Arun brief: should never reach Priya.', 'test')", [arunsBooking.id, arun.id]);
+    await pool.query("insert into session_briefs (booking_id, host_id, status, reason) values ($1, $2, 'skipped', 'nothing to go on yet')", [past2.id, priya.id]);
     const x = (await exportClient(pool, priya.id, "MEERA@example.com", { includeNotes: true, key: () => KEY, now }))!;
     expect(x.bookings.map((b) => b.id)).toEqual([past.id, past2.id]);
     expect(x.bookings[0]).toMatchObject({ name: "Meera Iyer", phone: "+919876543210", answers: [{ question: "Goal", answer: "Manage anxiety at work" }], extraGuests: ["partner@example.com"], whatsappUpdates: true, sessionNote: "Session 1: breathing exercise." });
@@ -115,11 +118,17 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
     const text = JSON.stringify(x);
     for (const other of ["Ravi", "ravi@example.com", "Ravi: great", "INV/2031/3", "Arun's note", arunsBooking.id, ravisBooking.id]) expect(text).not.toContain(other);
     expect(exportHtml(x)).toContain("Session 1: breathing exercise.");
+    // The AI brief is the client's data too: in the export with or without private notes, only this host's, only written ones.
+    expect(x.bookings.find((b) => b.id === past.id)!.sessionBrief).toMatchObject({ text: "Meera: third session, working on anxiety." });
+    expect(x.bookings.find((b) => b.id === past2.id)!.sessionBrief).toBeNull();
+    expect(exportHtml(x)).toContain("Meera: third session, working on anxiety.");
+    expect(JSON.stringify(x)).not.toContain("Arun brief");
 
     const shared = (await exportClient(pool, priya.id, "meera@example.com", { includeNotes: false, key: () => KEY, now }))!;
     expect(shared.clientNote).toBeNull();
     expect(shared.bookings.every((b) => b.sessionNote === null)).toBe(true);
     expect(exportHtml(shared)).not.toContain("CBT plan");
+    expect(exportHtml(shared)).toContain("Meera: third session, working on anxiety.");
     // Another host gets only their own booking with her; a stranger, nothing.
     expect((await exportClient(pool, arun.id, "meera@example.com", { includeNotes: true, key: () => KEY, now }))!.bookings.map((b) => b.id)).toEqual([arunsBooking.id]);
     expect(await exportClient(pool, priya.id, "nobody@example.com", { includeNotes: true, key: () => KEY, now })).toBeNull();
@@ -163,7 +172,6 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
   });
 
   it("erases the client's personal data everywhere, keeps what GST law requires, and logs who and when only", async () => {
-    await pool.query("insert into session_briefs (booking_id, host_id, status, brief, model) values ($1, $2, 'ready', 'Meera: third session, working on anxiety.', 'test')", [past.id, priya.id]);
     const { erasureId } = await eraseClient(pool, priya.id, priya.id, "meera@example.com", now);
     const meeraRows = (sql: string) => count(sql, [priya.id]);
     // No trace of her email, name or phone left in Priya's data.
