@@ -7,9 +7,11 @@ import { requireHost } from "@/lib/auth/session";
 import { hostPlan } from "@/lib/billing/account";
 import { getPool } from "@/lib/data/pg-store";
 import { isNamedError, LOCATION_KINDS, type LocationKind, type NotFoundError } from "@/lib/data/types";
-import { formatDate, formatTime } from "@/lib/format";
-import { parseLocalTimes } from "@/lib/links-form";
-import { cancelPoll, confirmPoll, createPoll, type Clash, type InvalidPollError, type PollLimitError } from "@/lib/polls/polls";
+import type { HostI18n } from "@/lib/i18n/host/format";
+import { translator } from "@/lib/i18n/host/lib-messages";
+import { getHostI18n } from "@/lib/i18n/host/server";
+import { LINK_MESSAGES, parseLocalTimes } from "@/lib/links-form";
+import { cancelPoll, confirmPoll, createPoll, POLL_MESSAGES, type Clash, type InvalidPollError, type PollLimitError } from "@/lib/polls/polls";
 
 // Each action checks the session itself; every query takes the signed-in host's id, so another host's poll is simply
 // not found. Polls live in Postgres only.
@@ -19,18 +21,42 @@ export type ConfirmState = { status: "idle" } | { status: "error"; messages: str
 
 const field = (form: FormData, name: string) => String(form.get(name) ?? "").trim();
 const db = () => getPool(process.env.DATABASE_URL as string);
-const NO_DB = "Meeting polls need the database, which this demo copy doesn't have.";
+
+// src/lib/links-form.ts and src/lib/polls/polls.ts word their errors in English; each is shown as the same line in the
+// host's language.
+const sayTimes = translator(LINK_MESSAGES, {
+  timeNotDateTime: "links.errTimeNotDateTime",
+  timeNotRealDate: "links.errTimeNotRealDate",
+  timeClockChange: "links.errTimeClockChange",
+});
+const sayPoll = translator(POLL_MESSAGES, {
+  title: "polls.errTitle",
+  description: "polls.errDescription",
+  duration: "polls.errDuration",
+  location: "polls.errLocation",
+  locationAddress: "polls.errLocationAddress",
+  locationPhone: "polls.errLocationPhone",
+  locationDetails: "polls.errLocationDetails",
+  timesAhead: "polls.errTimesAhead",
+  timesCount: "polls.errTimesCount",
+  timesFuture: "polls.errTimesFuture",
+  timesOnce: "polls.errTimesOnce",
+  deadlineFuture: "polls.errDeadlineFuture",
+  deadlineFirst: "polls.errDeadlineFirst",
+  deadlineMax: "polls.errDeadlineMax",
+});
 
 export async function createPollAction(_prev: PollFormState, form: FormData): Promise<PollFormState> {
   const user = await requireHost();
-  if (!authEnabled()) return { status: "error", message: NO_DB };
+  const { t } = await getHostI18n();
+  if (!authEnabled()) return { status: "error", message: t("polls.noDb") };
   const kind = field(form, "locationKind") as LocationKind;
-  if (!LOCATION_KINDS.includes(kind)) return { status: "error", message: "Pick where you'll meet." };
+  if (!LOCATION_KINDS.includes(kind)) return { status: "error", message: t("polls.errLocation") };
   const times = parseLocalTimes(form.getAll("times").map(String), user.timezone);
-  if (!times.ok) return { status: "error", message: times.error };
+  if (!times.ok) return { status: "error", message: sayTimes(t, times.error) };
   const deadlineRaw = field(form, "deadline");
   const deadline = deadlineRaw ? parseLocalTimes([deadlineRaw], user.timezone) : null;
-  if (deadline && !deadline.ok) return { status: "error", message: "The voting deadline isn't a date and time." };
+  if (deadline && !deadline.ok) return { status: "error", message: t("polls.errDeadlineFormat") };
   const duration = Number(field(form, "durationMinutes"));
   let id: string;
   try {
@@ -42,9 +68,9 @@ export async function createPollAction(_prev: PollFormState, form: FormData): Pr
     }, await hostPlan(pool, user.id), new Date());
     id = poll.id;
   } catch (error) {
-    if (isNamedError<InvalidPollError>(error, "InvalidPollError")) return { status: "error", message: error.message };
+    if (isNamedError<InvalidPollError>(error, "InvalidPollError")) return { status: "error", message: sayPoll(t, error.message) };
     if (isNamedError<PollLimitError>(error, "PollLimitError")) {
-      return { status: "error", message: "Free includes one open poll at a time. Confirm or cancel your open poll, or move to Solo for as many as you like." };
+      return { status: "error", message: t("polls.errFreeLimit") };
     }
     throw error;
   }
@@ -53,26 +79,28 @@ export async function createPollAction(_prev: PollFormState, form: FormData): Pr
 }
 
 /** What stands in the way, in the host's words and time zone. */
-function clashLine(c: Clash, tz: string): string {
+function clashLine(c: Clash, tz: string, { t, date, time }: HostI18n): string {
   switch (c.kind) {
-    case "past": return "That time has already passed.";
-    case "calendar_stale": return "Your calendar hasn't synced recently, so Hourhand can't tell if that time is still free. Check Calendars, then try again.";
-    case "calendar": return `Your calendar is busy ${formatTime(c.start, tz)} to ${formatTime(c.end, tz)} on ${formatDate(c.start, tz)}.`;
-    case "booking": return c.guestName ? `You're booked with ${c.guestName} at ${formatTime(c.start, tz)} on ${formatDate(c.start, tz)}.` : "Another booking just took that time.";
+    case "past": return t("polls.clashPast");
+    case "calendar_stale": return t("polls.clashStale");
+    case "calendar": return t("polls.clashCalendar", { start: time(c.start, tz), end: time(c.end, tz), date: date(c.start, tz) });
+    case "booking": return c.guestName ? t("polls.clashBooking", { name: c.guestName, time: time(c.start, tz), date: date(c.start, tz) }) : t("polls.clashBookingAnon");
   }
 }
 
 export async function confirmPollAction(_prev: ConfirmState, form: FormData): Promise<ConfirmState> {
   const user = await requireHost();
-  if (!authEnabled()) return { status: "error", messages: [NO_DB] };
+  const i18n = await getHostI18n();
+  const { t } = i18n;
+  if (!authEnabled()) return { status: "error", messages: [t("polls.noDb")] };
   const pollId = field(form, "pollId");
   try {
     const result = await confirmPoll(db(), user.id, pollId, field(form, "optionId"), new Date());
-    if (result.status === "nobody") return { status: "error", messages: ["Nobody said yes or if needed to that time, so there's no one to book."] };
-    if (result.status === "clash") return { status: "error", messages: ["Nothing was booked. That time clashes with:", ...result.clashes.map((c) => clashLine(c, user.timezone))] };
+    if (result.status === "nobody") return { status: "error", messages: [t("polls.errNobody")] };
+    if (result.status === "clash") return { status: "error", messages: [t("polls.errClashes"), ...result.clashes.map((c) => clashLine(c, user.timezone, i18n))] };
   } catch (error) {
-    if (isNamedError<NotFoundError>(error, "NotFoundError")) return { status: "error", messages: ["That poll or time isn't yours, or no longer exists."] };
-    if (isNamedError(error, "PollStateError")) return { status: "error", messages: ["This poll is already decided or cancelled."] };
+    if (isNamedError<NotFoundError>(error, "NotFoundError")) return { status: "error", messages: [t("polls.errNotFound")] };
+    if (isNamedError(error, "PollStateError")) return { status: "error", messages: [t("polls.errDecided")] };
     throw error;
   }
   revalidatePath("/dashboard/polls");
@@ -85,7 +113,7 @@ export async function cancelPollAction(form: FormData): Promise<void> {
   const pollId = field(form, "pollId");
   let target = `/dashboard/polls/${pollId}?done=cancelled`;
   try {
-    if (!authEnabled()) throw new Error(NO_DB);
+    if (!authEnabled()) throw new Error((await getHostI18n()).t("polls.noDb"));
     await cancelPoll(db(), user.id, pollId, new Date());
   } catch (error) {
     if (!isNamedError(error, "NotFoundError")) throw error;

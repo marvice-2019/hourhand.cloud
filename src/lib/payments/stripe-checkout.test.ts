@@ -408,6 +408,24 @@ describe.skipIf(!BASE)("Stripe Checkout for hosts (TEST_DATABASE_URL)", () => {
       await pool.query("delete from tax_profiles where user_id = $1", [priya.id]);
     });
 
+    it("offers: a percent code comes off a USD price in Stripe Checkout; a rupee code is refused", async () => {
+      await setPrice(4_500, "USD");
+      await pool.query("insert into offer_coupons (user_id, code, discount_kind, discount_value) values ($1, 'STRIPE20', 'percent', 20), ($1, 'RUPEES500', 'fixed', 50000)", [priya.id]);
+      const res = await handleCreateBooking(store, { ...(await request()), couponCode: "STRIPE20" }, new Date(), undefined, paymentDeps());
+      expect(res.status).toBe(201);
+      expect((res.body as { offer: { kind: string; chargeMinor: number } }).offer).toMatchObject({ kind: "coupon", chargeMinor: 3_600 });
+      const session = [...fake.state.sessions.values()].at(-1)!;
+      expect(session.params["line_items[0][price_data][unit_amount]"]).toBe("3600");
+      expect(session.params["line_items[0][price_data][currency]"]).toBe("usd");
+      expect(await handleCreateBooking(store, { ...(await request()), couponCode: "RUPEES500" }, new Date(), undefined, paymentDeps()))
+        .toMatchObject({ status: 400, body: { error: "coupon_invalid" } });
+      // Packages through Stripe get the same: $200 less 20%.
+      const pkg = await createPackage(pool, priya.id, { eventTypeId, name: "Offer pack", sessions: 4, priceMinor: 20_000, validDays: 90, currency: "USD" });
+      const p = await handleStartPurchase(paymentDeps(), pkg.id, { name: "Sam", email: "sam@example.com", idempotencyKey: randomUUID(), couponCode: "STRIPE20" });
+      expect(p).toMatchObject({ status: 200, body: { payment: { provider: "stripe", amount: 16_000, currency: "USD" }, offer: { kind: "coupon" } } });
+      await pool.query("update offer_coupons set active = false where user_id = $1", [priya.id]);
+    });
+
     it("Indian GST invoices are only for rupee payments", async () => {
       await saveTaxProfile(pool, priya.id, { legalName: "Priya", address: "Bengaluru", stateCode: "29", gstin: "29ABCDE1234F1Z5", sac: "999293", rateBp: 1800, invoicePrefix: "PR" });
       const { r } = await confirmed();
