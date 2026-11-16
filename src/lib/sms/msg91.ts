@@ -18,12 +18,17 @@ export function msg91Body(cfg: SmsConfig, m: SmsMessage) {
 
 /** Sends one text; returns MSG91's request id, which its delivery reports carry as requestId. */
 export async function sendMsg91(cfg: SmsConfig, m: SmsMessage, fetchFn: typeof fetch = fetch): Promise<{ id: string }> {
+  return postFlow(cfg, msg91Body(cfg, m), fetchFn);
+}
+
+/** POSTs one Flow API body. Shared by booking texts and sign-in codes so both handle MSG91's answers the same way. */
+export async function postFlow(cfg: Pick<SmsConfig, "baseUrl" | "authKey">, body: unknown, fetchFn: typeof fetch = fetch): Promise<{ id: string }> {
   let res: Response;
   try {
     res = await fetchFn(`${cfg.baseUrl}/api/v5/flow`, {
       method: "POST",
       headers: { authkey: cfg.authKey, accept: "application/json", "content-type": "application/json" },
-      body: JSON.stringify(msg91Body(cfg, m)),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(15_000),
     });
   } catch (error) {

@@ -29,6 +29,8 @@ create table users (
   host_locale text not null default 'en' check (host_locale in ('en','hi','ta')),  -- the host's dashboard and email language
   time_format text not null default '12h' check (time_format in ('12h','24h')),
   whatsapp_number text,                       -- E.164; for sync alerts and host reminders
+  phone_number text unique,                   -- +91XXXXXXXXXX; sign-in by SMS code (0053)
+  phone_number_verified boolean not null default false,
   deleted_at timestamptz,                     -- soft delete; a nightly job purges personal data after 30 days
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

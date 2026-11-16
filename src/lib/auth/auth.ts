@@ -2,11 +2,14 @@ import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { magicLink } from "better-auth/plugins/magic-link";
+import { phoneNumber } from "better-auth/plugins/phone-number";
+import { randomBytes } from "node:crypto";
 import { getPool } from "@/lib/data/pg-store";
 import { rateLimiter, SIGN_IN_LIMITS, trustedProxies } from "@/lib/rate-limit";
 
 export { trustedProxies };
 import { deliverMagicLink } from "./outbox";
+import { isCanonicalPhone, isPhonePlaceholderEmail, otpSmsConfig, phoneEmail, sendOtpSms } from "./phone";
 import { uniqueSlug } from "./slug";
 
 /** Sign-in needs the database. In HOURHAND_DATA=memory (the default for local work) there is no auth instance. */
@@ -21,6 +24,19 @@ export function googleEnabled(): boolean {
 
 export function microsoftEnabled(): boolean {
   return Boolean(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET);
+}
+
+/** Phone sign-in appears once MSG91 and its OTP template are set up (see lib/auth/phone.ts). */
+export function phoneEnabled(): boolean {
+  return otpSmsConfig() !== null;
+}
+
+/**
+ * The name a new account's booking-link slug is made from. A phone sign-up has no name and a placeholder email made
+ * of the number's digits; a slug from either would publish the host's phone number in their booking link.
+ */
+export function slugSource(user: { email: string; name?: string | null }): string | null | undefined {
+  return isPhonePlaceholderEmail(user.email) ? `host-${randomBytes(3).toString("hex")}` : user.name;
 }
 
 /** Microsoft's tenant id for personal accounts: there the email is the Microsoft sign-in itself, so Microsoft vouches for it. */
@@ -99,7 +115,10 @@ function createAuth() {
       enabled: process.env.NODE_ENV === "production",
       window: 60,
       max: 100,
-      customRules: { "/sign-in/magic-link": { window: 600, max: 5 }, "/sign-in/social": { window: 60, max: 10 } },
+      customRules: {
+        "/sign-in/magic-link": { window: 600, max: 5 }, "/sign-in/social": { window: 60, max: 10 },
+        "/phone-number/send-otp": { window: 600, max: 5 }, "/phone-number/verify": { window: 600, max: 10 },
+      },
     },
     advanced: {
       database: { generateId: false }, // Postgres fills uuid ids
@@ -139,7 +158,7 @@ function createAuth() {
           // Every host needs a booking-link slug; users.slug is not null.
           before: async (user, ctx) => {
             if (refuseUnverifiedSignUp(user, ctx)) return false;
-            const slug = await uniqueSlug(user.email, user.name, async (candidate) => {
+            const slug = await uniqueSlug(user.email, slugSource(user), async (candidate) => {
               const { rowCount } = await pool.query("select 1 from users where slug = $1", [candidate]);
               return (rowCount ?? 0) > 0;
             });
@@ -167,6 +186,24 @@ function createAuth() {
           await deliverMagicLink(email, url);
         },
       }),
+      ...(otpSmsConfig() ? [phoneNumber({
+        otpLength: 6,
+        expiresIn: 5 * 60,
+        allowedAttempts: 3, // per code; with three codes per number per 10 minutes, at most 9 guesses at a 6-digit code
+        // Only the stored form is accepted, so "98765 43210" and "+919876543210" can't become two accounts.
+        phoneNumberValidator: (phone) => isCanonicalPhone(phone),
+        signUpOnVerification: { getTempEmail: phoneEmail, getTempName: () => "" },
+        schema: { user: { fields: { phoneNumber: "phone_number", phoneNumberVerified: "phone_number_verified" } } },
+        sendOTP: async ({ phoneNumber: phone, code }) => {
+          // Both the sign-in page and direct calls to /api/auth reach here, so the per-number limit lives here. Each text costs money.
+          if (!rateLimiter.take(`phone:${phone}`, SIGN_IN_LIMITS.perPhone)) {
+            throw new APIError("TOO_MANY_REQUESTS", { message: "Too many sign-in codes for this number" });
+          }
+          const cfg = otpSmsConfig();
+          if (!cfg) throw new APIError("NOT_IMPLEMENTED", { message: "Phone sign-in is not set up" });
+          await sendOtpSms(cfg, phone, code);
+        },
+      })] : []),
       nextCookies(), // must stay last
     ],
   });

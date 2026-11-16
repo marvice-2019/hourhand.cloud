@@ -399,6 +399,22 @@ Who gets texts: a guest who gives an **Indian mobile** (+91, starting 6–9) and
 
 Set them in Coolify as **Runtime** variables, not Build variables, then redeploy.
 
+#### Sign-in by phone (optional): `MSG91_TEMPLATE_OTP`
+
+Hosts can sign in, or sign up, with an Indian mobile number and a 6-digit code by text. It needs `SMS_PROVIDER=msg91` and `MSG91_AUTH_KEY` (above) plus one more DLT template, registered in the **Service Implicit (OTP)** category under the same header. Phone sign-in doesn't need the four booking templates. Until `MSG91_TEMPLATE_OTP` is set, the sign-in page doesn't offer it.
+
+Register this text word for word (MSG91 shows the slot as `##VAR1##`, the DLT portal as `{#var#}`):
+
+```
+{#var#} is your Hourhand sign-in code. It expires in 5 minutes. Do not share it with anyone.
+```
+
+| Variable | Value | Required for phone sign-in |
+| --- | --- | --- |
+| `MSG91_TEMPLATE_OTP` | MSG91's template id for the OTP template above | yes |
+
+Limits: 3 codes per number and 10 per client address every 10 minutes, and 3 tries per code. Each code is a paid text. A host who signs up by phone has a placeholder email (`<digits>@phone.invalid`) until they add one. No email is sent to that address, so booking and reminder emails for that host stay unsent until a real address is on the account. Run `npm run db:migrate` before deploying (migration 0053 adds `users.phone_number`).
+
 Steps (you; Claude never signs in to a DLT portal or MSG91):
 
 1. **DLT entity.** On one operator's DLT portal (Jio TrueConnect, Airtel, Vi, BSNL, Tata, SmartPing/Videocon or PingConnect; any one covers all networks), register Marvice Media Private Limited as a Principal Entity (PE). You need the PAN, GST certificate, a letter of authorisation and the signatory's ID. You get a 19-digit Entity ID. MSG91 lists portal fees of about ₹5,000 + GST and also says PingConnect is free; check the portal before you pay.

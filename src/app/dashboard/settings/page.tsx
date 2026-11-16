@@ -4,6 +4,7 @@ import { ThemeSwitch } from "@/components/ThemeSwitch";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { authEnabled } from "@/lib/auth/auth";
+import { formatPhone, isPhonePlaceholderEmail } from "@/lib/auth/phone";
 import { signOutEverywhere } from "@/lib/auth/actions";
 import { requireOwnAccount } from "@/lib/auth/session";
 import { focusRing } from "@/components/ui/focus";
@@ -51,7 +52,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       </Card>
 
       <Card className="mt-6 max-w-xl">
-        <h2 className="font-semibold text-text">{t("settings.signedInAs", { email: user.email })}</h2>
+        <h2 className="font-semibold text-text">
+          {/* A phone sign-up's email is a placeholder made from the number: show the number. */}
+          {t("settings.signedInAs", { email: isPhonePlaceholderEmail(user.email) ? formatPhone(`+${user.email.split("@")[0]}`) : user.email })}
+        </h2>
         {authEnabled() ? (
           <>
             <p className="mt-1 text-text-muted">{t("settings.signOutIntro")}</p>
