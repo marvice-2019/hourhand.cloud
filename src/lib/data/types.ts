@@ -23,6 +23,9 @@ export interface AvailabilitySchedule {
   isDefault: boolean;
 }
 
+/** A schedule with the event types that use it (by id, or by falling back to the default when theirs is null). */
+export type ScheduleSummary = AvailabilitySchedule & { eventTypes: { id: string; name: string }[] };
+
 export type AvailabilityRule =
   | { id: string; scheduleId: string; kind: "weekly"; weekday: number; onDate: null; intervals: Interval[] }
   | { id: string; scheduleId: string; kind: "date"; weekday: null; onDate: string; intervals: Interval[] };
@@ -309,6 +312,32 @@ export interface DataStore {
   listEventLocations(userId: string, eventTypeId: string): Promise<EventLocation[]>;
   listCustomQuestions(userId: string, eventTypeId: string): Promise<CustomQuestion[]>;
   getDefaultSchedule(userId: string): Promise<{ schedule: AvailabilitySchedule; rules: AvailabilityRule[] }>;
+  /** Every schedule of the host, default first, then by name. Makes the default first if the host has none yet. */
+  listSchedules(userId: string): Promise<ScheduleSummary[]>;
+  /**
+   * The schedule an event type books against: `scheduleId` when it is the host's, otherwise (null, or not theirs) the
+   * host's default. Never throws for a missing schedule, so a guest always gets the host's default hours at worst.
+   */
+  getSchedule(userId: string, scheduleId: string | null): Promise<{ schedule: AvailabilitySchedule; rules: AvailabilityRule[] }>;
+  /**
+   * A new, non-default schedule: weekdays 09:00–17:00 in `timezone`, or with `copyFrom`, a copy of that schedule's weekly
+   * hours and date overrides (its time zone too unless one is given). Throws ScheduleLimitError when the host already
+   * has `limit` schedules, ScheduleNameTakenError for a name they already use (any case), NotFoundError for `copyFrom`
+   * that isn't theirs.
+   */
+  createSchedule(userId: string, input: { name: string; timezone?: string; copyFrom?: string }, limit: number): Promise<AvailabilitySchedule>;
+  /** Renames it and sets its time zone. Throws NotFoundError or ScheduleNameTakenError. */
+  updateSchedule(userId: string, scheduleId: string, input: { name: string; timezone: string }): Promise<AvailabilitySchedule>;
+  /** Makes it the host's one default: what new event types and event types with no schedule use. */
+  setDefaultSchedule(userId: string, scheduleId: string): Promise<void>;
+  /**
+   * Deletes a schedule. Throws DefaultScheduleError for the default, and ScheduleInUseError (naming the event types)
+   * while event types use it, unless `moveTo` names another of the host's schedules: those event types move there in
+   * the same write.
+   */
+  deleteSchedule(userId: string, scheduleId: string, opts?: { moveTo?: string }): Promise<void>;
+  /** Points the event type at one of the host's schedules. Throws NotFoundError unless both are theirs. */
+  setEventTypeSchedule(userId: string, eventTypeId: string, scheduleId: string): Promise<EventType>;
   listCalendarConnections(userId: string): Promise<CalendarConnection[]>;
   listCalendars(userId: string): Promise<Calendar[]>;
   listBusyBlocks(userId: string, from: Date, to: Date): Promise<BusyBlock[]>;
@@ -410,5 +439,46 @@ export class EventTypeInUseError extends Error {
     this.name = "EventTypeInUseError";
     this.reason = reason;
     this.upcomingCount = upcomingCount;
+  }
+}
+
+/** The host already has as many schedules as their plan allows. */
+export class ScheduleLimitError extends Error {
+  readonly code = "schedule_limit";
+  readonly limit: number;
+  constructor(limit: number) {
+    super(limit === 1
+      ? "Your plan includes one schedule. Upgrade to Solo or Duo to keep several, or change the hours of the one you have."
+      : `Your plan includes ${limit} schedules.`);
+    this.name = "ScheduleLimitError";
+    this.limit = limit;
+  }
+}
+
+export class ScheduleNameTakenError extends Error {
+  readonly code = "schedule_name_taken";
+  constructor() {
+    super("You already have a schedule with that name.");
+    this.name = "ScheduleNameTakenError";
+  }
+}
+
+/** The default schedule is what event types fall back to, so it can't be deleted; make another one the default first. */
+export class DefaultScheduleError extends Error {
+  readonly code = "default_schedule";
+  constructor() {
+    super("This is your default schedule. Make another schedule the default before deleting this one.");
+    this.name = "DefaultScheduleError";
+  }
+}
+
+/** Event types still book against this schedule. */
+export class ScheduleInUseError extends Error {
+  readonly code = "schedule_in_use";
+  readonly eventTypes: { id: string; name: string }[];
+  constructor(eventTypes: { id: string; name: string }[]) {
+    super(`${eventTypes.length === 1 ? "1 event type uses" : `${eventTypes.length} event types use`} this schedule: ${eventTypes.map((e) => e.name).join(", ")}. Move ${eventTypes.length === 1 ? "it" : "them"} to another schedule first.`);
+    this.name = "ScheduleInUseError";
+    this.eventTypes = eventTypes;
   }
 }

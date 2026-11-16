@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { blockDateRangeAction, saveDateOverrideAction, saveWeeklyHoursAction, type FormState } from "@/app/dashboard/availability/actions";
+import { blockDateRangeAction, createScheduleAction, saveDateOverrideAction, saveWeeklyHoursAction, updateScheduleAction, type FormState } from "@/app/dashboard/availability/actions";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { focusRing } from "@/components/ui/focus";
@@ -80,7 +80,58 @@ function nextRange(ranges: Interval[]): Interval {
 
 type Day = { on: boolean; ranges: Interval[] };
 
-export function WeeklyHoursForm({ initial }: { initial: Record<number, Interval[]> }) {
+/** Which schedule a form writes to. The server checks it is the signed-in host's. */
+const ScheduleField = ({ id }: { id: string }) => <input type="hidden" name="schedule" value={id} />;
+
+/** "This schedule only" or "All schedules", for days off. Shown only when the host has more than one schedule. */
+export function ScopeChoice({ scheduleName }: { scheduleName: string }) {
+  return (
+    <fieldset>
+      <legend className="text-sm font-semibold text-text">Apply to</legend>
+      <div className="mt-1 flex flex-wrap gap-x-6">
+        {([["one", `${scheduleName} only`], ["all", "All my schedules"]] as const).map(([value, text]) => (
+          <label key={value} className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-text">
+            <input type="radio" name="scope" value={value} defaultChecked={value === "all"} className={`size-5 accent-accent ${focusRing}`} />
+            {text}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+const selectClasses = `mt-1 block h-11 w-full rounded-md border border-border-input bg-card px-3 text-base text-text ${focusRing}`;
+
+/** Create a schedule (no `schedule`), or rename one and change its time zone. */
+export function ScheduleForm({ schedule, zones, defaultZone }: { schedule?: { id: string; name: string; timezone: string }; zones: string[]; defaultZone: string }) {
+  const [state, action, pending] = useActionState(schedule ? updateScheduleAction : createScheduleAction, INITIAL);
+  const prefix = schedule ? "edit" : "new";
+  const nameError = state.errors["schedule-name"];
+  const zoneError = state.errors["schedule-timezone"];
+  return (
+    <form action={action} noValidate className="flex flex-wrap items-end gap-3">
+      {schedule && <ScheduleField id={schedule.id} />}
+      <div className="w-64">
+        <Label htmlFor={`${prefix}-schedule-name`}>Name</Label>
+        <Input id={`${prefix}-schedule-name`} name="schedule-name" maxLength={60} required defaultValue={schedule?.name ?? ""}
+          placeholder={schedule ? undefined : "Clinic, Evenings, UK clients…"} error={nameError} />
+      </div>
+      <div className="w-64">
+        <label htmlFor={`${prefix}-schedule-timezone`} className="block text-sm font-semibold text-text">Time zone</label>
+        <select id={`${prefix}-schedule-timezone`} name="schedule-timezone" defaultValue={schedule?.timezone ?? defaultZone}
+          aria-invalid={zoneError ? true : undefined} aria-describedby={zoneError ? `${prefix}-schedule-timezone-error` : undefined} className={selectClasses}>
+          {zones.map((z) => <option key={z} value={z}>{z.replaceAll("_", " ")}</option>)}
+        </select>
+        {zoneError && <p id={`${prefix}-schedule-timezone-error`} className="mt-1 text-sm text-danger">{zoneError}</p>}
+      </div>
+      <Button type="submit" loading={pending}>{schedule ? "Save name and zone" : "Add schedule"}</Button>
+      {state.errors.schedule && <p role="alert" className="w-full text-sm font-semibold text-danger">{state.errors.schedule}</p>}
+      <div className="w-full"><Result state={state} saved="Saved" /></div>
+    </form>
+  );
+}
+
+export function WeeklyHoursForm({ initial, scheduleId }: { initial: Record<number, Interval[]>; scheduleId: string }) {
   const [state, action, pending] = useActionState(saveWeeklyHoursAction, INITIAL);
   const [days, setDays] = useState<Day[]>(() =>
     DAYS.map((_, d) => (initial[d]?.length ? { on: true, ranges: initial[d] } : { on: false, ranges: [DEFAULT_RANGE] })),
@@ -90,6 +141,7 @@ export function WeeklyHoursForm({ initial }: { initial: Record<number, Interval[
 
   return (
     <form action={action} noValidate className="space-y-4">
+      <ScheduleField id={scheduleId} />
       <ul className="divide-y divide-border">
         {WEEK_ORDER.map((d) => {
           const name = DAYS[d];
@@ -126,12 +178,13 @@ export function WeeklyHoursForm({ initial }: { initial: Record<number, Interval[
   );
 }
 
-export function DateOverrideForm({ today }: { today: string }) {
+export function DateOverrideForm({ today, scheduleId }: { today: string; scheduleId: string }) {
   const [state, action, pending] = useActionState(saveDateOverrideAction, INITIAL);
   const [kind, setKind] = useState<"hours" | "off">("off");
   const [ranges, setRanges] = useState<Interval[]>([DEFAULT_RANGE]);
   return (
     <form action={action} noValidate className="space-y-4">
+      <ScheduleField id={scheduleId} />
       <div className="w-48">
         <Label htmlFor="ov-date">Date</Label>
         <Input id="ov-date" name="ov-date" type="date" min={today} required error={state.errors["ov-date"]} />
@@ -156,10 +209,12 @@ export function DateOverrideForm({ today }: { today: string }) {
   );
 }
 
-export function BlockRangeForm({ today }: { today: string }) {
+/** `scheduleName` set: the host has several schedules and picks whether the days go on this one or all of them. */
+export function BlockRangeForm({ today, scheduleId, scheduleName }: { today: string; scheduleId: string; scheduleName?: string }) {
   const [state, action, pending] = useActionState(blockDateRangeAction, INITIAL);
   return (
     <form action={action} noValidate className="space-y-4">
+      <ScheduleField id={scheduleId} />
       <div className="flex flex-wrap gap-4">
         <div className="w-48">
           <Label htmlFor="block-from">First day</Label>
@@ -170,6 +225,7 @@ export function BlockRangeForm({ today }: { today: string }) {
           <Input id="block-to" name="block-to" type="date" min={today} required error={state.errors["block-to"]} />
         </div>
       </div>
+      {scheduleName && <ScopeChoice scheduleName={scheduleName} />}
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" loading={pending}>Block these days</Button>
         <Result state={state} saved="Days blocked" />
