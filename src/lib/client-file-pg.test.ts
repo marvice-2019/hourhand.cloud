@@ -172,6 +172,12 @@ describe.skipIf(!BASE)("client file (Postgres)", () => {
       const mine = (await file(priya, email))!;
       expect(mine.entries.map((e) => e.id)).not.toContain(ids.otherClient);
       expect(mine.entries.map((e) => e.id)).not.toContain(ids.otherHost);
+      // Exactly one page of exactly Priya's 7 entries: another host's rows don't even reach the page query (no phantom "Older" page).
+      const exact = (await file(priya, email, true, null, 7))!;
+      expect([exact.entries.length, exact.nextCursor]).toEqual([7, null]);
+      const short = (await file(priya, email, true, null, 6))!;
+      expect(short.entries).toHaveLength(6);
+      expect((await file(priya, email, true, short.nextCursor, 6))!.entries.map((e) => e.id)).toEqual([ids.paid]);
       const theirs = (await file(arun, email))!;
       expect(theirs.entries.map((e) => e.id)).toEqual([ids.otherHost]);
       expect(theirs.header.lifetimePaidMinor).toBe(99900);
