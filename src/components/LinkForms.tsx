@@ -2,7 +2,9 @@
 
 import { useActionState, useState } from "react";
 import { createOneOff, createSingleUseLink, type LinkFormState } from "@/app/dashboard/links/actions";
+import type { ZoomSetup } from "@/lib/zoom/connection";
 import { CopyLinkButton } from "./CopyLinkButton";
+import { ZoomHint } from "./ZoomHint";
 import { Button } from "./ui/Button";
 import { Input, Label } from "./ui/Input";
 import { focusRing } from "./ui/focus";
@@ -53,7 +55,7 @@ const LOCATIONS: { kind: string; label: string; needs?: string }[] = [
   { kind: "custom", label: "Somewhere else", needs: "Location details" },
 ];
 
-export function OneOffForm({ timeZone }: { timeZone: string }) {
+export function OneOffForm({ timeZone, zoomSetup = "not_configured" }: { timeZone: string; zoomSetup?: ZoomSetup }) {
   const [state, action, pending] = useActionState(createOneOff, idle);
   const [rows, setRows] = useState<number[]>([0, 1, 2]);
   const [next, setNext] = useState(3);
@@ -69,6 +71,7 @@ export function OneOffForm({ timeZone }: { timeZone: string }) {
           {LOCATIONS.map((l) => <option key={l.kind} value={l.kind}>{l.label}</option>)}
         </select>
         {kind === "teams" && <p className="mt-1 text-sm text-text-muted">Teams links are created when bookings go to a work or school Outlook calendar.</p>}
+        {kind === "zoom" && <ZoomHint setup={zoomSetup} />}
       </div>
       {needs && <div><Label htmlFor="oo-location-value">{needs}</Label><Input id="oo-location-value" name="locationValue" /></div>}
       <div><Label htmlFor="oo-description">Note for your guest (optional)</Label><Input id="oo-description" name="description" maxLength={2000} /></div>

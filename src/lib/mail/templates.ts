@@ -293,6 +293,17 @@ export function renderCalendarAlert(a: { accountEmail: string; disconnected: boo
   });
 }
 
+/** Zoom stopped letting Hourhand make meetings: the grant was revoked, expired, or the app was removed in Zoom. */
+export function renderZoomAlert(a: { accountEmail: string; lastError: string | null; integrationsUrl: string }): RenderedMail {
+  return render("Reconnect Zoom to keep sending meeting links", {
+    heading: "Your Zoom is disconnected",
+    intro: `Zoom no longer lets Hourhand create meetings for ${a.accountEmail}. Bookings you already have keep their Zoom links. New Zoom bookings are still taken, but get no link until you reconnect.`,
+    rows: a.lastError ? [["Last error", a.lastError.slice(0, 200)]] : [],
+    link: { label: "Reconnect Zoom", url: a.integrationsUrl },
+    footer: "Sent by Hourhand about your booking page.",
+  });
+}
+
 export function renderRenewalReminder(a: { planName: string; price: string; renewsOn: Date; timezone: string; planUrl: string }): RenderedMail {
   const on = formatDate(a.renewsOn, a.timezone);
   return render(`Your Hourhand ${a.planName} plan renews on ${on}`, {
