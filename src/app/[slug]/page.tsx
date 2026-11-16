@@ -7,7 +7,7 @@ import { cache } from "react";
 import { Card } from "@/components/ui/Card";
 import { focusRing } from "@/components/ui/focus";
 import { authEnabled, resolveBaseUrl } from "@/lib/auth/auth";
-import { formatMoney } from "@/lib/billing/plans";
+import { formatAmount } from "@/lib/money";
 import { store } from "@/lib/data";
 import { getPool } from "@/lib/data/pg-store";
 import { getProfile, profileJsonLd, type Profile } from "@/lib/profile";
@@ -91,7 +91,7 @@ export default async function ProfilePage({ params, searchParams }: Props) {
               <Link href={`/${host.slug}/${et.slug}${q}`} className={`block rounded-lg ${focusRing}`}>
                 <Card className="h-full hover:border-border-input">
                   <h3 className="font-display text-lg text-text">{et.name}</h3>
-                  <p className="mt-1 text-sm text-text-muted">{t(locale, "minutes", { n: et.durationMinutes })} · {et.priceMinor !== null ? formatMoney(et.priceMinor, "INR") : t(locale, "free")}</p>
+                  <p className="mt-1 text-sm text-text-muted">{t(locale, "minutes", { n: et.durationMinutes })} · {et.priceMinor !== null ? formatAmount(et.priceMinor, et.currency) : t(locale, "free")}</p>
                   {et.description && <p className="mt-2 text-sm text-text">{et.description}</p>}
                   <span className="mt-3 inline-block font-semibold text-accent">{t(locale, "seeTimes")}</span>
                 </Card>

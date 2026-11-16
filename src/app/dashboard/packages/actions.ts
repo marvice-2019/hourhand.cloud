@@ -6,6 +6,7 @@ import { authEnabled } from "@/lib/auth/auth";
 import { requireHost } from "@/lib/auth/session";
 import { getPool } from "@/lib/data/pg-store";
 import { isNamedError } from "@/lib/data/types";
+import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
 import { createPackage, setPackageActive, validatePackageForm } from "@/lib/packages/packages";
 
 // Each action checks the session itself; every query takes the signed-in host's id, so another host's package or event
@@ -21,7 +22,8 @@ export async function createPackageAction(_prev: PackageFormState, form: FormDat
   const v = validatePackageForm({ eventTypeId: field(form, "eventTypeId"), name: field(form, "name"), sessions: field(form, "sessions"), price: field(form, "price"), validDays: field(form, "validDays") });
   if (!v.ok) return { status: "error", errors: v.errors };
   try {
-    await createPackage(getPool(process.env.DATABASE_URL as string), user.id, v.value);
+    const pool = getPool(process.env.DATABASE_URL as string);
+    await createPackage(pool, user.id, { ...v.value, currency: priceCurrency(await paymentAccount(pool, user.id)) });
   } catch (error) {
     if (isNamedError(error, "NotFoundError")) return { status: "error", errors: { eventTypeId: "That event type isn't available. Turn it on first, or pick another." } };
     throw error;
