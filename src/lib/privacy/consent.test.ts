@@ -112,14 +112,14 @@ describe("booking for a client (host_on_behalf)", () => {
   it("is refused unless the signed-in account is this host's", async () => {
     const { store, inputs, body } = await setUp();
     expect((await handleCreateBooking(store, body, now)).status).toBe(403);
-    expect((await handleCreateBooking(store, body, now, undefined, null, null)).body).toEqual({ error: "not_your_booking_page" });
-    expect((await handleCreateBooking(store, body, now, undefined, null, { hostId: "someone-else" })).status).toBe(403);
+    expect((await handleCreateBooking(store, body, now, undefined, null, undefined, null)).body).toEqual({ error: "not_your_booking_page" });
+    expect((await handleCreateBooking(store, body, now, undefined, null, undefined, { hostId: "someone-else" })).status).toBe(403);
     expect(inputs).toEqual([]);
   });
 
   it("logs host_on_behalf for the host, sets no opt-ins and doesn't need the client's consent ticks", async () => {
     const { store, inputs, host, body } = await setUp();
-    const res = await handleCreateBooking(store, body, now, undefined, null, { hostId: host.id });
+    const res = await handleCreateBooking(store, body, now, undefined, null, undefined, { hostId: host.id });
     expect(res.status).toBe(201);
     const inv = inputs[0].invitee;
     expect([inv.whatsappOptIn, inv.smsOptIn]).toEqual([false, false]);
@@ -141,6 +141,6 @@ describe("booking for a client (host_on_behalf)", () => {
       e.priceMinor = 150000;
       e.currency = "INR";
     });
-    expect((await handleCreateBooking(store, body, now, undefined, null, { hostId: host.id })).body).toEqual({ error: "on_behalf_paid" });
+    expect((await handleCreateBooking(store, body, now, undefined, null, undefined, { hostId: host.id })).body).toEqual({ error: "on_behalf_paid" });
   });
 });

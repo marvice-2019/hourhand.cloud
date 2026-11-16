@@ -1,23 +1,29 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { blockDateRangeAction, saveDateOverrideAction, saveWeeklyHoursAction, type FormState } from "@/app/dashboard/availability/actions";
+import { blockDateRangeAction, createScheduleAction, saveDateOverrideAction, saveWeeklyHoursAction, updateScheduleAction, type FormState } from "@/app/dashboard/availability/actions";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { focusRing } from "@/components/ui/focus";
 import type { Interval } from "@/lib/data/types";
+import type { HostKey } from "@/lib/i18n/host";
+import { useHostI18n } from "./HostI18nProvider";
 
 const INITIAL: FormState = { status: "idle", errors: {} };
 const DEFAULT_RANGE: Interval = { from: "09:00", to: "17:00" };
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAYS: HostKey[] = [
+  "availability.sunday", "availability.monday", "availability.tuesday", "availability.wednesday", "availability.thursday",
+  "availability.friday", "availability.saturday",
+];
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 /** Inline result line: "Saved", or a pointer to the field errors. */
 function Result({ state, saved }: { state: FormState; saved: string }) {
+  const { t } = useHostI18n();
   return (
     <p role="status" className={`min-h-6 text-sm font-semibold ${state.status === "error" ? "text-danger" : "text-text"}`}>
       {state.status === "saved" && saved}
-      {state.status === "error" && "Fix the highlighted fields and try again."}
+      {state.status === "error" && t("availability.fixFields")}
     </p>
   );
 }
@@ -26,6 +32,7 @@ function Result({ state, saved }: { state: FormState; saved: string }) {
 function RangeRows({ prefix, label, ranges, onChange, errors }: {
   prefix: string; label: string; ranges: Interval[]; onChange: (next: Interval[]) => void; errors: Record<string, string>;
 }) {
+  const { t } = useHostI18n();
   const set = (i: number, field: keyof Interval, value: string) => onChange(ranges.map((r, j) => (j === i ? { ...r, [field]: value } : r)));
   return (
     <div className="space-y-3">
@@ -36,8 +43,8 @@ function RangeRows({ prefix, label, ranges, onChange, errors }: {
             return (
               <div key={field} className="w-32">
                 <Label htmlFor={id}>
-                  <span className="sr-only">{label}, range {i + 1}, </span>
-                  {field === "from" ? "From" : "To"}
+                  <span className="sr-only">{t("availability.rangeHidden", { label, n: i + 1 })}</span>
+                  {field === "from" ? t("availability.from") : t("availability.to")}
                 </Label>
                 <Input
                   id={id}
@@ -56,13 +63,13 @@ function RangeRows({ prefix, label, ranges, onChange, errors }: {
           })}
           {ranges.length > 1 && (
             <Button variant="ghost" className="mt-6" onClick={() => onChange(ranges.filter((_, j) => j !== i))}>
-              Remove<span className="sr-only"> {label} range {i + 1}</span>
+              {t("common.remove")}<span className="sr-only">{t("availability.removeRangeHidden", { label, n: i + 1 })}</span>
             </Button>
           )}
         </div>
       ))}
       <Button variant="secondary" onClick={() => onChange([...ranges, nextRange(ranges)])}>
-        Add a range<span className="sr-only"> for {label}</span>
+        {t("availability.addRange")}<span className="sr-only">{t("availability.addRangeHidden", { label })}</span>
       </Button>
     </div>
   );
@@ -80,7 +87,61 @@ function nextRange(ranges: Interval[]): Interval {
 
 type Day = { on: boolean; ranges: Interval[] };
 
-export function WeeklyHoursForm({ initial }: { initial: Record<number, Interval[]> }) {
+/** Which schedule a form writes to. The server checks it is the signed-in host's. */
+const ScheduleField = ({ id }: { id: string }) => <input type="hidden" name="schedule" value={id} />;
+
+/** "This schedule only" or "All schedules", for days off. Shown only when the host has more than one schedule. */
+export function ScopeChoice({ scheduleName }: { scheduleName: string }) {
+  const { t } = useHostI18n();
+  return (
+    <fieldset>
+      <legend className="text-sm font-semibold text-text">{t("availability.applyTo")}</legend>
+      <div className="mt-1 flex flex-wrap gap-x-6">
+        {([["one", t("availability.scopeOne", { name: scheduleName })], ["all", t("availability.scopeAll")]] as const).map(([value, text]) => (
+          <label key={value} className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-text">
+            <input type="radio" name="scope" value={value} defaultChecked={value === "all"} className={`size-5 accent-accent ${focusRing}`} />
+            {text}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+const selectClasses = `mt-1 block h-11 w-full rounded-md border border-border-input bg-card px-3 text-base text-text ${focusRing}`;
+
+/** Create a schedule (no `schedule`), or rename one and change its time zone. */
+export function ScheduleForm({ schedule, zones, defaultZone }: { schedule?: { id: string; name: string; timezone: string }; zones: string[]; defaultZone: string }) {
+  const { t } = useHostI18n();
+  const [state, action, pending] = useActionState(schedule ? updateScheduleAction : createScheduleAction, INITIAL);
+  const prefix = schedule ? "edit" : "new";
+  const nameError = state.errors["schedule-name"];
+  const zoneError = state.errors["schedule-timezone"];
+  return (
+    <form action={action} noValidate className="flex flex-wrap items-end gap-3">
+      {schedule && <ScheduleField id={schedule.id} />}
+      <div className="w-64">
+        <Label htmlFor={`${prefix}-schedule-name`}>{t("availability.scheduleName")}</Label>
+        <Input id={`${prefix}-schedule-name`} name="schedule-name" maxLength={60} required defaultValue={schedule?.name ?? ""}
+          placeholder={schedule ? undefined : t("availability.scheduleNamePlaceholder")} error={nameError} />
+      </div>
+      <div className="w-64">
+        <label htmlFor={`${prefix}-schedule-timezone`} className="block text-sm font-semibold text-text">{t("availability.timeZone")}</label>
+        <select id={`${prefix}-schedule-timezone`} name="schedule-timezone" defaultValue={schedule?.timezone ?? defaultZone}
+          aria-invalid={zoneError ? true : undefined} aria-describedby={zoneError ? `${prefix}-schedule-timezone-error` : undefined} className={selectClasses}>
+          {zones.map((z) => <option key={z} value={z}>{z.replaceAll("_", " ")}</option>)}
+        </select>
+        {zoneError && <p id={`${prefix}-schedule-timezone-error`} className="mt-1 text-sm text-danger">{zoneError}</p>}
+      </div>
+      <Button type="submit" loading={pending}>{schedule ? t("availability.saveNameZone") : t("availability.addSchedule")}</Button>
+      {state.errors.schedule && <p role="alert" className="w-full text-sm font-semibold text-danger">{state.errors.schedule}</p>}
+      <div className="w-full"><Result state={state} saved={t("availability.saved")} /></div>
+    </form>
+  );
+}
+
+export function WeeklyHoursForm({ initial, scheduleId }: { initial: Record<number, Interval[]>; scheduleId: string }) {
+  const { t } = useHostI18n();
   const [state, action, pending] = useActionState(saveWeeklyHoursAction, INITIAL);
   const [days, setDays] = useState<Day[]>(() =>
     DAYS.map((_, d) => (initial[d]?.length ? { on: true, ranges: initial[d] } : { on: false, ranges: [DEFAULT_RANGE] })),
@@ -90,9 +151,10 @@ export function WeeklyHoursForm({ initial }: { initial: Record<number, Interval[
 
   return (
     <form action={action} noValidate className="space-y-4">
+      <ScheduleField id={scheduleId} />
       <ul className="divide-y divide-border">
         {WEEK_ORDER.map((d) => {
-          const name = DAYS[d];
+          const name = t(DAYS[d]);
           return (
             <li key={d} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start">
               <label className="inline-flex min-h-11 w-40 shrink-0 cursor-pointer items-center gap-3 font-semibold text-text">
@@ -110,36 +172,38 @@ export function WeeklyHoursForm({ initial }: { initial: Record<number, Interval[
               {days[d].on ? (
                 <RangeRows prefix={`w${d}`} label={name} ranges={days[d].ranges} onChange={(ranges) => update(d, { ranges })} errors={state.errors} />
               ) : (
-                <p className="flex min-h-11 items-center text-text-muted">Unavailable</p>
+                <p className="flex min-h-11 items-center text-text-muted">{t("availability.unavailable")}</p>
               )}
             </li>
           );
         })}
       </ul>
-      <p className="text-sm text-text-muted">Use 24-hour time, like 09:00 or 17:30. Use 24:00 for midnight.</p>
+      <p className="text-sm text-text-muted">{t("availability.hint24h")}</p>
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" loading={pending}>Save hours</Button>
-        <Button variant="secondary" onClick={copyMonday}>Copy Monday to weekdays</Button>
-        <Result state={state} saved="Saved" />
+        <Button type="submit" loading={pending}>{t("availability.saveHours")}</Button>
+        <Button variant="secondary" onClick={copyMonday}>{t("availability.copyMonday")}</Button>
+        <Result state={state} saved={t("availability.saved")} />
       </div>
     </form>
   );
 }
 
-export function DateOverrideForm({ today }: { today: string }) {
+export function DateOverrideForm({ today, scheduleId }: { today: string; scheduleId: string }) {
+  const { t } = useHostI18n();
   const [state, action, pending] = useActionState(saveDateOverrideAction, INITIAL);
   const [kind, setKind] = useState<"hours" | "off">("off");
   const [ranges, setRanges] = useState<Interval[]>([DEFAULT_RANGE]);
   return (
     <form action={action} noValidate className="space-y-4">
+      <ScheduleField id={scheduleId} />
       <div className="w-48">
-        <Label htmlFor="ov-date">Date</Label>
+        <Label htmlFor="ov-date">{t("availability.date")}</Label>
         <Input id="ov-date" name="ov-date" type="date" min={today} required error={state.errors["ov-date"]} />
       </div>
       <fieldset>
-        <legend className="text-sm font-semibold text-text">Hours that day</legend>
+        <legend className="text-sm font-semibold text-text">{t("availability.hoursThatDay")}</legend>
         <div className="mt-1 flex flex-wrap gap-x-6">
-          {([["off", "Unavailable all day"], ["hours", "Custom hours"]] as const).map(([value, text]) => (
+          {([["off", t("availability.offAllDay")], ["hours", t("availability.customHours")]] as const).map(([value, text]) => (
             <label key={value} className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-text">
               <input type="radio" name="ov-kind" value={value} checked={kind === value} onChange={() => setKind(value)} className={`size-5 accent-accent ${focusRing}`} />
               {text}
@@ -147,32 +211,36 @@ export function DateOverrideForm({ today }: { today: string }) {
           ))}
         </div>
       </fieldset>
-      {kind === "hours" && <RangeRows prefix="ov" label="Override" ranges={ranges} onChange={setRanges} errors={state.errors} />}
+      {kind === "hours" && <RangeRows prefix="ov" label={t("availability.overrideLabel")} ranges={ranges} onChange={setRanges} errors={state.errors} />}
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" loading={pending}>Add override</Button>
-        <Result state={state} saved="Override saved" />
+        <Button type="submit" loading={pending}>{t("availability.addOverride")}</Button>
+        <Result state={state} saved={t("availability.overrideSaved")} />
       </div>
     </form>
   );
 }
 
-export function BlockRangeForm({ today }: { today: string }) {
+/** `scheduleName` set: the host has several schedules and picks whether the days go on this one or all of them. */
+export function BlockRangeForm({ today, scheduleId, scheduleName }: { today: string; scheduleId: string; scheduleName?: string }) {
+  const { t } = useHostI18n();
   const [state, action, pending] = useActionState(blockDateRangeAction, INITIAL);
   return (
     <form action={action} noValidate className="space-y-4">
+      <ScheduleField id={scheduleId} />
       <div className="flex flex-wrap gap-4">
         <div className="w-48">
-          <Label htmlFor="block-from">First day</Label>
+          <Label htmlFor="block-from">{t("availability.firstDay")}</Label>
           <Input id="block-from" name="block-from" type="date" min={today} required error={state.errors["block-from"]} />
         </div>
         <div className="w-48">
-          <Label htmlFor="block-to">Last day</Label>
+          <Label htmlFor="block-to">{t("availability.lastDay")}</Label>
           <Input id="block-to" name="block-to" type="date" min={today} required error={state.errors["block-to"]} />
         </div>
       </div>
+      {scheduleName && <ScopeChoice scheduleName={scheduleName} />}
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" loading={pending}>Block these days</Button>
-        <Result state={state} saved="Days blocked" />
+        <Button type="submit" loading={pending}>{t("availability.blockDays")}</Button>
+        <Result state={state} saved={t("availability.daysBlocked")} />
       </div>
     </form>
   );

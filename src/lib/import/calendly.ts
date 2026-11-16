@@ -4,6 +4,7 @@
 //   GET https://api.calendly.com/event_types?user=<uri>&count=100 -> collection[], pagination.next_page_token
 import type { LocationKind } from "../data/types";
 import { arr, clampBuffer, clampDuration, durationList, getJson, nearestIncrement, num, obj, str, text } from "./http";
+import { IMPORT_MESSAGES, importMessage } from "./messages";
 import { capQuestions, question } from "./questions";
 import { ImportError, MAX_IMPORT, type ImportDeps, type ImportedEventType, type ImportedQuestion, type ImportPreview } from "./types";
 
@@ -11,15 +12,15 @@ export const CALENDLY_API = "https://api.calendly.com";
 const MAX_PAGES = 10;
 
 const MESSAGES = {
-  badToken: "Calendly didn't accept that token. Make a new personal access token in Calendly (Integrations → API and webhooks) with event types read access, and paste it here.",
-  notFound: "Calendly couldn't find your account with that token. Check you copied the whole token.",
+  badToken: IMPORT_MESSAGES.calendlyBadToken,
+  notFound: IMPORT_MESSAGES.calendlyNotFound,
 };
 
 export async function fetchCalendly(token: string, deps: ImportDeps = {}): Promise<ImportPreview> {
   const headers = { authorization: `Bearer ${token.trim()}` };
   const me = obj(await getJson("calendly", `${CALENDLY_API}/users/me`, headers, deps, MESSAGES));
   const userUri = str(obj(me.resource).uri);
-  if (!userUri) throw new ImportError("bad_response", "Calendly sent an answer Hourhand couldn't read. Try again in a minute.");
+  if (!userUri) throw new ImportError("bad_response", importMessage("unreadableRetry", { label: "Calendly" }));
 
   const raw: unknown[] = [];
   let pageToken: string | null = null;
@@ -37,11 +38,11 @@ export async function fetchCalendly(token: string, deps: ImportDeps = {}): Promi
     const r = obj(item);
     const name = text(r.name, 120) || text(r.slug, 60) || "Untitled event";
     if (r.pooling_type !== null && r.pooling_type !== undefined) {
-      preview.skipped.push({ name, reason: "Team event (round robin or collective). Hourhand books one host per link for now." });
+      preview.skipped.push({ name, reason: IMPORT_MESSAGES.teamCalendly });
       continue;
     }
     if (preview.eventTypes.length >= MAX_IMPORT) {
-      preview.skipped.push({ name, reason: `Only ${MAX_IMPORT} event types come over in one import.` });
+      preview.skipped.push({ name, reason: importMessage("overLimit", { max: MAX_IMPORT }) });
       continue;
     }
     preview.eventTypes.push(mapCalendly(r, name));
@@ -60,11 +61,11 @@ const LOCATIONS: Record<string, LocationKind> = {
 
 function mapCalendly(r: Record<string, unknown>, name: string): ImportedEventType {
   const notes: string[] = [];
-  if (r.active === false) notes.push("It was switched off in Calendly.");
-  if (r.kind === "group") notes.push("It was a group event. Calendly doesn't share the invitee limit, so it comes over as one-on-one: set guests per session before switching it on.");
+  if (r.active === false) notes.push(IMPORT_MESSAGES.calendlySwitchedOff);
+  if (r.kind === "group") notes.push(IMPORT_MESSAGES.calendlyGroup);
   const options = durationList(r.duration_options);
   const durationMinutes = clampDuration(num(r.duration), notes);
-  if (options.filter((d) => d !== durationMinutes).length > 0) notes.push(`Calendly offered ${options.join(", ")} minutes; only ${durationMinutes} minutes came over.`);
+  if (options.filter((d) => d !== durationMinutes).length > 0) notes.push(importMessage("calendlyLengths", { options: options.join(", "), n: durationMinutes }));
 
   const qs: ImportedQuestion[] = [];
   const sorted = arr(r.custom_questions).map(obj).filter((q) => q.enabled !== false)
@@ -74,7 +75,7 @@ function mapCalendly(r: Record<string, unknown>, name: string): ImportedEventTyp
     const kind = QUESTION_KINDS[type] ?? "short_text";
     const mapped = question(q.name, kind, q.required === true, arr(q.answer_choices), notes, QUESTION_KINDS[type] ? undefined : (type || "unknown"));
     if (!mapped) continue;
-    if (q.include_other === true && (kind === "single_select" || kind === "multi_select")) notes.push(`"${mapped.label}" had an "Other" write-in choice, which Hourhand doesn't have.`);
+    if (q.include_other === true && (kind === "single_select" || kind === "multi_select")) notes.push(importMessage("otherChoice", { label: mapped.label }));
     qs.push(mapped);
   }
 
@@ -99,20 +100,21 @@ function mapCalendly(r: Record<string, unknown>, name: string): ImportedEventTyp
 
 function calendlyLocation(list: unknown[], notes: string[]): ImportedEventType["location"] {
   if (list.length === 0) return null;
-  if (list.length > 1) notes.push("Only the first location came over.");
+  if (list.length > 1) notes.push(IMPORT_MESSAGES.firstLocationOnly);
   const l = obj(list[0]);
   const kind = LOCATIONS[str(l.kind) ?? ""];
   if (!kind) {
-    notes.push(`The location (${text(l.kind, 40) || "unknown"}) has no match in Hourhand; pick one before switching it on.`);
+    const raw = text(l.kind, 40);
+    notes.push(raw ? importMessage("locationNoMatch", { kind: raw }) : IMPORT_MESSAGES.locationUnknownNoMatch);
     return null;
   }
   if (kind === "in_person" || kind === "custom") {
     const value = text(l.location, 500);
-    return value ? { kind, value } : (notes.push("The location had no address; add one before switching it on."), null);
+    return value ? { kind, value } : (notes.push(IMPORT_MESSAGES.locationNoAddress), null);
   }
   if (kind === "phone_guest_calls") {
     const value = text(l.phone_number ?? l.location, 40);
-    return value ? { kind, value } : (notes.push("The phone location had no number; add one before switching it on."), null);
+    return value ? { kind, value } : (notes.push(IMPORT_MESSAGES.locationNoNumber), null);
   }
   return { kind, value: null };
 }

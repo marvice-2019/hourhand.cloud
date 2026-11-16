@@ -9,6 +9,7 @@ import { smsNumber } from "./sms/config";
 import { BOOKING_LIMITS, type createRateLimiter } from "./rate-limit";
 import type { Plan } from "./billing/plans";
 import { startPaidBooking } from "./payments/booking-payments";
+import { parseOfferInput, resolvePrice } from "./offers/offers";
 import { chargeableCurrency, startStripeBooking, type StripeDeps } from "./payments/stripe-checkout";
 import { stripeReady } from "./payments/stripe-connect";
 import type { HostRazorpayAuth } from "./payments/host-razorpay";
@@ -59,7 +60,7 @@ export async function freeSlotSeats(store: DataStore, host: User, eventType: Eve
     }).map((start) => ({ start, seatsLeft: null }));
   }
   const [{ schedule, rules }, connections, busyBlocks, bookings] = await Promise.all([
-    store.getDefaultSchedule(host.id),
+    store.getSchedule(host.id, eventType.scheduleId), // its own schedule, or the host's default
     store.listCalendarConnections(host.id),
     busyWithPollHolds(store, host.id, from, to, now),
     store.listBookings(host.id),
@@ -277,6 +278,20 @@ export interface PaymentDeps {
   stripe?: { deps: StripeDeps; baseUrl: string } | null;
 }
 
+/** A step of the booking funnel, reported to analytics. The reporter must not throw; handleCreateBooking guards it anyway. */
+export type FunnelStep = { kind: "booking_started" | "booking_created"; hostId: string; eventTypeId: string; bookingId?: string };
+export type FunnelReporter = (step: FunnelStep) => void;
+
+/** Analytics never gets in a booking's way: a reporter that throws is logged and ignored. */
+function report(reporter: FunnelReporter | undefined, step: FunnelStep): void {
+  if (!reporter) return;
+  try {
+    reporter(step);
+  } catch (error) {
+    console.error("[analytics] funnel step not reported", error);
+  }
+}
+
 /**
  * POST /api/bookings. With `limit`, new bookings are rate limited per client address (see clientIp) and per guest
  * email; the route always passes it, unit tests of the booking rules leave it out. A priced event also needs `payments`:
@@ -286,7 +301,7 @@ export interface PaymentDeps {
  * the route from the session. A request marked onBehalf is refused unless that account is this booking's host.
  */
 export async function handleCreateBooking(
-  store: DataStore, input: unknown, now: Date, limit?: { clientKey: string; limiter: Limiter }, payments?: PaymentDeps | null,
+  store: DataStore, input: unknown, now: Date, limit?: { clientKey: string; limiter: Limiter }, payments?: PaymentDeps | null, funnel?: FunnelReporter,
   actor?: { hostId: string } | null,
 ): Promise<HandlerResult> {
   const v = validateBookingRequest(input);
@@ -314,8 +329,16 @@ export async function handleCreateBooking(
 
   // A repeated submit returns the booking it already made, before the slot re-check (which it would now fail).
   const existing = (await store.listBookings(host.id)).find((b) => b.idempotencyKey === req.idempotencyKey);
-  // What the guest pays now: the price, or else a refundable no-show deposit. Paid for with a package: nothing at booking.
-  const priceMinor = req.packageToken ? null : eventType.priceMinor ?? eventType.depositMinor;
+  // What the guest pays now: the price after at most one offer (worked out and recorded by resolvePrice), or else a
+  // refundable no-show deposit, which offers never touch. Paid for with a package: nothing at booking.
+  const priced = !req.packageToken && eventType.priceMinor !== null && payments
+    ? await resolvePrice(payments.pool, {
+      hostId: host.id, plan: await payments.planFor(host.id), item: { kind: "event_type", id: eventType.id, listMinor: eventType.priceMinor, currency: eventType.currency ?? "INR" },
+      email: req.email, ...parseOfferInput(input), idempotencyKey: req.idempotencyKey, now, limit, reserve: true,
+    })
+    : null;
+  if (priced && !priced.ok) return { status: priced.status, body: priced.body };
+  const priceMinor = req.packageToken ? null : priced?.chargeMinor ?? eventType.priceMinor ?? eventType.depositMinor;
   const paymentKind = eventType.priceMinor === null ? "deposit" as const : "payment" as const;
   // A priced repeat goes through startPaidBooking below instead, so a still-held booking gets its payment details back.
   if (existing && !priceMinor) return { status: 200, body: { bookingId: existing.id, manageToken: existing.invitee.manageToken } };
@@ -368,6 +391,7 @@ export async function handleCreateBooking(
     if (!paid) return { status: 409, body: { error: "payments_unavailable" } };
   }
 
+  const offerBody = priced?.ok && priced.offer ? { offer: priced.offer } : {};
   const startPaid = async (p: Paid, priceMinor: number, status: number): Promise<HandlerResult> => {
     if (p.provider === "stripe") {
       const base = p.stripe.baseUrl.replace(/\/+$/, "");
@@ -383,12 +407,15 @@ export async function handleCreateBooking(
             return { successUrl: `${page}?session_id={CHECKOUT_SESSION_ID}${lang}`, cancelUrl: `${page}${lang ? `?${lang.slice(1)}` : ""}` };
           },
         }, now);
-      return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, holdExpiresAt: payment.holdExpiresAt.toISOString() } } };
+      return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, holdExpiresAt: payment.holdExpiresAt.toISOString() }, ...offerBody } };
     }
     const { booking, payment } = await startPaidBooking(
       { pool: p.deps.pool, store, auth: p.auth, orders: p.deps.ordersFor(p.auth) }, { ...bookingInput, priceMinor, kind: paymentKind }, now);
-    return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, provider: "razorpay", holdExpiresAt: payment.holdExpiresAt.toISOString() } } };
+    return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, provider: "razorpay", holdExpiresAt: payment.holdExpiresAt.toISOString() }, ...offerBody } };
   };
+
+  // A first attempt at this booking (not a repeat of one already made) that passed every shape check.
+  if (!existing) report(funnel, { kind: "booking_started", hostId: host.id, eventTypeId: eventType.id });
 
   try {
     // The repeat skips the slot re-check and the limiter, as the free repeat above does.
@@ -408,8 +435,14 @@ export async function handleCreateBooking(
       return { status: 429, body: { error: "too_many_requests" } };
     }
 
-    if (paid && priceMinor) return await startPaid(paid, priceMinor, 201);
+    if (paid && priceMinor) {
+      const started = await startPaid(paid, priceMinor, 201);
+      // Razorpay or Stripe alike: analytics counts it as completed only once the booking is confirmed (paid).
+      report(funnel, { kind: "booking_created", hostId: host.id, eventTypeId: eventType.id, bookingId: (started.body as { bookingId: string }).bookingId });
+      return started;
+    }
     const booking = await store.createBooking(bookingInput);
+    report(funnel, { kind: "booking_created", hostId: host.id, eventTypeId: eventType.id, bookingId: booking.id });
     return { status: 201, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken } };
   } catch (err) {
     if (isNamedError(err, "SlotTakenError")) return slotTaken(store, host, eventType, req.start, now);

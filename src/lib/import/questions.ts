@@ -1,5 +1,6 @@
 import type { ImportedQuestion } from "./types";
 import { text } from "./http";
+import { importMessage, type ImportMessageCode } from "./messages";
 
 export const MAX_QUESTIONS = 20;
 
@@ -14,20 +15,21 @@ export function question(rawLabel: unknown, kind: ImportedQuestion["kind"], requ
   const isSelect = kind === "single_select" || kind === "multi_select";
   const choices = isSelect ? [...new Set(rawChoices.map((c) => text(c, 200)).filter(Boolean))].slice(0, 50) : [];
   if (isSelect && choices.length < 2) {
-    notes.push(`"${label}" had fewer than two choices, so it is now a short answer.`);
+    notes.push(importMessage("fewChoices", { label }));
     return { label, kind: "short_text", required, choices: [] };
   }
-  if (changedFrom) notes.push(`"${label}" was a ${changedFrom} question; it is now a ${KIND_WORDS[kind]}.`);
+  if (changedFrom) notes.push(importMessage(NOW_KIND[kind], { label, from: changedFrom }));
   return { label, kind, required, choices };
 }
 
-const KIND_WORDS: Record<ImportedQuestion["kind"], string> = {
-  short_text: "short answer", long_text: "long answer", phone: "phone number", single_select: "single choice",
-  multi_select: "multiple choice", consent: "tick box",
+/** The note for a question that became the nearest Hourhand kind. */
+const NOW_KIND: Record<ImportedQuestion["kind"], ImportMessageCode> = {
+  short_text: "nowShortText", long_text: "nowLongText", phone: "nowPhone", single_select: "nowSingleSelect",
+  multi_select: "nowMultiSelect", consent: "nowConsent",
 };
 
 export function capQuestions(qs: ImportedQuestion[], notes: string[]): ImportedQuestion[] {
   if (qs.length <= MAX_QUESTIONS) return qs;
-  notes.push(`Only the first ${MAX_QUESTIONS} questions came over.`);
+  notes.push(importMessage("questionsCapped", { max: MAX_QUESTIONS }));
   return qs.slice(0, MAX_QUESTIONS);
 }
