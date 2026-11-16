@@ -211,6 +211,22 @@ Status as of 2026-10-11. The backend is built in rounds. Each round lands with t
 - **Fixed (low):** no second link to a one-off meeting; a typed time inside a clock-change gap is refused instead of moved.
 - **Accepted (low):** one-off times are blocked by other bookings' buffers as well as their times; `takeLink` checks expiry against the server clock (harmless in production).
 
+## Roadmap 1.4: Stripe Connect for hosts outside India (2026-11-15)
+
+Hosts outside India take payment at booking (paid sessions, no-show deposits, packages) through their own Stripe account, alongside Razorpay for Indian hosts. One provider per host.
+
+- **Onboarding (PR A):** the host picks a country on Integrations and clicks Connect Stripe. Hourhand creates a connected account with **Accounts v2** (`POST /v2/core/accounts`: `dashboard: full`, `fees_collector` and `losses_collector: stripe`, merchant `card_payments` requested) and sends the host to a v2 **Account Link**. This is the v2 form of a Standard account. OAuth was not used: Stripe says it "isn't recommended for new Connect platforms", so `STRIPE_CONNECT_CLIENT_ID` is not needed. The account id is stored sealed and bound to the host. "Ready" means `configuration.merchant.capabilities.card_payments.status = active`, re-read on return from Stripe and on `account.updated`. India isn't offered (Razorpay), nor are zero-decimal currencies (prices are stored in hundredths).
+- **Charging (PR B):** every payment is a Checkout Session created **on the host's account** (`Stripe-Account` header: a direct charge). The money lands in the host's balance, Stripe sends the receipt, and the host pays Stripe's fees. Hourhand's cut is `APPLICATION_FEE_BP` in `src/lib/payments/stripe-connect.ts`, 0 for now; any fee taken is stored per payment and returned with a refund. Calls pin `Stripe-Version: 2026-10-28.endive`.
+- **Currency:** prices and deposits are saved in the host's provider currency: INR on Razorpay, the Stripe account's default currency (USD, GBP, EUR, …) otherwise. A price saved in another currency (the host switched providers) is refused at booking until the host re-saves it; the event type page says so.
+- **Holds:** a Stripe booking holds its slot for 32 minutes. The session expires at 31, because Stripe's minimum is 30, so nobody can pay for a slot that was already released.
+- **Confirmed only from Stripe's own record:** either the signed Connect webhook or the booked page reading the session back from Stripe after Checkout's redirect (`?session_id=`). Both re-read the session as the host's account and check it against our row (reference, amount, currency, `payment_status = paid`). The redirect alone, or the webhook body, never confirms anything. A webhook naming a different account than the session's host is ignored. Events are deduplicated on `webhook_events` (`provider = 'stripe_connect'`). A failed one answers 500 and is processed on Stripe's retry.
+- **Reconciler and refunds (job runner):** pending sessions are re-read once a minute. Paid sessions are applied, expired ones release the slot, and an open session whose hold lapsed is expired in Stripe. Refunds (cancel within the event's rules, released deposits, payments that land after the slot was released) are full refunds on the host's account. Refunds already on the PaymentIntent are checked first, and the idempotency key is fixed per payment (`hh-refund-<payment id>`), so a guest is never refunded twice.
+- **GST invoices** are issued only for INR (Razorpay) payments; Stripe sends its own receipts.
+- **Switching providers:** connecting one provider is refused while the other is connected (also a unique index). Disconnecting Stripe is refused while any Stripe payment is pending or being refunded.
+- **Delayed payment methods** (bank debits) are allowed by Stripe's Dashboard settings. A booking whose payment is still processing when its 32-minute hold ends is released, and the payment is refunded if it later succeeds. Hosts who don't want that can turn those methods off in their Stripe Dashboard.
+- **Docs read 2026-11-15:** connect/oauth-standard-accounts, connect/standard-accounts, connect/accounts-v2/account-creation, api/v2/core/accounts/create and retrieve, api/v2/core/account-links/create, connect/direct-charges (Stripe-hosted), connect/webhooks (Accounts v2), all on docs.stripe.com.
+- **Evidence:** `stripe-connect.test.ts` (18) and `stripe-checkout.test.ts` (27) against a fake Stripe and Postgres 16; each key guard was set aside and its test failed (listed in PRs #13 and the part B PR). **Not yet run against real Stripe:** needs a sandbox platform with Connect enabled.
+
 ## Production addresses for hourhand.cloud
 
 Set `BETTER_AUTH_URL=https://hourhand.cloud` in Coolify. Register exactly these:
@@ -221,7 +237,8 @@ Set `BETTER_AUTH_URL=https://hourhand.cloud` in Coolify. Register exactly these:
 | Google Cloud → OAuth consent screen → Authorized domains | `hourhand.cloud` (home page and privacy policy must be on this domain for verification) |
 | Microsoft Entra → app → Authentication → Web redirect URIs (B6) | `https://hourhand.cloud/api/auth/callback/microsoft` and `https://hourhand.cloud/api/calendars/microsoft/callback` |
 | Razorpay Dashboard → Webhooks (your plans) | `https://hourhand.cloud/api/webhooks/razorpay`, events `subscription.*` |
-| Stripe Dashboard → Webhooks (if you get Stripe) | `https://hourhand.cloud/api/webhooks/stripe` |
+| Stripe Dashboard → Webhooks (if you get Stripe for plans) | `https://hourhand.cloud/api/webhooks/stripe` (events from **Your account**) |
+| Stripe → Workbench → Webhooks, **Events from: Connected accounts** (roadmap 1.4, hosts outside India) | `https://hourhand.cloud/api/webhooks/stripe-connect`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `account.updated`, `account.application.deauthorized`. Its signing secret goes in `STRIPE_CONNECT_WEBHOOK_SECRET`. Nothing to register for onboarding: the return and refresh URLs (`/api/payments/stripe/return`, `/refresh`) are sent with each link |
 | Google Calendar instant sync | nothing to register: Hourhand tells Google `https://hourhand.cloud/api/webhooks/google-calendar` itself |
 | Resend → Domains | `hourhand.cloud`, then `EMAIL_FROM=Hourhand <booking@hourhand.cloud>`; add the SPF, DKIM and DMARC records Resend shows to the domain's DNS. Replies from guests and hosts go to each other (Reply-To), not to this address; if you also want mail sent to booking@ to arrive somewhere, add a mailbox (Google Workspace or Zoho) with its own MX records |
 | DNS | an A record for `hourhand.cloud` (and `www`) pointing at the Coolify server; Coolify issues the certificate |
@@ -271,6 +288,7 @@ RAZORPAY_KEY_SECRET=
 RAZORPAY_WEBHOOK_SECRET=
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
+STRIPE_CONNECT_WEBHOOK_SECRET=
 RAZORPAY_PLAN_SOLO_MONTH=
 RAZORPAY_PLAN_SOLO_YEAR=
 RAZORPAY_PLAN_DUO_MONTH=

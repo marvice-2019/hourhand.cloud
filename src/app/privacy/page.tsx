@@ -43,7 +43,7 @@ export default function PrivacyPage() {
             If you connect Google Calendar: the list of your calendars, and the times you are busy on the calendars you choose to check. We read when you are busy, not what your meetings are about.
           </li>
           <li>The calendar events Hourhand creates for your bookings, so we can move or delete them when a booking changes.</li>
-          <li>If you take payments at booking: your own Razorpay key pair, which we seal with AES-256-GCM encryption before storing it.</li>
+          <li>If you take payments at booking: your own Razorpay key pair, which we seal with AES-256-GCM encryption before storing it, or the id of your Stripe account with its country, currency and setup status (an id, not a password or key).</li>
           <li>Your plan and billing status (which plan, when it renews, whether a payment went through). Card and UPI details stay with Razorpay; we never see them.</li>
           <li>The settings you choose: event types, availability, your booking link and time zone.</li>
         </ul>
@@ -61,7 +61,7 @@ export default function PrivacyPage() {
           <li>To run the service you asked for: show free times, make bookings, put them in the host&apos;s calendar and create Google Meet links.</li>
           <li>To send the emails a booking needs: confirmations, reminders, reschedules and cancellations, and sign-in links.</li>
           <li>To tell a host when a calendar connection stops working, and to remind them 7 days before a plan renews.</li>
-          <li>To take payment for Hourhand plans, and to pass guests&apos; booking payments to the host&apos;s own Razorpay account.</li>
+          <li>To take payment for Hourhand plans, and to pass guests&apos; booking payments to the host&apos;s own Razorpay or Stripe account.</li>
           <li>To keep the service secure, stop abuse, and meet our legal and tax duties.</li>
         </ul>
         <p className={p}>We use personal data because you asked us to provide the service (or a host did, on your behalf), because the law requires it, or for the legitimate interest of keeping Hourhand safe and working.</p>
@@ -87,7 +87,7 @@ export default function PrivacyPage() {
             <strong>Google</strong> provides sign-in with Google, Google Calendar and Google Meet.
           </li>
           <li>
-            <strong>Razorpay</strong> takes payment for Hourhand plans. For booking payments, the guest pays into the host&apos;s own Razorpay account.
+            <strong>Razorpay</strong> takes payment for Hourhand plans. For booking payments, the guest pays into the host&apos;s own Razorpay account, or, for hosts outside India, the host&apos;s own Stripe account through <strong>Stripe</strong>, which then holds the guest&apos;s card details and sends their receipt.
           </li>
           <li>
             <strong>Stripe</strong>, only if we offer card payments for customers outside India.
