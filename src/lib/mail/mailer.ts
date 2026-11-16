@@ -11,6 +11,30 @@ export interface Mail {
   idempotencyKey: string;
   replyTo?: string;
   attachments?: Attachment[];
+  /** Extra headers, such as List-Unsubscribe. Names and values must be single-line; anything else is refused before sending. */
+  headers?: Record<string, string>;
+}
+
+/**
+ * RFC 2369 / RFC 8058 headers for mail a guest can opt out of: the mail client shows its own "Unsubscribe" button and,
+ * with List-Unsubscribe-Post, sends one POST to `oneClickUrl` with no page and no confirmation (Gmail and Yahoo
+ * require this of bulk senders). The URL must be https and must act on that POST alone.
+ */
+export function listUnsubscribeHeaders(oneClickUrl: string): Record<string, string> {
+  return { "List-Unsubscribe": `<${oneClickUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" };
+}
+
+/** A header name is a token; a value has no line breaks, so a crafted value can't add headers of its own. */
+const HEADER_NAME = /^[A-Za-z0-9-]{1,76}$/;
+const RESERVED = new Set(["from", "to", "cc", "bcc", "subject", "reply-to", "content-type", "mime-version"]);
+
+export function checkHeaders(headers: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  for (const [name, value] of Object.entries(headers)) {
+    if (!HEADER_NAME.test(name) || RESERVED.has(name.toLowerCase())) throw new MailError(`Refusing header name ${JSON.stringify(name.slice(0, 80))}`, false);
+    if (typeof value !== "string" || /[\r\n\0]/.test(value) || value.length > 2000) throw new MailError(`Refusing value for header ${name}`, false);
+  }
+  return Object.keys(headers).length ? headers : undefined;
 }
 
 export interface Mailer { send(mail: Mail): Promise<{ id: string }> }
@@ -38,6 +62,7 @@ export function isRetryableStatus(status: number, name?: string): boolean {
 export function resendMailer(apiKey: string, from: string, fetchImpl: Fetch = fetch): Mailer {
   return {
     async send(mail) {
+      const headers = checkHeaders(mail.headers);
       let res: Response;
       try {
         res = await fetchImpl("https://api.resend.com/emails", {
@@ -46,6 +71,7 @@ export function resendMailer(apiKey: string, from: string, fetchImpl: Fetch = fe
           body: JSON.stringify({
             from, to: [mail.to], subject: mail.subject, html: mail.html, text: mail.text,
             ...(mail.replyTo ? { reply_to: mail.replyTo } : {}),
+            ...(headers ? { headers } : {}),
             ...(mail.attachments ? { attachments: mail.attachments.map((a) => ({ filename: a.filename, content: a.content, content_type: a.contentType })) } : {}),
           }),
           signal: AbortSignal.timeout(15_000),
