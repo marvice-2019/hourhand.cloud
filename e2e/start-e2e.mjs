@@ -9,6 +9,7 @@ const env = {
   DATABASE_URL: databaseUrl,
   BETTER_AUTH_URL: `http://localhost:${port}`,
   HOURHAND_MAIL_TO_LOG: "1",
+  TOKEN_ENCRYPTION_KEY: randomBytes(32).toString("hex"), // client and session notes are sealed with it
   ["BETTER_AUTH_" + "SEC" + "RET"]: randomBytes(32).toString("hex"),
 };
 const child = spawn("node_modules/.bin/next", ["start", "-p", port], { env, stdio: "inherit" });

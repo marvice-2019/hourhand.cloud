@@ -12,9 +12,16 @@ import { store } from "@/lib/data";
 import { formatDate, zoneName } from "@/lib/format";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { LOCATION_KEYS, resolveLocale, t, tNodes } from "@/lib/i18n/guest";
+import { mt } from "@/lib/i18n/mail";
 import { AddToCalendar } from "@/components/AddToCalendar";
 import { authEnabled, resolveBaseUrl } from "@/lib/auth/auth";
+import { DataRequest } from "@/components/DataRequest";
+import { getPool } from "@/lib/data/pg-store";
+import { openRequestsForToken } from "@/lib/privacy/rights";
 import { pt } from "@/lib/i18n/portal";
+import { SmsToggle } from "@/components/SmsToggle";
+import { smsConfig, smsNumber } from "@/lib/sms/config";
+import { maskedPhone } from "@/lib/sms/manage";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +44,10 @@ export default async function ManageBookingPage({ params, searchParams }: { para
   // A week of a weekly series: its place, and how many later weeks are still to come (they can be cancelled with it).
   const series = booking.seriesId ? (await store.listBookings(booking.hostId)).filter((b) => b.seriesId === booking.seriesId) : [];
   const now = new Date();
+  // Texts: only where SMS is set up and the booking has an Indian mobile on it.
+  const textNumber = smsConfig() && process.env.DATABASE_URL ? smsNumber(booking.invitee.phone) : null;
+  // Requests already open with the host (a copy, deletion), so the guest sees the deadline instead of asking twice.
+  const openRequests = authEnabled() ? (await openRequestsForToken(getPool(process.env.DATABASE_URL as string), token)).map((r) => ({ kind: r.kind, dueAt: r.dueAt.toISOString() })) : null;
   const laterWeeks = series.filter((b) => (b.seriesIndex ?? 0) > (booking.seriesIndex ?? 0) && b.status === "confirmed" && b.startAt > now).length;
 
   return (
@@ -73,11 +84,12 @@ export default async function ManageBookingPage({ params, searchParams }: { para
       ) : (
         <>
         <AddToCalendar
-          token={token} title={`${eventType.name} with ${host.name}`} start={booking.startAt} end={booking.endAt} locale={locale}
+          token={token} title={mt(locale, "calWith", { event: eventType.name, host: host.name })} start={booking.startAt} end={booking.endAt} locale={locale}
           location={booking.joinUrl ?? (booking.locationKind ? t(locale, LOCATION_KEYS[booking.locationKind]) : null)}
           manageUrl={`${(resolveBaseUrl() ?? "").replace(/\/+$/, "")}/b/${token}`}
         />
         {canSayRunningLate(booking.startAt, new Date()) && <RunningLate token={token} hostName={host.name} told={booking.invitee.runningLateMinutes} locale={locale} />}
+        {textNumber && <SmsToggle token={token} phone={maskedPhone(textNumber)} on={booking.invitee.smsOptIn === true} locale={locale} />}
         <ManageBooking token={token} slug={host.slug} event={eventType.slug} bookingWindowDays={eventType.bookingWindowDays} hostName={host.name} laterWeeks={laterWeeks} locale={locale} langQuery={q} cancelPolicy={eventType.cancelPolicy} groupSeat={booking.classKey !== null} />
         </>
       )}
@@ -86,6 +98,7 @@ export default async function ManageBookingPage({ params, searchParams }: { para
           <Link href={`/${host.slug}/portal${q}`} target="_top" className="font-semibold text-accent underline">{pt(locale, "openPortal", { host: host.name })}</Link>
         </p>
       )}
+      {openRequests && <DataRequest token={token} hostName={host.name} tz={tz} open={openRequests} locale={locale} />}
     </main>
   );
 }
