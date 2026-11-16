@@ -70,6 +70,15 @@ export const BOOKING_LIMITS = {
   perIp: { max: 10, windowMs: 60 * 60_000 },
 } satisfies Record<string, Limit>;
 
+/**
+ * Coupon codes tried (a quote or a booking with a code), so codes can't be guessed: per client address (hashed) and per
+ * event type or package, which also catches one guesser spread over many addresses. Windows stay within 10 minutes.
+ */
+export const COUPON_LIMITS = {
+  perIp: { max: 10, windowMs: 10 * 60_000 },
+  perItem: { max: 40, windowMs: 10 * 60_000 },
+} satisfies Record<string, Limit>;
+
 /** Payment confirmations, per client address: generous for a guest retrying, tight enough to stop probing tokens. */
 export const CONFIRM_PAYMENT_LIMIT: Limit = { max: 20, windowMs: 60 * 60_000 };
 
