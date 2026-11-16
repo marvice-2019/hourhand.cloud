@@ -5,6 +5,7 @@ import { formatAmount } from "@/lib/money";
 import { store } from "@/lib/data";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
 import { guestDurations, lengthsLabel, priceRange } from "@/lib/durations";
+import { smsOffered } from "@/lib/sms/offer";
 
 export const dynamic = "force-dynamic";
 // A link is for one person: keep it out of search results and away from referrer headers.
@@ -44,7 +45,7 @@ export default async function LinkPage({ params }: { params: Promise<{ token: st
       </p>
       {eventType.description && <p className="mt-2 text-text">{eventType.description}</p>}
       <BookingFlow
-        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} linkToken={token} durations={guestDurations(eventType, (m) => formatAmount(m, eventType.currency))} bookingWindowDays={eventType.bookingWindowDays} questions={questions} whatsapp={await whatsappOffered(host.id)}
+        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} linkToken={token} durations={guestDurations(eventType, (m) => formatAmount(m, eventType.currency))} bookingWindowDays={eventType.bookingWindowDays} questions={questions} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)}
         paid={eventType.priceMinor !== null ? { price: formatAmount(eventType.priceMinor, eventType.currency), hostName: host.name, eventName: eventType.name }
           : eventType.depositMinor !== null ? { price: formatAmount(eventType.depositMinor, eventType.currency), hostName: host.name, eventName: eventType.name, deposit: true } : null}
       />

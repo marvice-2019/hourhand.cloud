@@ -8,6 +8,7 @@ import { authEnabled } from "@/lib/auth/auth";
 import { store } from "@/lib/data";
 import { getPool } from "@/lib/data/pg-store";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
+import { smsOffered } from "@/lib/sms/offer";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
 import { purchaseByToken, purchaseSessions } from "@/lib/packages/packages";
 import { guestDurations } from "@/lib/durations";
@@ -90,7 +91,7 @@ export default async function PackagePage({ params, searchParams }: { params: Pr
           <h2 id="book" className="font-semibold text-text">Book a session</h2>
           <BookingFlow
             slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} bookingWindowDays={eventType.bookingWindowDays}
-            durations={guestDurations(eventType, String, { showPrice: false })} questions={questions} packageToken={token} maxWeeks={Math.min(left, 12)} whatsapp={await whatsappOffered(host.id)}
+            durations={guestDurations(eventType, String, { showPrice: false })} questions={questions} packageToken={token} maxWeeks={Math.min(left, 12)} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)}
           />
         </section>
       )}

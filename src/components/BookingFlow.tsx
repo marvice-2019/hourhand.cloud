@@ -42,12 +42,14 @@ interface Props {
   waitlist?: boolean;
   /** Offer automatic WhatsApp updates to the phone the guest gives. */
   whatsapp?: boolean;
+  /** Offer booking texts (SMS) to an Indian mobile the guest gives. */
+  sms?: boolean;
   /** Lengths to pick from (2 or more), shortest first, each with its price as shown (null = free). Left out = one length. */
   durations?: { minutes: number; price: string | null }[];
 }
 
 /** Public booking: pick a time, then fill in details. The picker stays mounted so "Pick another time" keeps the month and day. */
-export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = null, linkToken, initialAt, host, maxWeeks = 1, packageToken, waitlist = false, locale = "en", langQuery = "", prefill, whatsapp = false, durations }: Props) {
+export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = null, linkToken, initialAt, host, maxWeeks = 1, packageToken, waitlist = false, locale = "en", langQuery = "", prefill, whatsapp = false, sms = false, durations }: Props) {
   const [picked, setPicked] = useState<{ slot: string; tz: string } | null>(null);
   // Several lengths: the guest picks one first; times, the price and the booking all follow it.
   const choosing = durations !== undefined && durations.length > 1;
@@ -77,7 +79,7 @@ export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = 
       </div>
       {picked && (
         <DetailsForm
-          slug={slug} event={event} linkToken={linkToken} tz={picked.tz} slot={picked.slot} questions={questions} paid={packageToken ? null : shownPaid} duration={choosing ? duration ?? undefined : undefined} host={host} maxWeeks={maxWeeks} packageToken={packageToken} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={whatsapp}
+          slug={slug} event={event} linkToken={linkToken} tz={picked.tz} slot={picked.slot} questions={questions} paid={packageToken ? null : shownPaid} duration={choosing ? duration ?? undefined : undefined} host={host} maxWeeks={maxWeeks} packageToken={packageToken} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={whatsapp} sms={sms}
           onPick={(slot) => setPicked({ slot, tz: picked.tz })} onBack={() => setPicked(null)}
         />
       )}
@@ -86,11 +88,11 @@ export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = 
 }
 
 interface FormProps {
-  slug: string; event: string; linkToken?: string; tz: string; slot: string; questions: FlowQuestion[]; paid: Props["paid"]; host: Props["host"]; maxWeeks: number; packageToken?: string; locale: Locale; langQuery: string; prefill?: { name: string; email: string }; whatsapp: boolean; duration?: number;
+  slug: string; event: string; linkToken?: string; tz: string; slot: string; questions: FlowQuestion[]; paid: Props["paid"]; host: Props["host"]; maxWeeks: number; packageToken?: string; locale: Locale; langQuery: string; prefill?: { name: string; email: string }; whatsapp: boolean; sms: boolean; duration?: number;
   onPick: (slot: string) => void; onBack: () => void;
 }
 
-function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, maxWeeks, packageToken, locale, langQuery, prefill, whatsapp, duration, onPick, onBack }: FormProps) {
+function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, maxWeeks, packageToken, locale, langQuery, prefill, whatsapp, sms, duration, onPick, onBack }: FormProps) {
   const router = useRouter();
   // A new key starts a fresh attempt; it changes only after an attempt is over (payment couldn't start, or the hold ran out).
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
@@ -165,7 +167,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
     try {
       const res = await fetch("/api/bookings", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(duration ? { duration } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), locale }),
+        body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(duration ? { duration } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), ...(data.get("smsOptIn") ? { smsOptIn: true } : {}), locale }),
       });
       const body = await res.json();
       if ((res.status === 201 || res.status === 200) && body.payment?.provider === "stripe" && typeof body.payment.url === "string") {
@@ -195,7 +197,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
       else if (res.status === 409) { setTaken(body.nextSlots ?? []); setErrors({}); }
       else if (res.status === 400) {
         // Server messages are English; show ours for the fields it names.
-        const own: Record<string, GuestKey> = { name: "errName", email: "errEmail", phone: "errPhone", timezone: "errTimezone", guests: "errGuests" };
+        const own: Record<string, GuestKey> = { name: "errName", email: "errEmail", phone: "errPhone", smsOptIn: "errSmsPhone", timezone: "errTimezone", guests: "errGuests" };
         const fields = (body.fields ?? {}) as Record<string, string>;
         setErrors(Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, own[k] ? t(locale, own[k]) : k.startsWith("answers.") ? t(locale, "errAnswer") : v])));
       }
@@ -267,12 +269,21 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
       )}
       <div><Label htmlFor="name">{t(locale, "yourName")}</Label><Input id="name" name="name" autoComplete="name" required maxLength={100} defaultValue={prefill?.name} error={errors.name} /></div>
       <div><Label htmlFor="email">{t(locale, "email")}</Label><Input id="email" name="email" type="email" autoComplete="email" required defaultValue={prefill?.email} error={errors.email} /></div>
-      <div><Label htmlFor="phone">{t(locale, "phoneOptional")}</Label><Input id="phone" name="phone" type="tel" autoComplete="tel" error={errors.phone} /></div>
+      <div><Label htmlFor="phone">{t(locale, sms && !whatsapp ? "phoneOptionalSms" : "phoneOptional")}</Label><Input id="phone" name="phone" type="tel" autoComplete="tel" error={errors.phone} /></div>
       {whatsapp && (
         <label className="flex items-start gap-2 text-text">
           <input type="checkbox" name="whatsappOptIn" value="1" className="mt-1 size-5 accent-accent" />
           <span>{t(locale, "whatsappOptIn")}</span>
         </label>
+      )}
+      {sms && (
+        <div>
+          <label className="flex items-start gap-2 text-text">
+            <input type="checkbox" name="smsOptIn" value="1" className="mt-1 size-5 accent-accent" aria-describedby={errors.smsOptIn ? "sms-error" : undefined} />
+            <span>{t(locale, "smsOptIn")}</span>
+          </label>
+          {errors.smsOptIn && <p id="sms-error" className="mt-1 text-sm text-danger" role="alert">{errors.smsOptIn}</p>}
+        </div>
       )}
       {showGuests || errors.guests ? (
         <div>

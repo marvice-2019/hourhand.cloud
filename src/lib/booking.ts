@@ -5,6 +5,7 @@ import { computeOneOffSlots, computeSlotSeats, isSyncStale } from "./slots";
 import { isNamedError, type Booking, type DataStore, type EventType, type LinkUnavailableError, type User } from "./data/types";
 import { isLocale } from "./i18n/guest";
 import { waNumber } from "./whatsapp";
+import { smsNumber } from "./sms/config";
 import { BOOKING_LIMITS, type createRateLimiter } from "./rate-limit";
 import type { Plan } from "./billing/plans";
 import { startPaidBooking } from "./payments/booking-payments";
@@ -178,6 +179,8 @@ export interface BookingRequest {
   locale: string;
   /** Updates on WhatsApp to `phone`: only with the guest's own tick, and only for a number WhatsApp can be sent to. */
   whatsappOptIn: boolean;
+  /** Texts (SMS) to `phone`: only with the guest's own tick, and only for an Indian mobile. */
+  smsOptIn: boolean;
 }
 
 export type Validation = { ok: true; value: BookingRequest } | { ok: false; fields: Record<string, string> };
@@ -208,6 +211,8 @@ export function validateBookingRequest(input: unknown): Validation {
   if (phone && !/^\+?[0-9 ()-]{7,20}$/.test(phone)) fields.phone = "Enter a phone number with country code, like +91 98765 43210.";
   const whatsappOptIn = body.whatsappOptIn === true;
   if (whatsappOptIn && !fields.phone && !waNumber(phone)) fields.phone = "For WhatsApp updates, enter your number with country code, like +91 98765 43210.";
+  const smsOptIn = body.smsOptIn === true;
+  if (smsOptIn && !fields.phone && !smsNumber(phone)) fields.smsOptIn = "Text updates go to Indian mobile numbers only, like +91 98765 43210.";
   const weeks = body.weeks === undefined ? 1 : body.weeks;
   if (!Number.isInteger(weeks) || (weeks as number) < 1 || (weeks as number) > 12) fields.weeks = "Pick 1 to 12 weeks.";
   const duration = body.duration === undefined || body.duration === null ? null : body.duration;
@@ -245,7 +250,7 @@ export function validateBookingRequest(input: unknown): Validation {
   if (Object.keys(fields).length > 0 || !start) return { ok: false, fields };
   return {
     ok: true,
-    value: { slug: str("slug"), event: str("event"), linkToken: linkToken || null, start, name, email, timezone: body.timezone as string, phone: phone || null, answers, idempotencyKey, weeks: weeks as number, packageToken: packageToken || null, durationMinutes: duration as number | null, guests, locale: isLocale(body.locale) ? body.locale : "en", whatsappOptIn },
+    value: { slug: str("slug"), event: str("event"), linkToken: linkToken || null, start, name, email, timezone: body.timezone as string, phone: phone || null, answers, idempotencyKey, weeks: weeks as number, packageToken: packageToken || null, durationMinutes: duration as number | null, guests, locale: isLocale(body.locale) ? body.locale : "en", whatsappOptIn, smsOptIn },
   };
 }
 
@@ -330,7 +335,7 @@ export async function handleCreateBooking(
     ...(found.linkToken ? { bookingLinkToken: found.linkToken, now } : {}),
     ...(req.packageToken ? { packageToken: req.packageToken } : {}),
     invitee: {
-      name: req.name, email: req.email, timezone: req.timezone, phone: req.phone, guests: req.guests, locale: req.locale, whatsappOptIn: req.whatsappOptIn,
+      name: req.name, email: req.email, timezone: req.timezone, phone: req.phone, guests: req.guests, locale: req.locale, whatsappOptIn: req.whatsappOptIn, smsOptIn: req.smsOptIn,
       answers: questions.filter((q) => req.answers[q.id]).map((q) => ({ questionId: q.id, label: q.label, answer: req.answers[q.id] })),
     },
   };
