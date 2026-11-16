@@ -1,4 +1,4 @@
--- Roadmap 2.5, part 2: the client file. One page per client with their bookings, answers, money, notes and consent.
+-- Roadmap 2.5, part 2 (after 0043_consent_and_notes): the client file. One page per client with their bookings, answers, money, notes and consent.
 -- Additive only: note edit history, the owner's "keep versions" choice, and an index for package purchases by client.
 
 -- Every save or clear of a private note (a client note or a session note on one booking): who and when. The text of

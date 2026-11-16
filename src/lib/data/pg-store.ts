@@ -7,6 +7,7 @@ import { insertConsent } from "../privacy/consent";
 import { seal, tokenKey, unseal } from "../crypto/seal";
 import { bookingNoteAad, clientNoteAad } from "../privacy/notes";
 import { getKeepVersions, listRevisions, recordRevision, setKeepVersions } from "../privacy/note-history";
+import { pollHolds } from "../polls/holds";
 import { PackageUnavailableError, takeCredits } from "../packages/packages";
 import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
@@ -253,7 +254,7 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
   }
 
   const draftValues = (d: EventTypeDraft) => [d.name, d.slug, d.description, d.durationMinutes, d.minNoticeMinutes, d.bookingWindowDays, d.startIncrementMinutes,
-    d.bufferBeforeMinutes, d.bufferAfterMinutes, d.dailyLimit, d.cancelCutoffMinutes, d.priceMinor, d.priceMinor === null ? null : d.currency, d.hidden, d.maxRepeats, d.priceMinor === null ? d.depositMinor : null, d.redirectUrl, d.weeklyLimit, d.cancelPolicy, d.seatLimit === null ? "one_on_one" : "group", d.seatLimit];
+    d.bufferBeforeMinutes, d.bufferAfterMinutes, d.dailyLimit, d.cancelCutoffMinutes, d.priceMinor, d.priceMinor === null && d.depositMinor === null ? null : (d.currency ?? "INR"), d.hidden, d.maxRepeats, d.priceMinor === null ? d.depositMinor : null, d.redirectUrl, d.weeklyLimit, d.cancelPolicy, d.seatLimit === null ? "one_on_one" : "group", d.seatLimit];
 
   async function slugSafe<T>(work: () => Promise<T>): Promise<T> {
     try {
@@ -420,6 +421,9 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
       });
       const [{ link }] = await linkRows(pool, "l.id = $1", [linkId], now);
       return { eventType, link, token };
+    },
+    async listPollHolds(userId, from, to, now) {
+      return pollHolds(pool, userId, from, to, now);
     },
     async listOneOffTimes(eventTypeId) {
       if (!isId(eventTypeId)) return [];
