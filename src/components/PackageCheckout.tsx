@@ -30,6 +30,8 @@ export function PackageCheckout({ packageId, price, hostName, packageName, coupo
       if (res.status === 429) { setMessage("Too many tries from here. Try again later."); return; }
       if (!res.ok) { setMessage("Something went wrong and nothing was charged. Try again."); return; }
       if (!body.payment) { router.push(`/p/${body.token}`); return; } // already paid
+      // Stripe hosts: Checkout on the host's own account; Stripe brings the buyer back to their package page.
+      if (body.payment.provider === "stripe" && typeof body.payment.url === "string") { window.location.assign(body.payment.url); return; }
       const result = await payWithRazorpay(body.payment as CheckoutPayment, {
         name: hostName, description: packageName, prefill: { name: buyer.name, email: buyer.email, ...(buyer.phone ? { contact: buyer.phone } : {}) },
       });

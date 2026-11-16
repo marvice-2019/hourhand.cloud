@@ -116,11 +116,12 @@ async function queueInvoiceEmail(db: Db, hostId: string, invoiceId: string, to: 
 /** A tax invoice for a captured booking payment (not a deposit). At most one per payment. */
 export async function invoiceForPayment(db: Db, paymentId: string, now: Date): Promise<string | null> {
   const { rows: [p] } = await db.query(
-    `select p.host_id, p.booking_id, p.amount_minor, p.kind, i.name, i.email, e.name as event_name, e.duration_minutes, b.start_at,
+    `select p.host_id, p.booking_id, p.amount_minor, p.kind, p.currency, i.name, i.email, e.name as event_name, e.duration_minutes, b.start_at,
        exists (select 1 from invoices v where v.payment_id = p.id and v.kind = 'invoice') as done
      from payments p join bookings b on b.id = p.booking_id join invitees i on i.booking_id = b.id join event_types e on e.id = b.event_type_id
      where p.id = $1`, [paymentId]);
-  if (!p || p.kind !== "payment" || p.done) return null;
+  // Indian GST invoices are for rupee payments (Razorpay). Stripe sends its own receipts for other currencies.
+  if (!p || p.kind !== "payment" || p.done || p.currency !== "INR") return null;
   return issue(db, {
     hostId: p.host_id, totalMinor: p.amount_minor, buyerName: p.name, buyerEmail: p.email, paymentId, offer: await offerForBooking(db, p.booking_id),
     description: `${p.event_name} (${p.duration_minutes} min), ${istDate(new Date(p.start_at))}`,
@@ -130,10 +131,10 @@ export async function invoiceForPayment(db: Db, paymentId: string, now: Date): P
 /** A tax invoice for a paid session package. At most one per purchase. */
 export async function invoiceForPurchase(db: Db, purchaseId: string, now: Date): Promise<string | null> {
   const { rows: [p] } = await db.query(
-    `select p.host_id, p.price_minor, p.guest_name, p.guest_email, p.sessions, k.name as package_name, e.name as event_name,
+    `select p.host_id, p.price_minor, p.currency, p.guest_name, p.guest_email, p.sessions, k.name as package_name, e.name as event_name,
        exists (select 1 from invoices v where v.package_purchase_id = p.id and v.kind = 'invoice') as done
      from package_purchases p join packages k on k.id = p.package_id join event_types e on e.id = p.event_type_id where p.id = $1`, [purchaseId]);
-  if (!p || p.done) return null;
+  if (!p || p.done || p.currency !== "INR") return null;
   return issue(db, {
     hostId: p.host_id, totalMinor: p.price_minor, buyerName: p.guest_name, buyerEmail: p.guest_email, purchaseId, offer: await offerForPurchase(db, purchaseId),
     description: `${p.package_name}: ${p.sessions} × ${p.event_name}`,

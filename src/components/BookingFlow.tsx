@@ -7,7 +7,7 @@ import { Input, Label } from "@/components/ui/Input";
 import { focusRing } from "@/components/ui/focus";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
 import { t, tNodes, type GuestKey, type Locale } from "@/lib/i18n/guest";
-import { formatMoney } from "@/lib/billing/plans";
+import { formatAmount } from "@/lib/money";
 import { offerLabel } from "@/lib/offers/labels";
 import type { AppliedOffer } from "@/lib/offers/offers";
 import { zoneCheck } from "@/lib/tz-confirm";
@@ -53,6 +53,8 @@ interface Props {
 
 export interface FlowOffers {
   listMinor: number;
+  /** The price's ISO currency; amounts are shown in it. */
+  currency: string;
   /** The price after today's best campaign, and its name. */
   campaign: { name: string; chargeMinor: number } | null;
   sliding: { minMinor: number; suggestedMinor: number; maxMinor: number; note: string | null } | null;
@@ -96,7 +98,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
   const [applying, setApplying] = useState(false);
   const [payRupees, setPayRupees] = useState(() => (offers?.sliding ? String(offers.sliding.suggestedMinor / 100) : ""));
   const payMinor = offers?.sliding ? Math.round(Number(payRupees) * 100) : null;
-  const money = (m: number) => formatMoney(m, "INR");
+  const money = (m: number) => formatAmount(m, offers?.currency ?? "INR");
   /** The price the button shows; the server works out the real one when the order is made. */
   const shownPrice = paid && offers
     ? money(offers.sliding ? (Number.isFinite(payMinor) && payMinor! > 0 ? payMinor! : offers.sliding.suggestedMinor) : quote?.chargeMinor ?? offers.campaign?.chargeMinor ?? offers.listMinor)
@@ -192,6 +194,15 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
         body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), locale, ...(offers && code.trim() ? { couponCode: code.trim() } : {}), ...(offers?.sliding && payMinor ? { payMinor } : {}) }),
       });
       const body = await res.json();
+      if ((res.status === 201 || res.status === 200) && body.payment?.provider === "stripe" && typeof body.payment.url === "string") {
+        // Stripe Checkout on the host's account. It can't run inside a frame, so an embedded booking page opens it in a new tab
+        // and shows the held booking here; Stripe brings the guest back to the booked page, which checks the payment.
+        if (window.top !== window.self) {
+          window.open(body.payment.url, "_blank", "noopener");
+          router.push(`/${slug}/${event}/booked/${body.bookingId}${langQuery}`);
+        } else window.location.assign(body.payment.url);
+        return;
+      }
       if ((res.status === 201 || res.status === 200) && body.payment) {
         setBusy(false);
         const prefill = { name: String(data.get("name") ?? ""), email: String(data.get("email") ?? ""), ...(data.get("phone") ? { contact: String(data.get("phone")) } : {}) };

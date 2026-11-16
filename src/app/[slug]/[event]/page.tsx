@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { BookingFlow } from "@/components/BookingFlow";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { resolveLocale, t } from "@/lib/i18n/guest";
-import { formatMoney } from "@/lib/billing/plans";
+import { formatAmount } from "@/lib/money";
 import { authEnabled } from "@/lib/auth/auth";
 import { store } from "@/lib/data";
 import { getPool } from "@/lib/data/pg-store";
@@ -36,12 +36,16 @@ export default async function PublicEventPage({ params, searchParams }: { params
   const canSell = pool ? plan !== "free" && (await razorpayStatus(pool, host.id)) !== null : false;
   const packages = pool && canSell ? await packagesForEventType(pool, host.id, eventType.id) : [];
   // Offers on the price (never a deposit): today's campaign, a sliding scale, a code box, the first-session line.
-  const pricing = pool && canSell && eventType.priceMinor !== null
-    ? await pagePricing(pool, host.id, plan, { kind: "event_type", id: eventType.id, listMinor: eventType.priceMinor }, new Date())
+  // Prices saved before the currency was recorded are rupees. pagePricing checks the plan; Razorpay or Stripe is the
+  // booking route's business, so a Stripe host's offers show here too.
+  const currency = eventType.currency ?? "INR";
+  const money = (m: number) => formatAmount(m, currency);
+  const pricing = pool && eventType.priceMinor !== null
+    ? await pagePricing(pool, host.id, plan, { kind: "event_type", id: eventType.id, listMinor: eventType.priceMinor, currency }, new Date())
     : null;
   const priceText = eventType.priceMinor === null ? null
-    : pricing?.sliding ? `${formatMoney(pricing.sliding.minMinor, "INR")}–${formatMoney(pricing.sliding.maxMinor, "INR")}`
-    : formatMoney(eventType.priceMinor, "INR");
+    : pricing?.sliding ? `${money(pricing.sliding.minMinor)}–${money(pricing.sliding.maxMinor)}`
+    : money(eventType.priceMinor);
   return (
     <main lang={locale} className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
       <EmbedResize />
@@ -52,13 +56,13 @@ export default async function PublicEventPage({ params, searchParams }: { params
       <p className="mt-2 text-text-muted">
         {t(locale, "minutes", { n: eventType.durationMinutes })}
         {priceText && (pricing?.campaign
-          ? <> · <s>{priceText}</s> <span className="font-semibold text-text">{t(locale, "offerWith", { price: formatMoney(pricing.campaign.chargeMinor, "INR"), name: pricing.campaign.name })}</span></>
+          ? <> · <s>{priceText}</s> <span className="font-semibold text-text">{t(locale, "offerWith", { price: money(pricing.campaign.chargeMinor), name: pricing.campaign.name })}</span></>
           : ` · ${priceText}`)}
       </p>
       {eventType.description && <p className="mt-2 text-text">{eventType.description}</p>}
       {eventType.priceMinor === null && eventType.depositMinor !== null && (
         <p className="mt-2 max-w-xl rounded-md bg-surface p-3 text-sm text-text">
-          {t(locale, "depositNote", { amount: formatMoney(eventType.depositMinor, "INR"), host: host.name })}
+          {t(locale, "depositNote", { amount: formatAmount(eventType.depositMinor, eventType.currency), host: host.name })}
         </p>
       )}
       {eventType.cancelPolicy && (
@@ -72,7 +76,7 @@ export default async function PublicEventPage({ params, searchParams }: { params
           {packages.map((p) => (
             <li key={p.id}>
               <Link href={`/pkg/${p.id}`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">
-                {t(locale, "packageOffer", { n: p.sessions, price: formatMoney(p.priceMinor, "INR") })}
+                {t(locale, "packageOffer", { n: p.sessions, price: formatAmount(p.priceMinor, p.currency) })}
               </Link>
             </li>
           ))}
@@ -81,11 +85,11 @@ export default async function PublicEventPage({ params, searchParams }: { params
       <BookingFlow
         slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)}
         offers={pricing && eventType.priceMinor !== null ? {
-          listMinor: eventType.priceMinor, campaign: pricing.campaign && { name: pricing.campaign.name, chargeMinor: pricing.campaign.chargeMinor },
+          listMinor: eventType.priceMinor, currency, campaign: pricing.campaign && { name: pricing.campaign.name, chargeMinor: pricing.campaign.chargeMinor },
           sliding: pricing.sliding, coupons: pricing.coupons, firstSession: pricing.firstSession && discountText(pricing.firstSession),
         } : null}
-        paid={eventType.priceMinor !== null ? { price: formatMoney(eventType.priceMinor, "INR"), hostName: host.name, eventName: eventType.name }
-          : eventType.depositMinor !== null ? { price: formatMoney(eventType.depositMinor, "INR"), hostName: host.name, eventName: eventType.name, deposit: true } : null}
+        paid={eventType.priceMinor !== null ? { price: formatAmount(eventType.priceMinor, eventType.currency), hostName: host.name, eventName: eventType.name }
+          : eventType.depositMinor !== null ? { price: formatAmount(eventType.depositMinor, eventType.currency), hostName: host.name, eventName: eventType.name, deposit: true } : null}
       />
       <BookingFooter hostId={host.id} locale={locale} />
     </main>

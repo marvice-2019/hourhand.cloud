@@ -28,14 +28,16 @@ export interface PlanLimits {
   footer: boolean;
   /** Meeting polls open (taking votes) at once. */
   openPolls: number;
+  /** Clients can find the host's times by messaging Hourhand's WhatsApp number (after the host turns it on). */
+  whatsappBooking: boolean;
   /** Coupons, first-session discounts, sliding-scale prices and campaigns on paid event types and packages. */
   offers: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true, openPolls: 1, offers: false },
-  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, offers: true },
-  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, offers: true },
+  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, offers: false },
+  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, offers: true },
+  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, offers: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {

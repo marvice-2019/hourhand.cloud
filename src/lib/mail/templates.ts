@@ -4,6 +4,7 @@ import type { BookingEmailKind } from "../data/notifications";
 import { formatDate, formatTime, zoneName, type HourCycle } from "../format";
 import { GUEST_LOCATION_LABELS } from "../location-labels";
 import { formatMoney } from "../billing/plans";
+import { formatAmount } from "../money";
 import { buildIcs } from "./ics";
 import { LOCATION_KEYS, isLocale, t, type Locale } from "../i18n/guest";
 import { mt, type MailKey } from "../i18n/mail";
@@ -11,6 +12,9 @@ import { offerLabel } from "../offers/labels";
 import type { AdjustmentKind } from "../offers/pricing";
 import { pt } from "../i18n/poll";
 import type { Attachment } from "./mailer";
+
+/** Where a guest's payment went, for the host's emails. */
+const providerName = (c: { paidProvider?: "razorpay" | "stripe" | null }) => (c.paidProvider === "stripe" ? "Stripe" : "Razorpay");
 
 export interface BookingMailContext {
   bookingId: string;
@@ -32,6 +36,9 @@ export interface BookingMailContext {
   cancelReason: string | null;
   /** What the guest paid for this booking (paise, INR), or null for a free booking. */
   paidMinor?: number | null;
+  /** The paid amount's currency and where it went (Razorpay for INR, Stripe otherwise). */
+  paidCurrency?: string | null;
+  paidProvider?: "razorpay" | "stripe" | null;
   /** The payment was a refundable no-show deposit, not a price. */
   paidIsDeposit?: boolean;
   /** The one offer the price got (src/lib/offers): explained next to what was paid. */
@@ -115,7 +122,7 @@ function toHtml(b: Block): string {
 </div></body></html>`;
 }
 
-const render = (subject: string, b: Block, extra: Partial<RenderedMail> = {}): RenderedMail =>
+export const render = (subject: string, b: Block, extra: Partial<RenderedMail> = {}): RenderedMail =>
   ({ subject: oneLine(subject), text: toText(b), html: toHtml(b), ...extra });
 
 /** "Every week": the series' dates, one line each, when this is a series confirmation. */
@@ -126,11 +133,12 @@ const seriesRow = (c: BookingMailContext, tz: string, cycle: HourCycle, locale: 
 
 /** "₹944 (₹1,180 less ₹236, code DIWALI20)" when an offer took something off; otherwise just the amount. */
 function paidWithOffer(c: BookingMailContext, locale: Locale): string {
-  const paid = formatMoney(c.paidMinor ?? 0, "INR");
+  const money = (m: number) => formatAmount(m, c.paidCurrency);
+  const paid = money(c.paidMinor ?? 0);
   const o = c.offer;
   if (!o) return paid;
   if (o.discountMinor <= 0) return `${paid} (${offerLabel(locale, o)})`;
-  return t(locale, "offerPaidLine", { price: paid, list: formatMoney(o.listMinor, "INR"), amount: formatMoney(o.discountMinor, "INR"), label: offerLabel(locale, o) });
+  return t(locale, "offerPaidLine", { price: paid, list: money(o.listMinor), amount: money(o.discountMinor), label: offerLabel(locale, o) });
 }
 
 function guestRows(c: BookingMailContext): Row[] {
@@ -139,7 +147,7 @@ function guestRows(c: BookingMailContext): Row[] {
     ...seriesRow(c, c.guestTimezone, "12h", l), [g(c, "rWith"), hostLabel(c)]];
   const w = where(c, l);
   if (w) rows.push([g(c, "rWhere"), w]);
-  if (c.paidMinor) rows.push(c.paidIsDeposit ? [g(c, "rDeposit"), g(c, "rDepositValue", { amount: formatMoney(c.paidMinor, "INR") })] : [g(c, "rPaid"), paidWithOffer(c, l)]);
+  if (c.paidMinor) rows.push(c.paidIsDeposit ? [g(c, "rDeposit"), g(c, "rDepositValue", { amount: formatAmount(c.paidMinor, c.paidCurrency) })] : [g(c, "rPaid"), paidWithOffer(c, l)]);
   return rows;
 }
 
@@ -150,8 +158,8 @@ function hostRows(c: BookingMailContext): Row[] {
   if (w) rows.push(["Where", w]);
   for (const a of c.answers) if (a.answer.trim()) rows.push([a.label, a.answer]);
   if (c.paidMinor) rows.push(c.paidIsDeposit
-    ? ["Deposit", `${formatMoney(c.paidMinor, "INR")} in your Razorpay account. Refunded a day after the session unless you mark a no-show.`]
-    : ["Paid", `${paidWithOffer(c, "en")} to your Razorpay account`]);
+    ? ["Deposit", `${formatAmount(c.paidMinor, c.paidCurrency)} in your ${providerName(c)} account. Refunded a day after the session unless you mark a no-show.`]
+    : ["Paid", `${paidWithOffer(c, "en")} to your ${providerName(c)} account`]);
   return rows;
 }
 
@@ -171,12 +179,12 @@ const dashboardLink = (c: BookingMailContext) => ({ label: "Open in Hourhand", u
 
 function cancelNote(c: BookingMailContext, to: "guest" | "host"): string | undefined {
   if (to === "guest") {
-    const refund = !c.paidMinor ? "" : g(c, c.paidIsDeposit ? "refundDeposit" : "refundPayment", { amount: formatMoney(c.paidMinor, "INR") });
+    const refund = !c.paidMinor ? "" : g(c, c.paidIsDeposit ? "refundDeposit" : "refundPayment", { amount: formatAmount(c.paidMinor, c.paidCurrency) });
     return [refund, c.cancelReason ? g(c, "reason", { reason: c.cancelReason }) : ""].filter(Boolean).join(" ") || undefined;
   }
   // A paid booking is refunded in full on cancellation; say so, since that's what each side wants to know first.
   const reason = c.cancelReason ? `Reason given: ${c.cancelReason}` : "";
-  const refund = !c.paidMinor ? "" : `The guest's ${formatMoney(c.paidMinor, "INR")} is being refunded from your Razorpay account.`;
+  const refund = !c.paidMinor ? "" : `The guest's ${formatAmount(c.paidMinor, c.paidCurrency)} is being refunded from your ${providerName(c)} account.`;
   return [refund, reason].filter(Boolean).join(" ") || undefined;
 }
 
@@ -298,13 +306,13 @@ export function renderRenewalReminder(a: { planName: string; price: string; rene
 
 export interface PackageMailContext {
   hostName: string; hostEmail: string; guestName: string; guestEmail: string; packageName: string; eventName: string;
-  sessions: number; priceMinor: number; expiresAt: Date; timezone: string; buyerUrl: string; dashboardUrl: string;
+  sessions: number; priceMinor: number; currency?: string; provider?: "razorpay" | "stripe"; expiresAt: Date; timezone: string; buyerUrl: string; dashboardUrl: string;
 }
 
 /** A paid session package: the buyer's private link to book their sessions, or the host's note of the sale. */
 export function renderPackageMail(kind: "package_guest" | "package_host", c: PackageMailContext): RenderedMail {
   const until = formatDate(c.expiresAt, c.timezone);
-  const rows: Row[] = [["Package", c.packageName], ["Sessions", `${c.sessions} × ${c.eventName}`], ["Paid", formatMoney(c.priceMinor, "INR")], ["Book by", until]];
+  const rows: Row[] = [["Package", c.packageName], ["Sessions", `${c.sessions} × ${c.eventName}`], ["Paid", formatAmount(c.priceMinor, c.currency)], ["Book by", until]];
   if (kind === "package_guest") {
     return render(`Your ${c.sessions} sessions with ${c.hostName}`, {
       heading: "Your package is ready", intro: `Hi ${c.guestName}, thanks for buying ${c.packageName}. Book your sessions any time before ${until}.`,
@@ -314,7 +322,7 @@ export function renderPackageMail(kind: "package_guest" | "package_host", c: Pac
     }, { replyTo: c.hostEmail });
   }
   return render(`Package sold: ${c.guestName}, ${c.packageName}`, {
-    heading: "You sold a package", intro: `${c.guestName} <${c.guestEmail}> bought ${c.packageName}. The money went to your Razorpay account.`,
+    heading: "You sold a package", intro: `${c.guestName} <${c.guestEmail}> bought ${c.packageName}. The money went to your ${c.provider === "stripe" ? "Stripe" : "Razorpay"} account.`,
     rows, link: { label: "Open in Hourhand", url: c.dashboardUrl }, footer: "Sent by Hourhand about your booking page.",
   }, { replyTo: c.guestEmail });
 }
@@ -333,11 +341,11 @@ export function renderInvoiceMail(v: { kind: "invoice" | "credit_note"; number: 
 }
 
 /** Last month in a few figures, with a link to the full report. */
-export function renderEarningsMail(e: { monthLabel: string; netMinor: number; bookingsMinor: number; packagesMinor: number; refundsMinor: number; sessionsHeld: number; noShows: number; url: string }): RenderedMail {
-  return render(`Your ${e.monthLabel} on Hourhand: ${formatMoney(e.netMinor, "INR")}`, {
+export function renderEarningsMail(e: { currency?: string; monthLabel: string; netMinor: number; bookingsMinor: number; packagesMinor: number; refundsMinor: number; sessionsHeld: number; noShows: number; url: string }): RenderedMail {
+  return render(`Your ${e.monthLabel} on Hourhand: ${formatAmount(e.netMinor, e.currency)}`, {
     heading: `${e.monthLabel} at a glance`, intro: `Here's how ${e.monthLabel} went.`,
-    rows: [["Net received", formatMoney(e.netMinor, "INR")], ["Bookings", formatMoney(e.bookingsMinor, "INR")], ["Packages", formatMoney(e.packagesMinor, "INR")],
-      ["Refunds", formatMoney(e.refundsMinor, "INR")], ["Sessions held", String(e.sessionsHeld)], ["No-shows", String(e.noShows)]],
+    rows: [["Net received", formatAmount(e.netMinor, e.currency)], ["Bookings", formatAmount(e.bookingsMinor, e.currency)], ["Packages", formatAmount(e.packagesMinor, e.currency)],
+      ["Refunds", formatAmount(e.refundsMinor, e.currency)], ["Sessions held", String(e.sessionsHeld)], ["No-shows", String(e.noShows)]],
     link: { label: "See the full report", url: e.url }, footer: "Sent by Hourhand once a month.",
   });
 }

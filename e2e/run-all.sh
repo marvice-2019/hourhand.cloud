@@ -247,5 +247,15 @@ up 3207
 node e2e/e2e-d7.mjs 3207 $OUT/srv-d7.log $DB 3797 > $OUT/out-d7.txt 2>&1
 kill $SRV $FM
 summary D7-whatsapp $OUT/out-d7.txt
+sleep 2
+
+fresh
+node e2e/fake-stripe-connect.mjs 3897 > $OUT/fakestripe.log 2>&1 & FS=$!
+: > $OUT/srv-stripe.log
+node e2e/start-e2e-stripe.mjs 3220 $DB 3897 > $OUT/srv-stripe.log 2>&1 & SRV=$!
+up 3220
+node e2e/e2e-stripe-connect.mjs 3220 $OUT/srv-stripe.log $DB 3897 > $OUT/out-stripe.txt 2>&1
+kill $SRV $FS
+summary Stripe-Connect $OUT/out-stripe.txt
 
 exit $FAILED
