@@ -25,7 +25,7 @@ describe("the video join refusal page in each guest language", () => {
   });
 
   it("falls back to English for a language without lines yet", () => {
-    expect(refusalLines("mr" as Locale)).toEqual(refusalLines("en"));
+    expect(refusalLines("xx" as Locale)).toEqual(refusalLines("en"));
   });
 
   it("splits a template into text and slots in order", () => {
