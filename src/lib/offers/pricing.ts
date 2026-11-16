@@ -2,6 +2,7 @@
 // paise; a discount comes off that price and GST is then worked out on what is left (see gst/invoices.ts).
 
 import { dayKey } from "../format";
+import { fillTemplate } from "../i18n/host/lib-messages";
 
 export type DiscountKind = "percent" | "fixed";
 
@@ -75,9 +76,14 @@ export function appliesTo(target: { eventTypeIds: string[]; packageIds: string[]
   return (item.kind === "event_type" ? target.eventTypeIds : target.packageIds).includes(item.id);
 }
 
+/** describeDiscount's wording, as code -> English template (the dashboard shows the host's language). */
+export const DISCOUNT_MESSAGES = { percent: "{n}% off", fixed: "₹{amount} off" } as const;
+
 /** "20% off" or "₹200 off" (English; host-facing and invoice text). */
 export function describeDiscount(d: Discount): string {
-  return d.kind === "percent" ? `${d.value}% off` : `₹${(d.value / 100).toFixed(d.value % 100 ? 2 : 0)} off`;
+  return d.kind === "percent"
+    ? fillTemplate(DISCOUNT_MESSAGES.percent, { n: d.value })
+    : fillTemplate(DISCOUNT_MESSAGES.fixed, { amount: (d.value / 100).toFixed(d.value % 100 ? 2 : 0) });
 }
 
 /** Codes are case-insensitive: stored and compared upper-case. */

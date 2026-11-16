@@ -6,6 +6,7 @@ import { store } from "@/lib/data";
 import { getPool } from "@/lib/data/pg-store";
 import { templatesEnabled } from "@/lib/intake/options";
 import { getTemplate } from "@/lib/intake/templates";
+import { getHostI18n } from "@/lib/i18n/host/server";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function IntakeTemplatePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requireHost();
+  const { t } = await getHostI18n();
   if (!templatesEnabled()) notFound();
   const template = id === "new" ? null : await getTemplate(getPool(process.env.DATABASE_URL as string), user.id, id);
   if (id !== "new" && !template) notFound();
@@ -20,11 +22,11 @@ export default async function IntakeTemplatePage({ params }: { params: Promise<{
 
   return (
     <div>
-      <Link href="/dashboard/event-types/templates" className="inline-flex min-h-11 items-center font-semibold text-accent underline">Back to templates</Link>
-      <h1 className="mt-2 font-display text-xl text-text">{template ? template.name : "New template"}</h1>
+      <Link href="/dashboard/event-types/templates" className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("intake.backToTemplates")}</Link>
+      <h1 className="mt-2 font-display text-xl text-text">{template ? template.name : t("intake.new")}</h1>
       {template?.example && (
         <p className="mt-2 max-w-xl rounded-md bg-warning-bg p-3 text-sm text-text">
-          This is an example. Read each question and change the wording to fit how you work, then save it.
+          {t("intake.exampleNote")}
         </p>
       )}
       <TemplateEditor

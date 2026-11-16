@@ -1,16 +1,25 @@
 import type { Checked, FieldErrors } from "./availability";
+import { fillTemplate } from "./i18n/host/lib-messages";
 
 // Pure checks for named availability schedules. Error keys match the input ids on the availability page.
 
 export const MAX_SCHEDULE_NAME = 60;
 
+/** Every message these checks write, as code -> English template; the dashboard shows each in the host's language. */
+export const SCHEDULE_MESSAGES = {
+  nameMissing: "Give this schedule a name, like “Clinic” or “Evenings”.",
+  nameTooLong: "Keep the name to {n} characters.",
+  pickZone: "Pick a time zone from the list.",
+} as const;
+const M = SCHEDULE_MESSAGES;
+
 /** A schedule's name and time zone as typed: the name trimmed, 1 to 60 characters; the zone a real IANA zone. */
 export function validateSchedule(input: { name: unknown; timezone: unknown }, isZone: (tz: unknown) => tz is string): Checked<{ name: string; timezone: string }> {
   const errors: FieldErrors = {};
   const name = typeof input.name === "string" ? input.name.trim().replace(/\s+/g, " ") : "";
-  if (!name) errors["schedule-name"] = "Give this schedule a name, like “Clinic” or “Evenings”.";
-  else if (name.length > MAX_SCHEDULE_NAME) errors["schedule-name"] = `Keep the name to ${MAX_SCHEDULE_NAME} characters.`;
-  if (!isZone(input.timezone)) errors["schedule-timezone"] = "Pick a time zone from the list.";
+  if (!name) errors["schedule-name"] = M.nameMissing;
+  else if (name.length > MAX_SCHEDULE_NAME) errors["schedule-name"] = fillTemplate(M.nameTooLong, { n: MAX_SCHEDULE_NAME });
+  if (!isZone(input.timezone)) errors["schedule-timezone"] = M.pickZone;
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, value: { name, timezone: input.timezone as string } };
 }
 

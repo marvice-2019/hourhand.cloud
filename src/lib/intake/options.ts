@@ -10,10 +10,14 @@ export interface TemplateChoice { id: string; name: string; questions: TemplateQ
 /** Whether templates can be saved here: they live in Postgres, which the memory demo doesn't have. */
 export const templatesEnabled = (): boolean => authEnabled();
 
-export async function templateChoices(userId: string): Promise<TemplateChoice[]> {
+/** The host-language name of each starter; English when no translator is given. */
+export const STARTER_NAME_KEYS = { therapy: "intake.starterTherapy", coaching: "intake.starterCoaching", tutoring: "intake.starterTutoring" } as const;
+export const STARTER_SUMMARY_KEYS = { therapy: "intake.starterTherapySummary", coaching: "intake.starterCoachingSummary", tutoring: "intake.starterTutoringSummary" } as const;
+
+export async function templateChoices(userId: string, t?: (key: (typeof STARTER_NAME_KEYS)[keyof typeof STARTER_NAME_KEYS]) => string): Promise<TemplateChoice[]> {
   const own = templatesEnabled() ? await listTemplates(getPool(process.env.DATABASE_URL as string), userId) : [];
   return [
     ...own.map((t) => ({ id: t.id, name: t.name, questions: t.questions, example: t.example })),
-    ...STARTERS.map((s) => ({ id: `starter:${s.key}`, name: `${s.name} (starter)`, questions: s.questions, starter: true })),
+    ...STARTERS.map((s) => ({ id: `starter:${s.key}`, name: t ? t(STARTER_NAME_KEYS[s.key]) : s.name, questions: s.questions, starter: true })),
   ];
 }

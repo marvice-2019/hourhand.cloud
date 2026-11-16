@@ -2,7 +2,7 @@
 // dashboard never trusts a template or event type id it got from the browser without that check.
 import type pg from "pg";
 import type { DataStore, QuestionDraft } from "../data/types";
-import { validateQuestions, type QuestionErrors } from "../event-types";
+import { checkQuestions, validateQuestions, type QuestionErrorCodes } from "../event-types";
 import { applyTemplateToDrafts, TEMPLATE_MAX_QUESTIONS, toDrafts, toTemplateQuestions, type TemplateQuestion } from "./templates-shape";
 import { starterByKey } from "./starters";
 
@@ -27,18 +27,16 @@ const toTemplate = (r: Record<string, unknown>): IntakeTemplate => ({
 
 export type TemplateCheck =
   | { ok: true; name: string; questions: TemplateQuestion[] }
-  | { ok: false; nameError?: string; questionErrors: QuestionErrors; tooMany?: string };
+  | { ok: false; nameError?: "name"; formError?: "tooMany" | "empty"; questionCodes: QuestionErrorCodes };
 
-/** The same checks as an event type's questions, plus a name and a cap. */
+/** The same checks as an event type's questions, plus a name and a cap. Errors are codes the dashboard translates. */
 export function checkTemplate(name: unknown, questions: readonly QuestionDraft[]): TemplateCheck {
   const n = typeof name === "string" ? name.trim() : "";
-  const nameError = n.length < 1 || n.length > 80 ? "Give the template a name (up to 80 characters)." : undefined;
+  const nameError = n.length < 1 || n.length > 80 ? "name" as const : undefined;
   const list = Array.isArray(questions) ? questions : [];
-  const tooMany = list.length > TEMPLATE_MAX_QUESTIONS ? `Keep a template to ${TEMPLATE_MAX_QUESTIONS} questions.` : undefined;
-  const checked = validateQuestions(list.map((q) => ({ ...q, id: null })));
-  if (nameError || tooMany || !checked.ok || list.length === 0) {
-    return { ok: false, nameError, tooMany: tooMany ?? (list.length === 0 ? "Add at least one question." : undefined), questionErrors: checked.ok ? [] : checked.errors };
-  }
+  const formError = list.length > TEMPLATE_MAX_QUESTIONS ? "tooMany" as const : list.length === 0 ? "empty" as const : undefined;
+  const checked = checkQuestions(list.map((q) => ({ ...q, id: null })));
+  if (nameError || formError || !checked.ok) return { ok: false, nameError, formError, questionCodes: checked.ok ? [] : checked.codes };
   return { ok: true, name: n, questions: toTemplateQuestions(checked.value) };
 }
 
@@ -64,10 +62,10 @@ export async function createTemplate(db: Db, userId: string, name: string, quest
 }
 
 /** A starter example copied into the host's own templates, marked as an example until they save it. */
-export async function createFromStarter(db: Db, userId: string, key: string, now = new Date()): Promise<IntakeTemplate | null> {
+export async function createFromStarter(db: Db, userId: string, key: string, now = new Date(), name?: string): Promise<IntakeTemplate | null> {
   const starter = starterByKey(key);
   if (!starter) return null;
-  return createTemplate(db, userId, `${starter.name} (example)`, starter.questions, { example: true, now });
+  return createTemplate(db, userId, (name ?? `${starter.name} (example)`).slice(0, 80), starter.questions, { example: true, now });
 }
 
 /**

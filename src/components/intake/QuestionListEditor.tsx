@@ -5,16 +5,18 @@
 import type { CustomQuestion, QuestionDraft } from "@/lib/data/types";
 import type { QuestionErrors } from "@/lib/event-types";
 import { CONDITION_KINDS, QUESTION_KINDS, conditionOptions } from "@/lib/intake/conditions";
-import { HEALTH_NOTE, looksHealthRelated } from "@/lib/intake/sensitive";
+import { looksHealthRelated } from "@/lib/intake/sensitive";
+import type { HostKey } from "@/lib/i18n/host";
+import { useHostI18n } from "../HostI18nProvider";
 import { fromTemplate, type TemplateQuestion } from "@/lib/intake/templates-shape";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { focusRing } from "../ui/focus";
 import { Input, Label } from "../ui/Input";
 
-export const KIND_LABELS: Record<CustomQuestion["kind"], string> = {
-  short_text: "Short answer", long_text: "Long answer", single_select: "Pick one from a list", multi_select: "Pick any from a list",
-  yes_no: "Yes or no", date: "Date", number: "Number", email: "Email address", phone: "Phone number", consent: "Tick box to agree",
+export const KIND_LABELS: Record<CustomQuestion["kind"], HostKey> = {
+  short_text: "eventTypes.kindShort", long_text: "eventTypes.kindLong", single_select: "eventTypes.kindSelect", multi_select: "intake.kindMulti",
+  yes_no: "intake.kindYesNo", date: "intake.kindDate", number: "intake.kindNumber", email: "intake.kindEmail", phone: "intake.kindPhone", consent: "intake.kindConsent",
 };
 
 export type EditableQuestion = Omit<QuestionDraft, "showIf"> & { key: string; cond: { key: string; values: string[] } | null };
@@ -55,6 +57,7 @@ export function QuestionListEditor({ questions, onChange, errors, onErrorsChange
   templates?: TemplateOption[];
   newKey: () => string;
 }) {
+  const { t } = useHostI18n();
   const update = (index: number, patch: Partial<EditableQuestion>) => onChange(questions.map((q, i) => (i === index ? { ...q, ...patch } : q)));
   const move = (index: number, by: -1 | 1) => {
     const next = [...questions];
@@ -81,12 +84,12 @@ export function QuestionListEditor({ questions, onChange, errors, onErrorsChange
 
   return (
     <div className="grid gap-4">
-      {health && <p role="note" className="rounded-md bg-warning-bg p-3 text-sm text-text">{HEALTH_NOTE}</p>}
-      {questions.length === 0 && <p className="text-text-muted">No extra questions yet.</p>}
+      {health && <p role="note" className="rounded-md bg-warning-bg p-3 text-sm text-text">{t("intake.healthNote")}</p>}
+      {questions.length === 0 && <p className="text-text-muted">{t("eventTypes.noQuestions")}</p>}
       <ol className="grid gap-4">
         {questions.map((q, i) => {
           const e = errors[i] ?? {};
-          const name = q.label.trim() || `Question ${i + 1}`;
+          const name = q.label.trim() || t("eventTypes.questionN", { n: i + 1 });
           const parents = questions.slice(0, i).filter((p) => CONDITION_KINDS.includes(p.kind) && !p.cond);
           const parent = q.cond ? questions.find((p) => p.key === q.cond!.key) : undefined;
           const options = parent ? conditionOptions({ kind: parent.kind, choices: parent.choices.map((c) => c.trim()).filter(Boolean) }) : [];
@@ -94,18 +97,18 @@ export function QuestionListEditor({ questions, onChange, errors, onErrorsChange
             <li key={q.key}>
               <Card className="grid gap-3">
                 <div>
-                  <Label htmlFor={`q-${q.key}-label`}>Question {i + 1}</Label>
+                  <Label htmlFor={`q-${q.key}-label`}>{t("eventTypes.questionN", { n: i + 1 })}</Label>
                   <Input id={`q-${q.key}-label`} value={q.label} maxLength={300} onChange={(ev) => update(i, { label: ev.target.value })} error={e.label} />
                 </div>
                 <div>
-                  <Label htmlFor={`q-${q.key}-kind`}>Answer type</Label>
+                  <Label htmlFor={`q-${q.key}-kind`}>{t("eventTypes.answerType")}</Label>
                   <select id={`q-${q.key}-kind`} value={q.kind} onChange={(ev) => update(i, { kind: ev.target.value as CustomQuestion["kind"] })} className={`h-11 ${fieldClasses(false)}`}>
-                    {QUESTION_KINDS.map((k) => <option key={k} value={k}>{KIND_LABELS[k]}</option>)}
+                    {QUESTION_KINDS.map((k) => <option key={k} value={k}>{t(KIND_LABELS[k])}</option>)}
                   </select>
                 </div>
                 {(q.kind === "single_select" || q.kind === "multi_select") && (
                   <div>
-                    <Label htmlFor={`q-${q.key}-choices`}>Choices, one per line</Label>
+                    <Label htmlFor={`q-${q.key}-choices`}>{t("eventTypes.choices")}</Label>
                     <textarea
                       id={`q-${q.key}-choices`} rows={3} value={q.choices.join("\n")} onChange={(ev) => update(i, { choices: ev.target.value.split("\n") })}
                       aria-invalid={e.choices ? true : undefined} aria-describedby={e.choices ? `q-${q.key}-choices-error` : undefined}
@@ -117,13 +120,13 @@ export function QuestionListEditor({ questions, onChange, errors, onErrorsChange
                 {q.kind === "number" && (
                   <div className="flex flex-wrap gap-4">
                     <div>
-                      <Label htmlFor={`q-${q.key}-min`}>Lowest allowed</Label>
-                      <Input id={`q-${q.key}-min`} inputMode="decimal" className="max-w-32" placeholder="No limit" value={numberText(q.minValue)}
+                      <Label htmlFor={`q-${q.key}-min`}>{t("intake.lowest")}</Label>
+                      <Input id={`q-${q.key}-min`} inputMode="decimal" className="max-w-32" placeholder={t("intake.noLimit")} value={numberText(q.minValue)}
                         onChange={(ev) => update(i, { minValue: parseBound(ev.target.value) })} />
                     </div>
                     <div>
-                      <Label htmlFor={`q-${q.key}-max`}>Highest allowed</Label>
-                      <Input id={`q-${q.key}-max`} inputMode="decimal" className="max-w-32" placeholder="No limit" value={numberText(q.maxValue)}
+                      <Label htmlFor={`q-${q.key}-max`}>{t("intake.highest")}</Label>
+                      <Input id={`q-${q.key}-max`} inputMode="decimal" className="max-w-32" placeholder={t("intake.noLimit")} value={numberText(q.maxValue)}
                         onChange={(ev) => update(i, { maxValue: parseBound(ev.target.value) })} />
                     </div>
                     {e.range && <p className="w-full text-sm text-danger">{e.range}</p>}
@@ -131,21 +134,21 @@ export function QuestionListEditor({ questions, onChange, errors, onErrorsChange
                 )}
                 {(i > 0 || q.cond) && (
                   <div>
-                    <Label htmlFor={`q-${q.key}-cond`}>When to ask</Label>
+                    <Label htmlFor={`q-${q.key}-cond`}>{t("intake.whenToAsk")}</Label>
                     <select
                       id={`q-${q.key}-cond`} value={q.cond?.key ?? ""} aria-invalid={e.condition ? true : undefined}
                       aria-describedby={e.condition ? `q-${q.key}-cond-error` : `q-${q.key}-cond-hint`}
                       onChange={(ev) => update(i, { cond: ev.target.value ? { key: ev.target.value, values: [] } : null })}
                       className={`h-11 ${fieldClasses(Boolean(e.condition))}`}
                     >
-                      <option value="">Always</option>
-                      {parents.map((p) => <option key={p.key} value={p.key}>Only if &ldquo;{p.label.trim() || "an earlier question"}&rdquo; is answered with…</option>)}
-                      {q.cond && !parents.some((p) => p.key === q.cond!.key) && <option value={q.cond.key}>Depends on a question that can&apos;t be used</option>}
+                      <option value="">{t("intake.always")}</option>
+                      {parents.map((p) => <option key={p.key} value={p.key}>{t("intake.onlyIf", { label: p.label.trim() || t("intake.earlierQuestion") })}</option>)}
+                      {q.cond && !parents.some((p) => p.key === q.cond!.key) && <option value={q.cond.key}>{t("intake.unusableParent")}</option>}
                     </select>
-                    {!e.condition && <p id={`q-${q.key}-cond-hint`} className="mt-1 text-sm text-text-muted">Depend on an earlier yes/no or choice question. A hidden question is never required.</p>}
+                    {!e.condition && <p id={`q-${q.key}-cond-hint`} className="mt-1 text-sm text-text-muted">{t("intake.conditionHint")}</p>}
                     {q.cond && options.length > 0 && (
                       <fieldset className="mt-2">
-                        <legend className="sr-only">Answers that show this question</legend>
+                        <legend className="sr-only">{t("intake.conditionValues")}</legend>
                         <div className="flex flex-wrap gap-x-4">
                           {options.map((o) => (
                             <label key={o} className="inline-flex min-h-11 items-center gap-2 text-sm text-text">
@@ -153,7 +156,7 @@ export function QuestionListEditor({ questions, onChange, errors, onErrorsChange
                                 type="checkbox" checked={q.cond!.values.includes(o)} className={`size-5 accent-accent ${focusRing}`}
                                 onChange={(ev) => update(i, { cond: { key: q.cond!.key, values: ev.target.checked ? [...q.cond!.values, o] : q.cond!.values.filter((v) => v !== o) } })}
                               />
-                              {o === "yes" ? "Yes" : o === "no" ? "No" : o}
+                              {o === "yes" ? t("intake.yes") : o === "no" ? t("intake.no") : o}
                             </label>
                           ))}
                         </div>
@@ -164,16 +167,16 @@ export function QuestionListEditor({ questions, onChange, errors, onErrorsChange
                 )}
                 <label className="inline-flex min-h-11 items-center gap-2 text-sm text-text">
                   <input type="checkbox" checked={q.required} onChange={(ev) => update(i, { required: ev.target.checked })} className={`size-5 accent-accent ${focusRing}`} />
-                  Guests must answer{q.cond ? " (when it's asked)" : ""}
+                  {t(q.cond ? "intake.requiredWhenAsked" : "eventTypes.required")}
                 </label>
                 <label className="inline-flex min-h-11 items-center gap-2 text-sm text-text">
                   <input type="checkbox" checked={q.firstBookingOnly === true} onChange={(ev) => update(i, { firstBookingOnly: ev.target.checked })} className={`size-5 accent-accent ${focusRing}`} />
-                  Only on a client&apos;s first booking with you
+                  {t("intake.firstBookingOnly")}
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" size="sm" disabled={i === 0} onClick={() => move(i, -1)} aria-label={`Move "${name}" up`}>Move up</Button>
-                  <Button variant="secondary" size="sm" disabled={i === questions.length - 1} onClick={() => move(i, 1)} aria-label={`Move "${name}" down`}>Move down</Button>
-                  <Button variant="ghost" size="sm" onClick={() => remove(i)} aria-label={`Remove "${name}"`}>Remove</Button>
+                  <Button variant="secondary" size="sm" disabled={i === 0} onClick={() => move(i, -1)} aria-label={t("eventTypes.moveUpLabel", { name })}>{t("eventTypes.moveUp")}</Button>
+                  <Button variant="secondary" size="sm" disabled={i === questions.length - 1} onClick={() => move(i, 1)} aria-label={t("eventTypes.moveDownLabel", { name })}>{t("eventTypes.moveDown")}</Button>
+                  <Button variant="ghost" size="sm" onClick={() => remove(i)} aria-label={t("eventTypes.removeLabel", { name })}>{t("common.remove")}</Button>
                 </div>
               </Card>
             </li>
@@ -181,7 +184,7 @@ export function QuestionListEditor({ questions, onChange, errors, onErrorsChange
         })}
       </ol>
       <div className="flex flex-wrap items-end gap-3">
-        <Button variant="secondary" onClick={add}>Add a question</Button>
+        <Button variant="secondary" onClick={add}>{t("eventTypes.addQuestion")}</Button>
         {templates.length > 0 && <AddFromTemplate templates={templates} onAdd={addFrom} />}
       </div>
     </div>
@@ -189,6 +192,7 @@ export function QuestionListEditor({ questions, onChange, errors, onErrorsChange
 }
 
 function AddFromTemplate({ templates, onAdd }: { templates: TemplateOption[]; onAdd: (t: TemplateOption) => void }) {
+  const { t: tr } = useHostI18n();
   return (
     <form
       className="flex flex-wrap items-end gap-2"
@@ -200,12 +204,12 @@ function AddFromTemplate({ templates, onAdd }: { templates: TemplateOption[]; on
       }}
     >
       <div>
-        <Label htmlFor="add-template">Add questions from</Label>
+        <Label htmlFor="add-template">{tr("intake.addFrom")}</Label>
         <select id="add-template" name="template" className={`h-11 ${fieldClasses(false)}`}>
-          {templates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.starter || t.example ? " (example, edit before use)" : ""}</option>)}
+          {templates.map((x) => <option key={x.id} value={x.id}>{x.starter ? tr("intake.starterOption", { name: x.name }) : x.example ? tr("intake.exampleOption", { name: x.name }) : x.name}</option>)}
         </select>
       </div>
-      <Button type="submit" variant="secondary">Add</Button>
+      <Button type="submit" variant="secondary">{tr("intake.add")}</Button>
     </form>
   );
 }

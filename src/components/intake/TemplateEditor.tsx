@@ -10,6 +10,7 @@ import { Card } from "../ui/Card";
 import { focusRing } from "../ui/focus";
 import { Input, Label } from "../ui/Input";
 import { QuestionListEditor, editableToDrafts, toEditable, type EditableQuestion } from "./QuestionListEditor";
+import { useHostI18n } from "../HostI18nProvider";
 
 export function TemplateEditor({ id, initialName, initialQuestions, eventTypes }: {
   id: string | null;
@@ -18,6 +19,7 @@ export function TemplateEditor({ id, initialName, initialQuestions, eventTypes }
   eventTypes: { id: string; name: string }[];
 }) {
   const router = useRouter();
+  const { t } = useHostI18n();
   const [name, setName] = useState(initialName);
   const [questions, setQuestions] = useState<EditableQuestion[]>(() => { let n = 0; return toEditable(fromTemplate(initialQuestions, 0, null), () => `t-${n++}`); });
   const [errors, setErrors] = useState<QuestionErrors>([]);
@@ -51,41 +53,36 @@ export function TemplateEditor({ id, initialName, initialQuestions, eventTypes }
       const result = await applyTemplateTo(id, picked);
       if (!result.ok) { setApplyMessage({ ok: false, text: result.error }); return; }
       const n = result.applied;
-      setApplyMessage({
-        ok: result.skipped === 0,
-        text: `Applied to ${n} event ${n === 1 ? "type" : "types"}.${result.skipped ? ` ${result.skipped} couldn't take these questions; open them to check.` : ""}`,
-      });
+      const applied = n === 1 ? t("intake.appliedOne") : t("intake.applied", { n });
+      setApplyMessage({ ok: result.skipped === 0, text: result.skipped ? `${applied} ${t("intake.skipped", { n: result.skipped })}` : applied });
     });
   }
 
   return (
     <div className="mt-6 grid max-w-xl gap-6">
       <div>
-        <Label htmlFor="tpl-name">Name</Label>
-        <Input id="tpl-name" value={name} maxLength={80} onChange={(e) => { setName(e.target.value); setDirty(true); setSaved(false); }} error={nameError} placeholder="New client intake" />
+        <Label htmlFor="tpl-name">{t("intake.name")}</Label>
+        <Input id="tpl-name" value={name} maxLength={80} onChange={(e) => { setName(e.target.value); setDirty(true); setSaved(false); }} error={nameError} placeholder={t("intake.namePlaceholder")} />
       </div>
       <QuestionListEditor
         questions={questions} onChange={(next) => { setQuestions(next); setDirty(true); setSaved(false); }} errors={errors} onErrorsChange={setErrors}
         newKey={() => crypto.randomUUID()}
       />
       <div className="flex flex-wrap items-center gap-4 border-t border-border pt-4">
-        <Button onClick={save} loading={saving}>{id ? "Save template" : "Create template"}</Button>
+        <Button onClick={save} loading={saving}>{id ? t("intake.saveTemplate") : t("intake.create")}</Button>
         <p role="status" className={`text-sm ${formError || errors.length ? "text-danger" : "text-text-muted"}`}>
-          {formError ?? (errors.some((e) => Object.keys(e).length > 0) ? "Some questions need a fix. They're marked above." : saved ? "Saved. Event types change only when you apply it." : "")}
+          {formError ?? (errors.some((e) => Object.keys(e).length > 0) ? t("intake.fixMarked") : saved ? t("intake.savedApply") : "")}
         </p>
       </div>
 
       {id && (
         <Card className="grid gap-3">
-          <h2 className="font-semibold text-text">Use on event types</h2>
-          <p className="text-sm text-text-muted">
-            Copies the saved questions into each event type you tick, after its own questions. Applying again replaces the copies
-            from this template and keeps everything else. Bookings already made keep the questions as they were asked.
-          </p>
-          {dirty && <p className="text-sm text-danger">Save your changes first; applying uses the saved template.</p>}
-          {eventTypes.length === 0 ? <p className="text-text-muted">You have no event types yet.</p> : (
+          <h2 className="font-semibold text-text">{t("intake.useOn")}</h2>
+          <p className="text-sm text-text-muted">{t("intake.useOnBody")}</p>
+          {dirty && <p className="text-sm text-danger">{t("intake.saveFirst")}</p>}
+          {eventTypes.length === 0 ? <p className="text-text-muted">{t("intake.noEventTypes")}</p> : (
             <fieldset>
-              <legend className="sr-only">Event types</legend>
+              <legend className="sr-only">{t("intake.eventTypesLegend")}</legend>
               {eventTypes.map((e) => (
                 <label key={e.id} className="flex min-h-11 items-center gap-3 text-text">
                   <input
@@ -97,19 +94,19 @@ export function TemplateEditor({ id, initialName, initialQuestions, eventTypes }
               ))}
             </fieldset>
           )}
-          <div><Button variant="secondary" onClick={apply} loading={applying} disabled={dirty || picked.length === 0}>Apply to ticked event types</Button></div>
+          <div><Button variant="secondary" onClick={apply} loading={applying} disabled={dirty || picked.length === 0}>{t("intake.apply")}</Button></div>
           {applyMessage && <p role="status" className={`text-sm ${applyMessage.ok ? "text-text-muted" : "text-danger"}`}>{applyMessage.text}</p>}
         </Card>
       )}
 
       {id && (
         <div className="border-t border-border pt-4">
-          {!confirmDelete ? <Button variant="ghost" onClick={() => setConfirmDelete(true)}>Delete template</Button> : (
+          {!confirmDelete ? <Button variant="ghost" onClick={() => setConfirmDelete(true)}>{t("intake.delete")}</Button> : (
             <div className="grid gap-3">
-              <p className="text-text">Delete this template? Event types keep the questions already copied from it.</p>
+              <p className="text-text">{t("intake.deleteConfirm")}</p>
               <div className="flex flex-wrap gap-2">
-                <Button variant="danger" loading={deleting} onClick={() => startDeleting(async () => { await removeTemplate(id); router.push("/dashboard/event-types/templates"); })}>Yes, delete it</Button>
-                <Button variant="secondary" onClick={() => setConfirmDelete(false)}>Keep it</Button>
+                <Button variant="danger" loading={deleting} onClick={() => startDeleting(async () => { await removeTemplate(id); router.push("/dashboard/event-types/templates"); })}>{t("intake.yesDelete")}</Button>
+                <Button variant="secondary" onClick={() => setConfirmDelete(false)}>{t("intake.keep")}</Button>
               </div>
             </div>
           )}

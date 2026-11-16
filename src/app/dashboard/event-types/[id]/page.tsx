@@ -12,6 +12,7 @@ import { getFollowUpSettings } from "@/lib/follow-ups/follow-ups";
 import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
 import { templateChoices, templatesEnabled } from "@/lib/intake/options";
 import { toDrafts } from "@/lib/intake/templates-shape";
+import { getHostI18n } from "@/lib/i18n/host/server";
 import { getProfile } from "@/lib/profile";
 import { zoomSetupFor } from "@/lib/zoom/connection";
 
@@ -24,10 +25,11 @@ export default async function EventTypePage({ params, searchParams }: {
   const { id } = await params;
   const { saved, followups, schedule } = await searchParams;
   const user = await requireHost();
+  const { t } = await getHostI18n();
   const eventType = await store.getEventType(user.id, id);
   if (!eventType) notFound();
   const [locations, questions, templates, account, schedules] = await Promise.all([
-    store.listEventLocations(user.id, id), store.listCustomQuestions(user.id, id), templateChoices(user.id),
+    store.listEventLocations(user.id, id), store.listCustomQuestions(user.id, id), templateChoices(user.id, t),
     authEnabled() ? paymentAccount(getPool(process.env.DATABASE_URL as string), user.id) : null,
     store.listSchedules(user.id),
   ]);
@@ -40,13 +42,13 @@ export default async function EventTypePage({ params, searchParams }: {
 
   return (
     <div>
-      <Link href="/dashboard/event-types" className="inline-flex min-h-11 items-center font-semibold text-accent underline">Back to event types</Link>
+      <Link href="/dashboard/event-types" className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("eventTypes.backToList")}</Link>
       <h1 className="mt-2 font-display text-xl text-text">{eventType.name}</h1>
-      <p className="mt-2 text-text-muted">Change how this booking link works and what people see when they book.</p>
-      {!eventType.active && <p className="mt-2 text-sm text-text-muted">This link is off, so nobody can book it right now.</p>}
+      <p className="mt-2 text-text-muted">{t("eventTypes.editIntro")}</p>
+      {!eventType.active && <p className="mt-2 text-sm text-text-muted">{t("eventTypes.linkOff")}</p>}
       {otherCurrency && (
         <p role="alert" className="mt-2 max-w-xl text-sm text-danger">
-          This price is in {otherCurrency}, but you now take payments in {currency}. Guests can&apos;t pay it until you check the amount below and save.
+          {t("eventTypes.otherCurrency", { from: otherCurrency, to: currency })}
         </p>
       )}
       <EventTypeEditor
@@ -65,7 +67,7 @@ export default async function EventTypePage({ params, searchParams }: {
       {eventType.kind !== "one_off" && <EventTypeSchedule eventTypeId={eventType.id} schedules={schedules} saved={schedule === "saved"} />}
       {followUps && (
         <FollowUpSettingsForm eventTypeId={eventType.id} settings={followUps} hasReviewLink={Boolean(profile?.reviewsUrl)}
-          notice={followups === "saved" ? "Follow-ups saved." : followups === "bad_delay" ? "Pick 1, 2 or 24 hours." : null} />
+          notice={followups === "saved" ? t("eventTypes.fuSaved") : followups === "bad_delay" ? t("eventTypes.fuBadDelay") : null} />
       )}
     </div>
   );

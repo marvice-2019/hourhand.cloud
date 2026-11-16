@@ -214,7 +214,7 @@ describe("templates", () => {
   });
 
   it("refuses a template without a name or questions", () => {
-    expect(checkTemplate(" ", [])).toMatchObject({ ok: false, nameError: expect.any(String), tooMany: "Add at least one question." });
+    expect(checkTemplate(" ", [])).toMatchObject({ ok: false, nameError: "name", formError: "empty" });
   });
 });
 
