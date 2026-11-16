@@ -27,6 +27,8 @@ export interface Package {
   name: string;
   sessions: number;
   priceMinor: number;
+  /** INR for Razorpay hosts, the Stripe account's currency otherwise. */
+  currency: string;
   validDays: number;
   active: boolean;
   createdAt: Date;
@@ -39,6 +41,7 @@ export interface PackagePurchase {
   eventTypeId: string;
   sessions: number;
   priceMinor: number;
+  currency: string;
   validDays: number;
   guestName: string;
   guestEmail: string;
@@ -52,7 +55,7 @@ export interface PackagePurchase {
   used: number;
 }
 
-export interface PackageInput { eventTypeId: string; name: string; sessions: number; priceMinor: number; validDays: number }
+export interface PackageInput { eventTypeId: string; name: string; sessions: number; priceMinor: number; validDays: number; currency?: string }
 
 /** Why a package can't book: unknown link, not paid yet, past its end date, all sessions booked, or for another event type. */
 export type PackageRefusal = "not_found" | "unpaid" | "expired" | "used_up" | "wrong_event";
@@ -64,19 +67,19 @@ export class PackageUnavailableError extends Error {
   }
 }
 
-const PACKAGE = "id, user_id, event_type_id, name, sessions, price_minor, valid_days, active, created_at";
+const PACKAGE = "id, user_id, event_type_id, name, sessions, price_minor, currency, valid_days, active, created_at";
 const toPackage = (r: Record<string, unknown>): Package => ({
   id: r.id as string, userId: r.user_id as string, eventTypeId: r.event_type_id as string, name: r.name as string, sessions: r.sessions as number,
-  priceMinor: r.price_minor as number, validDays: r.valid_days as number, active: r.active as boolean, createdAt: r.created_at as Date,
+  priceMinor: r.price_minor as number, currency: r.currency as string, validDays: r.valid_days as number, active: r.active as boolean, createdAt: r.created_at as Date,
 });
 
-const PURCHASE = `select p.id, p.package_id, p.host_id, p.event_type_id, p.sessions, p.price_minor, p.valid_days, p.guest_name, p.guest_email, p.guest_phone,
+const PURCHASE = `select p.id, p.package_id, p.host_id, p.event_type_id, p.sessions, p.price_minor, p.currency, p.valid_days, p.guest_name, p.guest_email, p.guest_phone,
   p.token, p.status, p.paid_at, p.expires_at, p.created_at,
   (select count(*)::int from bookings b where b.package_purchase_id = p.id and b.status <> 'cancelled') as used
   from package_purchases p`;
 const toPurchase = (r: Record<string, unknown>): PackagePurchase => ({
   id: r.id as string, packageId: r.package_id as string, hostId: r.host_id as string, eventTypeId: r.event_type_id as string,
-  sessions: r.sessions as number, priceMinor: r.price_minor as number, validDays: r.valid_days as number, guestName: r.guest_name as string,
+  sessions: r.sessions as number, priceMinor: r.price_minor as number, currency: r.currency as string, validDays: r.valid_days as number, guestName: r.guest_name as string,
   guestEmail: r.guest_email as string, guestPhone: (r.guest_phone as string | null) ?? null, token: r.token as string,
   status: r.status as PackagePurchase["status"], paidAt: (r.paid_at as Date | null) ?? null, expiresAt: (r.expires_at as Date | null) ?? null,
   createdAt: r.created_at as Date, used: r.used as number,
@@ -110,9 +113,9 @@ export async function listPackages(db: Db, hostId: string): Promise<Package[]> {
 export async function createPackage(db: Db, hostId: string, input: PackageInput): Promise<Package> {
   if (!UUID.test(hostId) || !UUID.test(input.eventTypeId)) throw new NotFoundError("Event type");
   const { rows } = await db.query(
-    `insert into packages (user_id, event_type_id, name, sessions, price_minor, valid_days)
-     select $1, e.id, $3, $4, $5, $6 from event_types e where e.id = $2 and e.user_id = $1 and e.active and e.kind = 'one_on_one'
-     returning ${PACKAGE}`, [hostId, input.eventTypeId, input.name, input.sessions, input.priceMinor, input.validDays]);
+    `insert into packages (user_id, event_type_id, name, sessions, price_minor, valid_days, currency)
+     select $1, e.id, $3, $4, $5, $6, $7 from event_types e where e.id = $2 and e.user_id = $1 and e.active and e.kind = 'one_on_one'
+     returning ${PACKAGE}`, [hostId, input.eventTypeId, input.name, input.sessions, input.priceMinor, input.validDays, input.currency ?? CURRENCY]);
   if (!rows[0]) throw new NotFoundError("Event type");
   return toPackage(rows[0]);
 }
@@ -189,6 +192,24 @@ export class PurchaseStartError extends Error {
 }
 
 /**
+ * The pending purchase row for a request, created once per request key. Price, sessions and currency are copied from the
+ * package, so a later edit of the package doesn't change what was bought.
+ */
+export async function pendingPurchase(
+  pool: Pick<pg.Pool, "query">, pkg: Package, input: { name: string; email: string; phone: string | null; idempotencyKey: string }, provider: "razorpay" | "stripe",
+): Promise<{ id: string; package_id: string; token: string; status: PackagePurchase["status"]; provider_order_id: string | null; price_minor: number; currency: string; provider: string; checkout_url: string | null }> {
+  const { rows: [row] } = await pool.query(
+    `insert into package_purchases (package_id, host_id, event_type_id, sessions, price_minor, valid_days, guest_name, guest_email, guest_phone, idempotency_key, currency, provider)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     on conflict (idempotency_key) do update set updated_at = package_purchases.updated_at
+     returning id, package_id, token, status, provider_order_id, price_minor, currency, provider, checkout_url`,
+    [pkg.id, pkg.userId, pkg.eventTypeId, pkg.sessions, pkg.priceMinor, pkg.validDays, input.name, input.email, input.phone, input.idempotencyKey, pkg.currency, provider]);
+  // The same key for another package (or a retry after the host switched providers) is not this purchase.
+  if (row.package_id !== pkg.id || row.provider !== provider) throw new NotFoundError("Package");
+  return row;
+}
+
+/**
  * Starts a purchase: a pending row and a Razorpay order on the host's account. A repeat of the same request (same key)
  * returns the same purchase and order, so a retry never makes a second order. The token is returned so the browser can
  * confirm and then open the buyer's page; it books nothing until the payment is confirmed.
@@ -201,14 +222,8 @@ export async function startPurchase(
   const found = await publicPackage(pool, input.packageId);
   if (!found) throw new NotFoundError("Package");
   const { pkg } = found;
-  const { rows: [row] } = await pool.query(
-    `insert into package_purchases (package_id, host_id, event_type_id, sessions, price_minor, valid_days, guest_name, guest_email, guest_phone, idempotency_key)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     on conflict (idempotency_key) do update set updated_at = package_purchases.updated_at
-     returning id, package_id, token, status, provider_order_id, price_minor`,
-    [pkg.id, pkg.userId, pkg.eventTypeId, pkg.sessions, pkg.priceMinor, pkg.validDays, input.name, input.email, input.phone, input.idempotencyKey]);
-  // The same key for another package is somebody's mistake, not a retry.
-  if (row.package_id !== pkg.id) throw new NotFoundError("Package");
+  if (pkg.currency !== CURRENCY) throw new PurchaseStartError("The package isn't priced in rupees", false);
+  const row = await pendingPurchase(pool, pkg, input, "razorpay");
   const checkout = (orderId: string): PurchaseCheckout => ({ orderId, keyId: auth.keyId, amount: row.price_minor, currency: CURRENCY });
   if (row.status !== "pending") return { token: row.token, status: row.status, payment: null };
   if (row.provider_order_id) return { token: row.token, status: row.status, payment: checkout(row.provider_order_id) };
@@ -310,7 +325,7 @@ export async function reconcilePurchases(deps: PaymentCheckDeps & { pool: pg.Poo
   const { rows } = await pool.query(
     `with due as (
        select id from package_purchases
-       where status = 'pending' and created_at < $1::timestamptz - $3 * interval '1 millisecond'
+       where provider = 'razorpay' and status = 'pending' and created_at < $1::timestamptz - $3 * interval '1 millisecond'
          and (checked_at is null or checked_at < $1::timestamptz - $3 * interval '1 millisecond')
        order by checked_at nulls first, created_at limit $2 for update skip locked)
      update package_purchases p set checked_at = $1 from due where p.id = due.id

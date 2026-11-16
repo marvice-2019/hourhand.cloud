@@ -178,10 +178,13 @@ export async function loadHostStripe(db: Db, key: Buffer, userId: string): Promi
 /** Whether guests can pay this host through Stripe right now. */
 export const stripeReady = (s: HostStripe | null): s is HostStripe & { currency: string } => s !== null && s.onboarding === "active" && s.currency !== null;
 
-/** What the integrations page shows. No seal check: the page shows status, it doesn't act on the account. */
-export async function stripeStatus(db: Db, userId: string): Promise<Omit<HostStripe, "accountId"> & { accountId: string } | null> {
-  const r = await rowFor(db, userId);
-  return r ? { accountId: r.public_id, onboarding: r.onboarding, currency: r.currency, country: r.country, mode: r.mode } : null;
+/**
+ * What the integrations page shows, including an account whose owner removed Hourhand in Stripe (`removed`), so the host
+ * can still disconnect it here and switch providers. No seal check: the page shows status, it doesn't act on the account.
+ */
+export async function stripeStatus(db: Db, userId: string): Promise<HostStripe & { removed: boolean } | null> {
+  const { rows: [r] } = await db.query("select public_id, onboarding, currency, country, mode, status from integrations where user_id = $1 and provider = 'stripe'", [userId]);
+  return r ? { accountId: r.public_id, onboarding: r.onboarding, currency: r.currency, country: r.country, mode: r.mode, removed: r.status !== "ok" } : null;
 }
 
 async function saveAccount(db: Db, key: Buffer, userId: string, a: StripeAccount): Promise<void> {

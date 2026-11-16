@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { authEnabled } from "@/lib/auth/auth";
 import { requireHost } from "@/lib/auth/session";
-import { formatMoney } from "@/lib/billing/plans";
+import { formatAmount } from "@/lib/money";
+import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
 import { store } from "@/lib/data";
 import { getPool } from "@/lib/data/pg-store";
 import { formatDate } from "@/lib/format";
@@ -17,8 +18,8 @@ export default async function PackagesPage({ searchParams }: { searchParams: Pro
   const user = await requireHost();
   const { error } = await searchParams;
   const db = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
-  const [eventTypes, packages, purchases] = await Promise.all([
-    store.listEventTypes(user.id), db ? listPackages(db, user.id) : [], db ? listPurchases(db, user.id) : [],
+  const [eventTypes, packages, purchases, account] = await Promise.all([
+    store.listEventTypes(user.id), db ? listPackages(db, user.id) : [], db ? listPurchases(db, user.id) : [], db ? paymentAccount(db, user.id) : null,
   ]);
   const names = new Map(eventTypes.map((e) => [e.id, e.name]));
   const bookable = eventTypes.filter((e) => e.active && e.kind === "one_on_one").map(({ id, name }) => ({ id, name }));
@@ -28,12 +29,12 @@ export default async function PackagesPage({ searchParams }: { searchParams: Pro
     <div>
       <h1 className="font-display text-xl text-text">Packages</h1>
       <p className="mt-2 max-w-xl text-text-muted">
-        Sell several sessions for one price, paid by UPI or card straight into your Razorpay account. Buyers get a private link to book them;
-        a session cancelled in time goes back into their package. Needs a paid plan and Razorpay connected under Integrations.
+        Sell several sessions for one price, paid straight into your own Razorpay (India) or Stripe account. Buyers get a private link to book them;
+        a session cancelled in time goes back into their package. Needs a paid plan and a payment account connected under Integrations.
       </p>
       {error === "not_found" && <p role="alert" className="mt-4 rounded-md bg-danger-bg p-3 text-sm text-danger">That package isn&apos;t yours, or no longer exists.</p>}
 
-      <Card className="mt-6 max-w-xl"><h2 className="mb-4 font-semibold text-text">New package</h2><PackageForm eventTypes={bookable} /></Card>
+      <Card className="mt-6 max-w-xl"><h2 className="mb-4 font-semibold text-text">New package</h2><PackageForm eventTypes={bookable} currency={priceCurrency(account)} /></Card>
 
       <section aria-labelledby="pk-list" className="mt-8">
         <h2 id="pk-list" className="font-semibold text-text">Your packages</h2>
@@ -43,7 +44,7 @@ export default async function PackagesPage({ searchParams }: { searchParams: Pro
               <li key={p.id}>
                 <Card className="grid gap-2">
                   <p className="font-semibold text-text">{p.name} {!p.active && <span className="ml-2 rounded-md bg-surface px-2 py-0.5 text-sm text-text-muted">Off sale</span>}</p>
-                  <p className="text-sm text-text-muted">{p.sessions} × {names.get(p.eventTypeId) ?? "event type"} · {formatMoney(p.priceMinor, "INR")} · book within {p.validDays} days</p>
+                  <p className="text-sm text-text-muted">{p.sessions} × {names.get(p.eventTypeId) ?? "event type"} · {formatAmount(p.priceMinor, p.currency)} · book within {p.validDays} days</p>
                   <div className="flex flex-wrap items-center gap-3">
                     <CopyLinkButton path={`/pkg/${p.id}`} />
                     <form action={togglePackage}>
@@ -70,7 +71,7 @@ export default async function PackagesPage({ searchParams }: { searchParams: Pro
                   <tr key={p.id} className="border-t border-border text-text">
                     <td className="py-2 pr-4">{p.guestName}<br /><span className="text-text-muted">{p.guestEmail}</span></td>
                     <td className="py-2 pr-4">{p.used} of {p.sessions}</td>
-                    <td className="py-2 pr-4">{formatMoney(p.priceMinor, "INR")}<br /><span className="text-text-muted">{formatDate(p.paidAt!, tz)}</span></td>
+                    <td className="py-2 pr-4">{formatAmount(p.priceMinor, p.currency)}<br /><span className="text-text-muted">{formatDate(p.paidAt!, tz)}</span></td>
                     <td className="py-2">{formatDate(p.expiresAt!, tz)}</td>
                   </tr>
                 ))}

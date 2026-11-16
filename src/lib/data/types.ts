@@ -41,9 +41,10 @@ export interface EventType {
   dailyLimit: number | null;
   /** Guests can't cancel online once the start is closer than this. 0 = any time before the start. */
   cancelCutoffMinutes: number;
-  /** What guests pay in paise; null = free. Set only together with currency (price_minor / currency in the schema). */
+  /** What guests pay in minor units (paise, cents); null = free. */
   priceMinor: number | null;
-  currency: "INR" | null;
+  /** The currency of the price or deposit: INR on Razorpay, the Stripe account's currency otherwise. Null when nothing is charged. */
+  currency: string | null;
   hidden: boolean;
   active: boolean;
   position: number;
@@ -366,6 +367,8 @@ export interface DataStore {
   createOneOffMeeting(hostId: string, input: OneOffInput, now: Date): Promise<{ eventType: EventType; link: BookingLink; token: string }>;
   /** The offered start times of a one_off event type, earliest first. */
   listOneOffTimes(eventTypeId: string): Promise<Date[]>;
+  /** Times the host's open meeting polls hold, overlapping [from, to): blocked from other bookings like busy time. */
+  listPollHolds(userId: string, from: Date, to: Date, now: Date): Promise<{ start: Date; end: Date }[]>;
 }
 
 /** The editable fields of an event type, already validated. */

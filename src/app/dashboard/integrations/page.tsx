@@ -10,7 +10,9 @@ import { parseKey } from "@/lib/crypto/seal";
 import { getPool } from "@/lib/data/pg-store";
 import { maskKeyId, razorpayStatus } from "@/lib/payments/host-razorpay";
 import { APPLICATION_FEE_BP, maskAccountId, STRIPE_COUNTRIES, stripeConnectFromEnv, stripeStatus } from "@/lib/payments/stripe-connect";
+import { whatsappBookingOn } from "@/lib/whatsapp-booking";
 import { connectRazorpay, connectStripe, disconnectRazorpayAction, disconnectStripeAction } from "./actions";
+import { WhatsAppBookingCard } from "./WhatsAppBookingCard";
 
 export const dynamic = "force-dynamic";
 
@@ -139,12 +141,12 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
               <span className={`inline-flex items-center rounded-pill px-3 py-1 text-xs ${stripe.mode === "test" ? "bg-warning-bg text-warning" : "bg-success-bg text-success"}`}>
                 {stripe.mode === "test" ? "Test mode" : "Live"}
               </span>
-              <span className={`inline-flex items-center rounded-pill px-3 py-1 text-xs ${stripe.onboarding === "active" ? "bg-success-bg text-success" : "bg-warning-bg text-warning"}`}>
-                {stripe.onboarding === "active" ? "Taking payments" : stripe.onboarding === "restricted" ? "Stripe needs more details" : "Setup not finished"}
+              <span className={`inline-flex items-center rounded-pill px-3 py-1 text-xs ${stripe.onboarding === "active" && !stripe.removed ? "bg-success-bg text-success" : "bg-warning-bg text-warning"}`}>
+                {stripe.removed ? "Hourhand was removed in Stripe" : stripe.onboarding === "active" ? "Taking payments" : stripe.onboarding === "restricted" ? "Stripe needs more details" : "Setup not finished"}
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
-              {stripe.onboarding !== "active" && stripeServer && (
+              {stripe.onboarding !== "active" && !stripe.removed && stripeServer && (
                 <form action={connectStripe}><Button type="submit" size="sm">Continue setup in Stripe</Button></form>
               )}
               <form action={disconnectStripeAction}><Button type="submit" variant="secondary" size="sm">Disconnect</Button></form>
@@ -171,6 +173,8 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
           <p className="mt-4 max-w-xl text-sm text-text-muted">{live ? STRIPE_ERRORS.not_configured : STRIPE_ERRORS.demo}</p>
         )}
       </Card>
+
+      <WhatsAppBookingCard slug={user.slug} plan={plan} on={pool ? await whatsappBookingOn(pool, user.id) : false} notice={params.whatsapp} />
     </div>
   );
 }

@@ -12,7 +12,7 @@ import { fakeStripe } from "./fake-stripe";
 import { RazorpayKeyError, saveRazorpayKeys } from "./host-razorpay";
 import {
   APPLICATION_FEE_BP, applicationFeeMinor, disconnectStripe, hostForStripeAccount, loadHostStripe, maskAccountId, onboardingFromCapability,
-  refreshStripeAccount, startStripeConnect, STRIPE_API_VERSION, stripeConnectApi, stripeConnectFromEnv, StripeConnectError, stripeReady,
+  refreshStripeAccount, startStripeConnect, stripeStatus, STRIPE_API_VERSION, stripeConnectApi, stripeConnectFromEnv, StripeConnectError, stripeReady,
 } from "./stripe-connect";
 
 const urls = { returnUrl: "https://hh.test/api/payments/stripe/return", refreshUrl: "https://hh.test/api/payments/stripe/refresh" };
@@ -233,6 +233,16 @@ describe.skipIf(!BASE)("Stripe Connect state (TEST_DATABASE_URL)", () => {
     expect(await row(priya.id)).toBeUndefined();
     // With Stripe gone, Razorpay can be connected.
     await saveRazorpayKeys(pool, key, priya.id, "rzp_test_AbCdEfGh1234", "secret", verifyOk);
+  });
+
+  it("an account whose owner removed Hourhand in Stripe still shows, can't take payments, and can be disconnected", async () => {
+    const { api: s } = api();
+    await startStripeConnect(pool, key, s, priya, "US", urls);
+    await pool.query("update integrations set status = 'disconnected', onboarding = 'active' where user_id = $1 and provider = 'stripe'", [priya.id]);
+    expect(await stripeStatus(pool, priya.id)).toMatchObject({ removed: true });
+    expect(await loadHostStripe(pool, key, priya.id)).toBeNull();
+    await disconnectStripe(pool, priya.id);
+    expect(await row(priya.id)).toBeUndefined();
   });
 
   it("disconnect only ever removes the signed-in host's own account", async () => {
