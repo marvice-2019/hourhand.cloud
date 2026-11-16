@@ -18,6 +18,9 @@ import { pollMailData } from "../polls/polls";
 import { createPgStore } from "../data/pg-store";
 import { hostPlan } from "../billing/account";
 import { isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
+import type { SmsConfig } from "../sms/config";
+import { queueSmsFallback, sendBookingSms, smsSkipReason } from "../sms/outbox";
+import { SmsError } from "../sms/provider";
 
 // Runs due rows of the notifications queue: emails, and writes to the host's calendar (Google or Microsoft). Several workers can run
 // at once: each claims rows with FOR UPDATE SKIP LOCKED and a lease (locked_until), so a row is never run by two
@@ -49,7 +52,7 @@ export async function claimDue(pool: pg.Pool, now: Date, limit: number): Promise
   const { rows } = await pool.query(
     `update notifications n set locked_until = $1::timestamptz + make_interval(mins => $3), attempts = n.attempts + 1, updated_at = $1
      from (select id from notifications
-           where status = 'queued' and channel in ('email', 'calendar', 'whatsapp') and send_at <= $1 and (locked_until is null or locked_until < $1)
+           where status = 'queued' and channel in ('email', 'calendar', 'whatsapp', 'sms') and send_at <= $1 and (locked_until is null or locked_until < $1)
            order by send_at limit $2 for update skip locked) due
      where n.id = due.id
      returning n.id, n.booking_id, n.user_id, n.kind, n.channel, n.recipient, n.attempts, n.locked_until, n.dedupe_key`, [now, limit, LEASE_MINUTES]);
@@ -429,7 +432,7 @@ async function renderPackage(pool: pg.Pool, c: Claimed, baseUrl: string): Promis
 }
 
 export async function processDueNotifications(
-  pool: pg.Pool, mailer: Mailer, opts: { baseUrl: string; now?: Date; limit?: number; calendar?: CalendarDeps | null; whatsapp?: WhatsAppConfig | null; fetch?: typeof fetch },
+  pool: pg.Pool, mailer: Mailer, opts: { baseUrl: string; now?: Date; limit?: number; calendar?: CalendarDeps | null; whatsapp?: WhatsAppConfig | null; sms?: SmsConfig | null; fetch?: typeof fetch },
 ): Promise<WorkerResult> {
   const now = opts.now ?? new Date();
   const claimed = await claimDue(pool, now, opts.limit ?? BATCH_SIZE);
@@ -474,8 +477,8 @@ export async function processDueNotifications(
       if (!r?.id) { await skip(c, "booking no longer exists"); continue; }
       const why = skipReason(c.kind, r, now);
       if (why) { await skip(c, why); continue; }
-      // WhatsApp templates carry no video link, so they never wait for one.
-      let wait = c.channel === "whatsapp" ? null : deferReason(c.kind, r, now, Boolean(opts.calendar));
+      // WhatsApp and SMS templates carry no video link, so they never wait for one.
+      let wait = c.channel === "whatsapp" || c.channel === "sms" ? null : deferReason(c.kind, r, now, Boolean(opts.calendar));
       if (wait === VIDEO_LINK_WAIT) {
         // The calendar write may have finished earlier in this same batch: look again before waiting.
         const { rows: [fresh] } = await pool.query(
@@ -497,6 +500,10 @@ export async function processDueNotifications(
     }
     if (c.channel === "whatsapp") {
       const why = await whatsappSkipReason(pool, c, opts.whatsapp ?? null, now);
+      if (why) { await skip(c, why); await queueSmsFallback(pool, c.id, now, Boolean(opts.sms)); continue; }
+    }
+    if (c.channel === "sms") {
+      const why = await smsSkipReason(pool, c, opts.sms ?? null, now);
       if (why) { await skip(c, why); continue; }
     }
     if (isCalendarJob(c.kind) && !opts.calendar) { await skip(c, `${new Intl.ListFormat("en").format(Object.values(PROVIDER_NAMES))} calendars are not configured on this server`); await release(c); continue; }
@@ -520,6 +527,11 @@ export async function processDueNotifications(
           } : {}),
         }, c.recipient);
         ({ id: providerId } = await sendWhatsApp(opts.whatsapp!, message, opts.fetch));
+      } else if (c.channel === "sms") {
+        providerId = await sendBookingSms(pool, opts.sms!, c, {
+          guestName: r.guest_name as string, hostName: r.host_name as string, eventName: r.event_name as string, startAt: new Date(r.start_at as Date),
+          guestTimezone: r.guest_timezone as string, locale: (r.guest_locale as string | null) ?? "en",
+        }, opts.baseUrl, opts.fetch);
       } else if (isCalendarJob(c.kind)) {
         const out = await runCalendarJob(pool, opts.calendar!, c, r, opts.baseUrl, now);
         if ("skip" in out) { await skip(c, out.skip); await release(c); continue; }
@@ -544,11 +556,12 @@ export async function processDueNotifications(
         ({ id: providerId } = await mailer.send({ ...mail, to: c.recipient, idempotencyKey: `notification-${c.id}` }));
       }
     } catch (error) {
-      const retryable = error instanceof MailError || error instanceof CalendarApiError || error instanceof WhatsAppError ? error.retryable : true;
+      const retryable = error instanceof MailError || error instanceof CalendarApiError || error instanceof WhatsAppError || error instanceof SmsError ? error.retryable : true;
       const message = (error as Error).message.slice(0, 500);
       if (!retryable || c.attempts >= MAX_ATTEMPTS) {
         await finish(c, "failed", { error: message });
         result.failed++;
+        if (c.channel === "whatsapp") await queueSmsFallback(pool, c.id, now, Boolean(opts.sms));
         console.error(`[jobs] notification ${c.id} (${c.kind}) failed for good: ${message}`);
       } else {
         const delay = RETRY_DELAYS_MINUTES[Math.min(c.attempts, RETRY_DELAYS_MINUTES.length) - 1];

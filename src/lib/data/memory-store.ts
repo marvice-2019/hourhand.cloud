@@ -76,7 +76,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       id, eventTypeId: et.id, hostId: et.userId, startAt, endAt, bufferedStart, bufferedEnd, status: "confirmed", holdExpiresAt: null,
       locationKind: db.locations.find((l) => l.eventTypeId === et.id)?.kind ?? null, joinUrl: null,
       idempotencyKey: input.idempotencyKey, cancelledAt: null, cancelledBy: null, cancelReason: null, rescheduledFromId: movingId, seriesId: null, seriesIndex: null, classKey, createdAt: new Date(),
-      invitee: { id: randomUUID(), bookingId: id, hostId: et.userId, ...input.invitee, guests: input.invitee.guests ?? [], locale: input.invitee.locale ?? "en", whatsappOptIn: input.invitee.whatsappOptIn === true && input.invitee.phone !== null, manageToken: randomUUID().replaceAll("-", ""), noShowAt: null, runningLateMinutes: null, runningLateAt: null },
+      invitee: { id: randomUUID(), bookingId: id, hostId: et.userId, ...input.invitee, guests: input.invitee.guests ?? [], locale: input.invitee.locale ?? "en", whatsappOptIn: input.invitee.whatsappOptIn === true && input.invitee.phone !== null, smsOptIn: input.invitee.smsOptIn === true && input.invitee.phone !== null, manageToken: randomUUID().replaceAll("-", ""), noShowAt: null, runningLateMinutes: null, runningLateAt: null },
     };
   }
 
@@ -236,9 +236,9 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       }
       const old = db.bookings.find((b) => b.hostId === hostId && b.id === bookingId);
       if (!old) throw new NotFoundError("Booking");
-      const { name, email, timezone, phone, answers, guests, locale, whatsappOptIn } = old.invitee;
+      const { name, email, timezone, phone, answers, guests, locale, whatsappOptIn, smsOptIn } = old.invitee;
       // Both steps run synchronously, so no other request can see the half-done state (one transaction in Postgres).
-      const booking = build({ eventTypeId: old.eventTypeId, startAt, idempotencyKey, durationMinutes: (old.endAt.getTime() - old.startAt.getTime()) / MIN, invitee: { name, email, timezone, phone, answers: answers.map((a) => ({ ...a })), guests: [...guests], locale, whatsappOptIn } }, old.id);
+      const booking = build({ eventTypeId: old.eventTypeId, startAt, idempotencyKey, durationMinutes: (old.endAt.getTime() - old.startAt.getTime()) / MIN, invitee: { name, email, timezone, phone, answers: answers.map((a) => ({ ...a })), guests: [...guests], locale, whatsappOptIn, smsOptIn } }, old.id);
       // A moved week stays its series' week.
       Object.assign(booking, { seriesId: old.seriesId, seriesIndex: old.seriesIndex });
       db.bookings.push(booking);
