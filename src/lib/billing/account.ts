@@ -53,6 +53,11 @@ export async function checkedCalendarLimit(db: Db, userId: string): Promise<numb
   return LIMITS[await hostPlan(db, userId)].checkedCalendars;
 }
 
+/** How many named availability schedules the host's plan keeps. */
+export async function scheduleLimit(db: Db, userId: string): Promise<number> {
+  return LIMITS[await hostPlan(db, userId)].schedules;
+}
+
 export type BillingError = "already_subscribed" | "not_configured" | "no_subscription" | "cannot_pause" | "provider" | "needs_plan";
 
 export class BillingActionError extends Error {

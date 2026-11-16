@@ -1,34 +1,35 @@
 import { Card } from "@/components/ui/Card";
 import { authEnabled, resolveBaseUrl } from "@/lib/auth/auth";
 import { requireOwnAccount } from "@/lib/auth/session";
-import { formatMoney, PRICES } from "@/lib/billing/plans";
+import { PRICES } from "@/lib/billing/plans";
 import { getPool } from "@/lib/data/pg-store";
+import type { HostKey } from "@/lib/i18n/host";
+import { getHostI18n } from "@/lib/i18n/host/server";
 import { YEARLY_REWARD_CAP } from "@/lib/referrals/codes";
 import { RAZORPAY_REFERRAL_DISCOUNT_INR } from "@/lib/referrals/credits";
 import { getOrCreateCode, referralSummary, type CreditLine } from "@/lib/referrals/store";
 
 export const dynamic = "force-dynamic";
 
-const STATUS: Record<CreditLine["status"], string> = {
-  pending: "Waiting: comes off your first renewal on a paid plan",
-  scheduled: "Comes off your next renewal",
-  used: "Used on a renewal",
-  extension: "Added as a month of Solo after your paid plan ends (UPI AutoPay and eMandate renewals can't be discounted)",
-  failed: "Couldn't be applied automatically. Write to support and we'll sort it out",
+const STATUS: Record<CreditLine["status"], HostKey> = {
+  pending: "referrals.statusPending",
+  scheduled: "referrals.statusScheduled",
+  used: "referrals.statusUsed",
+  extension: "referrals.statusExtension",
+  failed: "referrals.statusFailed",
 };
-
-const MISSED = "Razorpay didn't take it off your last renewal, so it's set for the next one. If that renewal is charged in full too, write to support";
 
 export default async function ReferralsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requireOwnAccount();
   const params = await searchParams;
-  const value = `${formatMoney(RAZORPAY_REFERRAL_DISCOUNT_INR, "INR")} / ${formatMoney(PRICES.solo.month.USD, "USD")}`;
+  const { t, date, inr, money, number } = await getHostI18n();
+  const value = `${inr(RAZORPAY_REFERRAL_DISCOUNT_INR)} / ${money(PRICES.solo.month.USD, "USD")}`; // i18n-ignore
 
   if (!authEnabled()) {
     return (
       <div>
-        <h1 className="font-display text-xl text-text">Referrals</h1>
-        <p className="mt-2 max-w-xl text-text-muted">Referral links need the database. Start the app with HOURHAND_DATA=postgres.</p>
+        <h1 className="font-display text-xl text-text">{t("referrals.title")}</h1>
+        <p className="mt-2 max-w-xl text-text-muted">{t("referrals.needsDb")}</p>
       </div>
     );
   }
@@ -36,46 +37,47 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
   const code = await getOrCreateCode(pool, user.id);
   const link = `${(resolveBaseUrl() ?? "https://hourhand.cloud").replace(/\/+$/, "")}/r/${code}`;
   const { counts, credits, rewardedLastYear } = await referralSummary(pool, user.id);
-  const fmt = (d: Date) => new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeZone: user.timezone }).format(d);
 
-  const stats: [string, number][] = [["Invited", counts.invited], ["Signed up", counts.signedUp], ["Paid", counts.paid], ["Free months earned", counts.credited]];
+  const stats: [HostKey, number][] = [
+    ["referrals.invited", counts.invited], ["referrals.signedUp", counts.signedUp], ["referrals.paid", counts.paid], ["referrals.earned", counts.credited],
+  ];
+  const statusOf = (c: CreditLine) => {
+    const s = t(c.missedRenewals > 0 && c.status !== "used" ? "referrals.statusMissed" : STATUS[c.status]);
+    return c.accessUntil ? t("referrals.until", { status: s, date: date(c.accessUntil, user.timezone) }) : s;
+  };
 
   return (
     <div>
-      <h1 className="font-display text-xl text-text">Referrals</h1>
-      <p className="mt-2 max-w-xl text-text-muted">
-        Share your link. When someone signs up through it and starts paying for Solo or Duo, you both get a free month of Solo ({value}):
-        yours comes off your next renewal, theirs off their next one.
-      </p>
-      {params.own === "1" && <p role="status" className="mt-4 max-w-xl text-text-muted">That&apos;s your own link. Share it with someone else; signing up through it yourself doesn&apos;t count.</p>}
+      <h1 className="font-display text-xl text-text">{t("referrals.title")}</h1>
+      <p className="mt-2 max-w-xl text-text-muted">{t("referrals.intro", { value })}</p>
+      {params.own === "1" && <p role="status" className="mt-4 max-w-xl text-text-muted">{t("referrals.ownLink")}</p>}
 
       <Card className="mt-6 max-w-2xl">
-        <h2 className="font-semibold text-text">Your link</h2>
-        <label htmlFor="referral-link" className="sr-only">Your referral link</label>
+        <h2 className="font-semibold text-text">{t("referrals.yourLink")}</h2>
+        <label htmlFor="referral-link" className="sr-only">{t("referrals.linkLabel")}</label>
         <input id="referral-link" readOnly value={link} className="mt-2 w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm text-text" />
-        <p className="mt-2 text-sm text-text-muted">The link works for 30 days after someone opens it.</p>
+        <p className="mt-2 text-sm text-text-muted">{t("referrals.linkWindow")}</p>
       </Card>
 
       <dl className="mt-6 grid max-w-2xl grid-cols-2 gap-4 sm:grid-cols-4">
         {stats.map(([label, n]) => (
           <Card key={label}>
-            <dt className="text-sm text-text-muted">{label}</dt>
-            <dd className="mt-1 font-display text-2xl text-text">{n}</dd>
+            <dt className="text-sm text-text-muted">{t(label)}</dt>
+            <dd className="mt-1 font-display text-2xl text-text">{number(n)}</dd>
           </Card>
         ))}
       </dl>
       {rewardedLastYear >= YEARLY_REWARD_CAP && (
-        <p className="mt-4 max-w-xl text-sm text-text-muted">You&apos;ve earned the most free months allowed in 12 months ({YEARLY_REWARD_CAP}). People you invite still get theirs.</p>
+        <p className="mt-4 max-w-xl text-sm text-text-muted">{t("referrals.capReached", { n: number(YEARLY_REWARD_CAP) })}</p>
       )}
 
       {credits.length > 0 && (
         <Card className="mt-6 max-w-2xl">
-          <h2 className="font-semibold text-text">Your free months</h2>
+          <h2 className="font-semibold text-text">{t("referrals.yourMonths")}</h2>
           <ul className="mt-3 grid gap-2 text-sm">
             {credits.map((c, i) => (
               <li key={i} className="text-text-muted">
-                <span className="text-text">{c.role === "referrer" ? "For a referral" : "For joining through a link"}</span>, {fmt(c.createdAt)}: {c.missedRenewals > 0 && c.status !== "used" ? MISSED : STATUS[c.status]}
-                {c.accessUntil ? `, until ${fmt(c.accessUntil)}` : ""}.
+                {t(c.role === "referrer" ? "referrals.forReferral" : "referrals.forJoining", { date: date(c.createdAt, user.timezone), status: statusOf(c) })}
               </li>
             ))}
           </ul>
@@ -83,12 +85,12 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
       )}
 
       <div className="mt-6 max-w-2xl text-sm text-text-muted">
-        <h2 className="font-semibold text-text">The rules</h2>
+        <h2 className="font-semibold text-text">{t("referrals.rules")}</h2>
         <ul className="mt-2 grid list-disc gap-1 pl-5">
-          <li>The free months arrive after their first payment for Solo or Duo goes through, not when they sign up.</li>
-          <li>Up to {YEARLY_REWARD_CAP} free months for referrals in any 12 months.</li>
-          <li>Only new accounts count, and signing yourself up again doesn&apos;t: not with the same email, the same card, or the same browser.</li>
-          <li>Free months come off a renewal. They can&apos;t be exchanged for cash.</li>
+          <li>{t("referrals.ruleFirstPayment")}</li>
+          <li>{t("referrals.ruleCap", { n: number(YEARLY_REWARD_CAP) })}</li>
+          <li>{t("referrals.ruleSelf")}</li>
+          <li>{t("referrals.ruleCash")}</li>
         </ul>
       </div>
     </div>

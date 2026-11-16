@@ -502,6 +502,12 @@ describe.skipIf(!BASE)("referrals (TEST_DATABASE_URL)", () => {
       const forReferred = rows.find((r) => r.user_id === referred.id)!;
       const mail2 = await renderReferralReward(pool, forReferred, "https://hourhand.test");
       expect("text" in mail2 && mail2.text).toContain(`Host ${referrer.email.match(/\d+/)![0]}`);
+
+      // Each host gets it in their own dashboard language.
+      await pool.query("update users set host_locale = 'hi' where id = $1", [referrer.id]);
+      const hindi = await renderReferralReward(pool, forReferrer, "https://hourhand.test");
+      expect("subject" in hindi && hindi.subject).toBe("आपको Hourhand का एक महीना फ़्री मिला");
+      expect("text" in hindi && hindi.text).toContain("398");
     });
   });
 });

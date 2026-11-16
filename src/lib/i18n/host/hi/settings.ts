@@ -1,0 +1,26 @@
+// Host dashboard words: settings, Hindi. Draft: needs native-speaker review (see docs/i18n-host.md).
+import type { settings as en } from "../en/settings";
+export const settings: Record<keyof typeof en, string> = {
+  "settings.title": "सेटिंग्स",
+  "settings.intro": "अपना नाम, बुकिंग पेज का पता, टाइम ज़ोन और समय का फ़ॉर्मैट बदलें।",
+  "settings.eventTypes": "इवेंट टाइप",
+  "settings.appearance": "दिखावट",
+  "settings.appearanceIntro": "रात में डार्क मोड आँखों के लिए आरामदायक होता है। डिवाइस चुनने पर आपके फ़ोन या कंप्यूटर की सेटिंग लागू होती है।",
+  "settings.dashboardLanguage": "आपकी भाषा",
+  "settings.dashboardLanguageIntro": "आपके डैशबोर्ड और Hourhand से आपको आने वाले ईमेल की भाषा। आपके बुकिंग पेज की भाषा अलग है, उसे नीचे चुनें।",
+  "settings.dashboardLanguageSaved": "सेव हो गया। अब आपका डैशबोर्ड और ईमेल इसी भाषा में होंगे।",
+  "settings.bookingLanguage": "बुकिंग पेज की भाषा",
+  "settings.bookingLanguageIntro": "आपके बुकिंग पेज पर मेहमानों को सबसे पहले यही भाषा दिखती है। वे पेज के ऊपर से दूसरी भाषा चुन सकते हैं।",
+  "settings.language": "भाषा",
+  "settings.languageSaved": "सेव हो गया। नए मेहमानों को आपके बुकिंग पेज इसी भाषा में दिखेंगे।",
+  "settings.signedInAs": "{email} से साइन इन हैं",
+  "settings.signOutIntro": "फ़ोन खो गया या किसी साझा कंप्यूटर का इस्तेमाल किया? हर जगह से साइन आउट करें, इस ब्राउज़र से भी।",
+  "settings.signOutAll": "सभी डिवाइस से साइन आउट करें",
+  "settings.demoSessions": "यह कॉपी डेमो डेटा पर चलती है, इसलिए बंद करने के लिए कोई लॉग-इन नहीं है।",
+  "settings.deleteTitle": "अपना अकाउंट डिलीट करें",
+  "settings.deleteIntro": "आपके बुकिंग लिंक तुरंत काम करना बंद कर देंगे और आने वाली बुकिंग कैंसल हो जाएँगी। अगर आपका मन बदल जाए, इसलिए हम आपका डेटा 30 दिन तक रखते हैं, फिर उसे हमेशा के लिए डिलीट कर देते हैं।",
+  "settings.deleteConfirm": "पक्का करने के लिए {email} टाइप करें",
+  "settings.deleteButton": "मेरा अकाउंट डिलीट करें",
+  "settings.errDeleteDemo": "डेमो डेटा डिलीट नहीं किया जा सकता।",
+  "settings.errDeleteEmail": "पक्का करने के लिए अपना ईमेल ठीक वैसे ही टाइप करें जैसा दिखाया गया है।",
+};

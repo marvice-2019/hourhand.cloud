@@ -4,6 +4,7 @@ import type { DataStore } from "../data/types";
 import type { Limit } from "../rate-limit";
 import { fetchCalcom } from "./calcom";
 import { fetchCalendly } from "./calendly";
+import { IMPORT_MESSAGES } from "./messages";
 import { importEventTypes, type ImportOutcome } from "./run";
 import { openPreview, sealPreview } from "./sealed-preview";
 import { IMPORT_FETCH_LIMIT, ImportError, type ImportDeps, type ImportProvider } from "./types";
@@ -43,12 +44,12 @@ export async function runPreview(userId: string, input: { provider: unknown; tok
   const token = typeof input.token === "string" ? input.token.trim() : "";
   const fail = (error: string): PreviewState => ({ status: "error", provider, username, error });
 
-  if (!isProvider(input.provider)) return fail("Pick Calendly or Cal.com.");
+  if (!isProvider(input.provider)) return fail(IMPORT_MESSAGES.pickProvider);
   if (!token || token.length > 4000 || /\s/.test(token)) {
-    return fail(provider === "calendly" ? "Paste your Calendly personal access token." : "Paste your Cal.com API key.");
+    return fail(provider === "calendly" ? IMPORT_MESSAGES.calendlyTokenMissing : IMPORT_MESSAGES.calcomKeyMissing);
   }
-  if (provider === "calcom" && !username) return fail("Enter your Cal.com username, as in cal.com/yourname.");
-  if (!deps.limiter.take(`import:${userId}`, IMPORT_FETCH_LIMIT)) return fail("That's a lot of tries in a short time. Wait ten minutes, then try again.");
+  if (provider === "calcom" && !username) return fail(IMPORT_MESSAGES.calcomUsernameMissing);
+  if (!deps.limiter.take(`import:${userId}`, IMPORT_FETCH_LIMIT)) return fail(IMPORT_MESSAGES.tooManyTries);
 
   try {
     const preview = provider === "calendly" ? await fetchCalendly(token, deps) : await fetchCalcom(token, username, deps);
@@ -56,12 +57,12 @@ export async function runPreview(userId: string, input: { provider: unknown; tok
       sourceId: et.sourceId, name: et.name, slug: et.slug, durationMinutes: et.durationMinutes, hidden: et.hidden,
       seatLimit: et.seatLimit, questionCount: et.questions.length, notes: et.notes,
     }));
-    if (rows.length === 0 && preview.skipped.length === 0) return fail("No event types were found on that account.");
+    if (rows.length === 0 && preview.skipped.length === 0) return fail(IMPORT_MESSAGES.noneFound);
     return { status: "preview", provider, sealed: sealPreview(deps.key, userId, preview, deps.now), rows, skipped: preview.skipped };
   } catch (e) {
     if (e instanceof ImportError) return fail(e.message);
     (deps.log ?? console.error)("Event type import failed", { provider, error: e instanceof Error ? e.name : "unknown" });
-    return fail("Something went wrong fetching your event types. Try again in a minute.");
+    return fail(IMPORT_MESSAGES.fetchFailed);
   }
 }
 
@@ -69,9 +70,9 @@ export type ImportResult = { ok: true; outcome: ImportOutcome } | { ok: false; e
 
 export async function runImport(store: DataStore, userId: string, sealed: unknown, sourceIds: unknown, deps: { key: Buffer; now: number }): Promise<ImportResult> {
   const items = typeof sealed === "string" ? openPreview(deps.key, userId, sealed, deps.now) : null;
-  if (!items) return { ok: false, error: "This preview has expired. Fetch your event types again." };
+  if (!items) return { ok: false, error: IMPORT_MESSAGES.previewExpired };
   const wanted = new Set(Array.isArray(sourceIds) ? sourceIds.filter((s): s is string => typeof s === "string") : []);
   const chosen = items.filter((et) => wanted.has(et.sourceId));
-  if (chosen.length === 0) return { ok: false, error: "Tick at least one event type to import." };
+  if (chosen.length === 0) return { ok: false, error: IMPORT_MESSAGES.tickOne };
   return { ok: true, outcome: await importEventTypes(store, userId, chosen) };
 }

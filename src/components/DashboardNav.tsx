@@ -4,33 +4,38 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { focusRing } from "./ui/focus";
+import { useHostI18n } from "./HostI18nProvider";
+import type { HostKey } from "@/lib/i18n/host";
 
-const items = [
-  { href: "/dashboard/bookings", label: "Bookings" },
-  { href: "/dashboard/clients", label: "Clients" },
-  { href: "/dashboard/feedback", label: "Feedback" },
-  { href: "/dashboard/profile", label: "Your page" },
-  { href: "/dashboard/event-types", label: "Event types" },
-  { href: "/dashboard/links", label: "Links" },
-  { href: "/dashboard/polls", label: "Polls" },
-  { href: "/dashboard/packages", label: "Packages" },
-  { href: "/dashboard/memberships", label: "Memberships" },
-  { href: "/dashboard/earnings", label: "Earnings" },
-  { href: "/dashboard/invoices", label: "Invoices" },
-  { href: "/dashboard/availability", label: "Availability" },
-  { href: "/dashboard/calendars", label: "Calendars" },
-  { href: "/dashboard/integrations", label: "Integrations" },
-  { href: "/dashboard/domain", label: "Custom domain" },
-  { href: "/dashboard/plan", label: "Plan" },
-  { href: "/dashboard/referrals", label: "Referrals" },
-  { href: "/dashboard/settings", label: "Settings" },
+const items: { href: string; label: HostKey }[] = [
+  { href: "/dashboard/bookings", label: "nav.bookings" },
+  { href: "/dashboard/clients", label: "nav.clients" },
+  { href: "/dashboard/feedback", label: "nav.feedback" },
+  { href: "/dashboard/profile", label: "nav.profile" },
+  { href: "/dashboard/event-types", label: "nav.eventTypes" },
+  { href: "/dashboard/links", label: "nav.links" },
+  { href: "/dashboard/polls", label: "nav.polls" },
+  { href: "/dashboard/get-booked", label: "nav.getBooked" },
+  { href: "/dashboard/packages", label: "nav.packages" },
+  { href: "/dashboard/offers", label: "nav.offers" },
+  { href: "/dashboard/memberships", label: "nav.memberships" },
+  { href: "/dashboard/earnings", label: "nav.earnings" },
+  { href: "/dashboard/invoices", label: "nav.invoices" },
+  { href: "/dashboard/availability", label: "nav.availability" },
+  { href: "/dashboard/calendars", label: "nav.calendars" },
+  { href: "/dashboard/integrations", label: "nav.integrations" },
+  { href: "/dashboard/domain", label: "nav.domain" },
+  { href: "/dashboard/plan", label: "nav.plan" },
+  { href: "/dashboard/referrals", label: "nav.referrals" },
+  { href: "/dashboard/settings", label: "nav.settings" },
 ];
 
 /** Pages a Duo second person can use while managing the owner's account; the rest stay the owner's alone. */
-const SHARED = new Set(["/dashboard/bookings", "/dashboard/clients", "/dashboard/feedback", "/dashboard/profile", "/dashboard/event-types", "/dashboard/links", "/dashboard/polls", "/dashboard/packages", "/dashboard/availability"]);
+const SHARED = new Set(["/dashboard/bookings", "/dashboard/clients", "/dashboard/feedback", "/dashboard/profile", "/dashboard/event-types", "/dashboard/links", "/dashboard/polls", "/dashboard/get-booked", "/dashboard/packages", "/dashboard/availability"]);
 
 export function NavLinks({ onNavigate, acting = false }: { onNavigate?: () => void; acting?: boolean }) {
   const pathname = usePathname();
+  const { t } = useHostI18n();
   return (
     <ul className="flex flex-col gap-1">
       {items.filter((item) => !acting || SHARED.has(item.href)).map((item) => {
@@ -43,7 +48,7 @@ export function NavLinks({ onNavigate, acting = false }: { onNavigate?: () => vo
               aria-current={current ? "page" : undefined}
               className={`flex min-h-11 items-center rounded-md px-3 text-sm ${current ? "bg-surface font-semibold text-text" : "text-text-muted hover:bg-surface hover:text-text"} ${focusRing}`}
             >
-              {item.label}
+              {t(item.label)}
             </Link>
           </li>
         );
@@ -55,6 +60,7 @@ export function NavLinks({ onNavigate, acting = false }: { onNavigate?: () => vo
 /** Below 1024px the sidebar collapses into this menu in the top bar. */
 export function MobileMenu({ acting = false }: { acting?: boolean }) {
   const [open, setOpen] = useState(false);
+  const { t } = useHostI18n();
   return (
     <div className="lg:hidden" onKeyDown={(e) => e.key === "Escape" && setOpen(false)}>
       <button
@@ -64,10 +70,10 @@ export function MobileMenu({ acting = false }: { acting?: boolean }) {
         onClick={() => setOpen((o) => !o)}
         className={`inline-flex min-h-11 items-center rounded-md px-3 text-sm font-semibold text-text hover:bg-surface ${focusRing}`}
       >
-        {open ? "Close" : "Menu"}
+        {open ? t("nav.close") : t("nav.menu")}
       </button>
       {open && (
-        <nav id="mobile-nav" aria-label="Main" className="absolute inset-x-0 top-full z-10 border-b border-border bg-bg p-4 shadow-pop">
+        <nav id="mobile-nav" aria-label={t("nav.main")} className="absolute inset-x-0 top-full z-10 border-b border-border bg-bg p-4 shadow-pop">
           <NavLinks acting={acting} onNavigate={() => setOpen(false)} />
         </nav>
       )}

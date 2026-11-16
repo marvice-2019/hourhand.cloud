@@ -5,6 +5,7 @@
 import type { LocationKind } from "../data/types";
 import { MAX_SEATS } from "../event-types";
 import { arr, clampBuffer, clampDuration, durationList, getJson, num, obj, str, text } from "./http";
+import { IMPORT_MESSAGES, importMessage } from "./messages";
 import { capQuestions, question } from "./questions";
 import { ImportError, MAX_IMPORT, type ImportDeps, type ImportedEventType, type ImportedQuestion, type ImportPreview } from "./types";
 
@@ -13,8 +14,8 @@ export const CALCOM_API_VERSION = "2026-06-12";
 export const CALCOM_USERNAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 
 const MESSAGES = {
-  badToken: "Cal.com didn't accept that API key. Make a new one in Cal.com (Settings → Developer → API keys) and paste the whole key, starting cal_.",
-  notFound: "Cal.com couldn't find that username. Use the name at the end of your cal.com link, like cal.com/yourname.",
+  badToken: IMPORT_MESSAGES.calcomBadToken,
+  notFound: IMPORT_MESSAGES.calcomNotFound,
 };
 
 export async function fetchCalcom(apiKey: string, username: string, deps: ImportDeps = {}): Promise<ImportPreview> {
@@ -22,21 +23,21 @@ export async function fetchCalcom(apiKey: string, username: string, deps: Import
   if (!CALCOM_USERNAME.test(user)) throw new ImportError("not_found", MESSAGES.notFound);
   const headers = { authorization: `Bearer ${apiKey.trim()}`, "cal-api-version": CALCOM_API_VERSION };
   const body = obj(await getJson("calcom", `${CALCOM_API}/v2/event-types?${new URLSearchParams({ username: user })}`, headers, deps, MESSAGES));
-  if (body.status !== undefined && body.status !== "success") throw new ImportError("bad_response", "Cal.com sent an answer Hourhand couldn't read. Try again in a minute.");
+  if (body.status !== undefined && body.status !== "success") throw new ImportError("bad_response", importMessage("unreadableRetry", { label: "Cal.com" }));
   const raw = arr(body.data);
   // An unknown username answers with an empty list rather than a 404.
-  if (raw.length === 0) throw new ImportError("not_found", `Cal.com has no event types for "${user}". Check the username is yours, as in cal.com/yourname.`);
+  if (raw.length === 0) throw new ImportError("not_found", importMessage("calcomNoEventTypes", { user }));
 
   const preview: ImportPreview = { provider: "calcom", eventTypes: [], skipped: [] };
   for (const item of raw) {
     const r = obj(item);
     const name = text(r.title, 120) || text(r.slug, 60) || "Untitled event";
     if ((r.teamId !== null && r.teamId !== undefined) || (r.schedulingType !== null && r.schedulingType !== undefined)) {
-      preview.skipped.push({ name, reason: "Team event (round robin, collective or managed). Hourhand books one host per link for now." });
+      preview.skipped.push({ name, reason: IMPORT_MESSAGES.teamCalcom });
       continue;
     }
     if (preview.eventTypes.length >= MAX_IMPORT) {
-      preview.skipped.push({ name, reason: `Only ${MAX_IMPORT} event types come over in one import.` });
+      preview.skipped.push({ name, reason: importMessage("overLimit", { max: MAX_IMPORT }) });
       continue;
     }
     preview.eventTypes.push(mapCalcom(r, name));
@@ -61,7 +62,7 @@ function mapCalcom(r: Record<string, unknown>, name: string): ImportedEventType 
   const notes: string[] = [];
   const durationMinutes = clampDuration(num(r.lengthInMinutes), notes);
   const options = durationList(r.lengthInMinutesOptions);
-  if (options.filter((d) => d !== durationMinutes).length > 0) notes.push(`Cal.com offered ${options.join(", ")} minutes; only ${durationMinutes} minutes came over.`);
+  if (options.filter((d) => d !== durationMinutes).length > 0) notes.push(importMessage("calcomLengths", { options: options.join(", "), n: durationMinutes }));
 
   const notice = num(r.minimumBookingNotice);
   const seats = obj(r.seats);
@@ -69,7 +70,7 @@ function mapCalcom(r: Record<string, unknown>, name: string): ImportedEventType 
   let seatLimit: number | null = null;
   if (r.seats && seats.disabled !== true && perSlot !== null && perSlot >= 2) {
     seatLimit = Math.min(MAX_SEATS, Math.round(perSlot));
-    if (seatLimit !== Math.round(perSlot)) notes.push(`Seats per time slot changed from ${Math.round(perSlot)} to ${MAX_SEATS}, Hourhand's most.`);
+    if (seatLimit !== Math.round(perSlot)) notes.push(importMessage("seatsCapped", { from: Math.round(perSlot), max: MAX_SEATS }));
   }
 
   const qs: ImportedQuestion[] = [];
@@ -104,7 +105,7 @@ function mapCalcom(r: Record<string, unknown>, name: string): ImportedEventType 
 
 function calcomLocation(list: unknown[], notes: string[]): ImportedEventType["location"] {
   if (list.length === 0) return null;
-  if (list.length > 1) notes.push("Only the first location came over.");
+  if (list.length > 1) notes.push(IMPORT_MESSAGES.firstLocationOnly);
   const l = obj(list[0]);
   const type = str(l.type) ?? "";
   const integration = str(l.integration) ?? "";
@@ -114,6 +115,7 @@ function calcomLocation(list: unknown[], notes: string[]): ImportedEventType["lo
   if (type === "phone" && text(l.phone, 40)) return { kind: "phone_guest_calls", value: text(l.phone, 40) };
   if (type === "attendeePhone") return { kind: "phone_host_calls", value: null };
   if (type === "attendeeAddress" || type === "attendeeDefined") return { kind: "ask_guest", value: null };
-  notes.push(`The location (${text(integration || type, 40) || "unknown"}) has no match in Hourhand; pick one before switching it on.`);
+  const kind = text(integration || type, 40);
+  notes.push(kind ? importMessage("locationNoMatch", { kind }) : IMPORT_MESSAGES.locationUnknownNoMatch);
   return null;
 }
