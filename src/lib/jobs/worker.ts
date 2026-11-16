@@ -447,7 +447,7 @@ async function renderZoomAlertMail(pool: pg.Pool, c: Claimed, baseUrl: string): 
   const { rows: [z] } = id ? await pool.query("select i.account_email, i.status, i.last_error, u.host_locale from integrations i join users u on u.id = i.user_id where i.id = $1", [id]) : { rows: [] };
   if (!z) return { skip: "Zoom connection removed" };
   if (z.status === "ok") return { skip: "Zoom reconnected" };
-  return renderZoomAlert({ accountEmail: z.account_email ?? "your Zoom account", lastError: z.last_error, integrationsUrl: `${baseUrl}/dashboard/integrations`, hostLocale: z.host_locale });
+  return renderZoomAlert({ accountEmail: z.account_email ?? null, lastError: z.last_error, integrationsUrl: `${baseUrl}/dashboard/integrations`, hostLocale: z.host_locale });
 }
 
 async function renderAlert(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
@@ -485,7 +485,7 @@ async function renderEarnings(pool: pg.Pool, c: Claimed, baseUrl: string, now: D
   const locale = hostLocaleOf({ hostLocale: u?.host_locale });
   const monthLabel = hostMonth(new Date(`${e.month}-01T00:00:00Z`), locale);
   return renderEarningsMail({ currency: e.currency, monthLabel, hostLocale: locale, netMinor: e.netMinor, bookingsMinor: e.bookingsMinor, packagesMinor: e.packagesMinor, refundsMinor: e.refundsMinor,
-    sessionsHeld: e.sessions.held, noShows: e.sessions.noShows, url: `${baseUrl}/dashboard/earnings?month=${e.month}` });
+    sessionsHeld: e.sessions.held, noShows: e.sessions.noShows, otherCurrencies: e.otherCurrencies, url: `${baseUrl}/dashboard/earnings?month=${e.month}` });
 }
 
 /** A Duo owner's invitation to their second person; skipped if it was withdrawn, moved to someone else, or accepted. */

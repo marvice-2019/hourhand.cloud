@@ -9,6 +9,9 @@ import { syncSubscription } from "./sync";
 // plans, every change goes to the provider first and the row only holds what the provider confirmed.
 
 type Env = Record<string, string | undefined>;
+
+/** The dashboard page each add-on is bought and managed from; checkout returns there. */
+const ADDON_PAGES: Record<Addon, string> = { domain: "/dashboard/domain", voice: "/dashboard/voice" };
 type Db = Pick<pg.Pool, "query">;
 
 export interface AddonSubscription {
@@ -49,7 +52,7 @@ export async function startAddonCheckout(db: Db, user: { id: string; email: stri
   try {
     const { url } = await (api ?? billing.api).startCheckout({
       priceId, interval: "month", userId: user.id, email: user.email, customerId: null,
-      successUrl: `${baseUrl}/dashboard/domain?checkout=done`, cancelUrl: `${baseUrl}/dashboard/domain?checkout=cancelled`,
+      successUrl: `${baseUrl}${ADDON_PAGES[addon]}?checkout=done`, cancelUrl: `${baseUrl}${ADDON_PAGES[addon]}?checkout=cancelled`,
       idempotencyKey: `addon:${addon}:${user.id}:${priceId}:${Math.floor(now.getTime() / 60_000)}`,
     });
     return url;

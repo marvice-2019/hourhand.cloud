@@ -310,10 +310,10 @@ export function renderCalendarAlert(a: { accountEmail: string; disconnected: boo
 }
 
 /** Zoom stopped letting Hourhand make meetings: the grant was revoked, expired, or the app was removed in Zoom. */
-export function renderZoomAlert(a: { accountEmail: string; lastError: string | null; integrationsUrl: string; hostLocale?: string | null }): RenderedMail {
+export function renderZoomAlert(a: { accountEmail: string | null; lastError: string | null; integrationsUrl: string; hostLocale?: string | null }): RenderedMail {
   return render(h(a, "mail.subjZoom"), {
     heading: h(a, "mail.hZoom"),
-    intro: h(a, "mail.iZoom", { account: a.accountEmail }),
+    intro: a.accountEmail ? h(a, "mail.iZoom", { account: a.accountEmail }) : h(a, "mail.iZoomNoAccount"),
     rows: a.lastError ? [[h(a, "mail.rLastError"), a.lastError.slice(0, 200)]] : [],
     link: { label: h(a, "mail.lReconnectZoom"), url: a.integrationsUrl },
     footer: hostFooter(a),
@@ -373,15 +373,20 @@ export function renderInvoiceMail(v: { kind: "invoice" | "credit_note"; number: 
   }, { replyTo: v.supplierEmail });
 }
 
-/** Last month in a few figures, with a link to the full report. `monthLabel` is already in the host's language. */
-export function renderEarningsMail(e: { currency?: string; monthLabel: string; netMinor: number; bookingsMinor: number; packagesMinor: number; refundsMinor: number; sessionsHeld: number; noShows: number; url: string; hostLocale?: string | null }): RenderedMail {
+/**
+ * Last month in a few figures, with a link to the full report. `monthLabel` is already in the host's language. The
+ * figures are in the host's currency; money in any other currency gets its own rows and is never added to the total.
+ */
+export function renderEarningsMail(e: { currency?: string; monthLabel: string; netMinor: number; bookingsMinor: number; packagesMinor: number; refundsMinor: number; sessionsHeld: number; noShows: number; url: string; hostLocale?: string | null; otherCurrencies?: { currency: string; netMinor: number }[] }): RenderedMail {
   const l = hl(e);
   const inr = (m: number) => hostMoney(m, e.currency, l);
   const month = e.monthLabel;
   return render(h(e, "mail.subjEarnings", { month, amount: inr(e.netMinor) }), {
     heading: h(e, "mail.hEarnings", { month }), intro: h(e, "mail.iEarnings", { month }),
     rows: [[h(e, "mail.rNet"), inr(e.netMinor)], [h(e, "mail.rBookings"), inr(e.bookingsMinor)], [h(e, "mail.rPackages"), inr(e.packagesMinor)],
-      [h(e, "mail.rRefunds"), inr(e.refundsMinor)], [h(e, "mail.rHeld"), String(e.sessionsHeld)], [h(e, "mail.rNoShows"), String(e.noShows)]],
+      [h(e, "mail.rRefunds"), inr(e.refundsMinor)],
+      ...(e.otherCurrencies ?? []).map((o): [string, string] => [h(e, "mail.rAlsoIn", { currency: o.currency }), hostMoney(o.netMinor, o.currency, l)]),
+      [h(e, "mail.rHeld"), String(e.sessionsHeld)], [h(e, "mail.rNoShows"), String(e.noShows)]],
     link: { label: h(e, "mail.lFullReport"), url: e.url }, footer: h(e, "mail.footerMonthly"),
   });
 }

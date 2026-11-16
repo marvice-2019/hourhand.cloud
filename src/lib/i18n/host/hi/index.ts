@@ -24,7 +24,8 @@ import { polls } from "./polls";
 import { profile } from "./profile";
 import { seat } from "./seat";
 import { settings } from "./settings";
+import { voice } from "./voice";
 
 export const hi: HostCatalog = {
-  ...analytics, ...availability, ...bookings, ...calendars, ...clients, ...common, ...domain, ...earnings, ...eventTypes, ...feedback, ...getBooked, ...integrations, ...invoices, ...links, ...mail, ...memberships, ...nav, ...offers, ...packages, ...plan, ...polls, ...profile, ...seat, ...settings,
+  ...analytics, ...availability, ...bookings, ...calendars, ...clients, ...common, ...domain, ...earnings, ...eventTypes, ...feedback, ...getBooked, ...integrations, ...invoices, ...links, ...mail, ...memberships, ...nav, ...offers, ...packages, ...plan, ...polls, ...profile, ...seat, ...settings, ...voice,
 };
