@@ -8,7 +8,9 @@ import { bookedMinutes, withDuration } from "@/lib/durations";
 import { store } from "@/lib/data";
 import { clientKey, sessionNumber } from "@/lib/clients";
 import { authEnabled } from "@/lib/auth/auth";
-import { requireHost } from "@/lib/auth/session";
+import { getHostContext, requireHost } from "@/lib/auth/session";
+import { MAX_NOTE } from "@/lib/privacy/notes";
+import { focusRing } from "@/components/ui/focus";
 import { formatAmount } from "@/lib/money";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
 import { getPool } from "@/lib/data/pg-store";
@@ -16,7 +18,8 @@ import { bookingPayment, DEPOSIT_HOLD_MS, type BookingPaymentSummary } from "@/l
 import { LOCATION_KEYS, isLocale, t } from "@/lib/i18n/guest";
 import { GUEST_LOCATION_LABELS } from "@/lib/location-labels";
 import { waLink, waNumber, whatsappMessage, type WhatsAppKind } from "@/lib/whatsapp";
-import { cancelAsHost, rescheduleAsHost, setNoShow } from "./actions";
+import { feedbackForBooking } from "@/lib/follow-ups/follow-ups";
+import { cancelAsHost, rescheduleAsHost, saveSessionNote, setNoShow } from "./actions";
 
 const PAYMENT_WORDS: Record<BookingPaymentSummary["status"], string> = {
   pending: "waiting for the guest to pay", paid: "paid to your account", failed: "not completed",
@@ -28,6 +31,7 @@ const DONE: Record<string, string> = {
   rescheduled: "Booking moved. We've emailed the guest the new time.",
   no_show: "Marked as a no-show.",
   no_show_undone: "No-show undone.",
+  note_saved: "Session note saved.",
 };
 const ERRORS: Record<string, string> = {
   not_found: "That booking isn't one of yours, or it no longer exists.",
@@ -38,6 +42,7 @@ const ERRORS: Record<string, string> = {
   group_seat: "A seat in a group class can't be moved on its own. Cancel it, and the guest can book another class.",
   bad_time: "That time didn't come through. Pick one from the list.",
   not_started: "You can mark a no-show once the booking has started.",
+  note_too_long: "Keep the session note under 5000 characters.",
 };
 const DAY = 86_400_000;
 
@@ -75,11 +80,15 @@ export default async function BookingDetailPage({ params, searchParams }: { para
   const allBookings = await store.listBookings(user.id);
   const series = booking.seriesId ? allBookings.filter((b) => b.seriesId === booking.seriesId) : [];
   const nth = sessionNumber(allBookings, booking);
-  const clientNote = await store.getClientNote(user.id, booking.invitee.email);
+  // Private notes are decrypted for the account owner only, never for a Duo second person managing the account.
+  const owner = !(await getHostContext())?.acting;
+  const [clientNote, sessionNote] = owner ? await Promise.all([store.getClientNote(user.id, booking.invitee.email), store.getBookingNote(user.id, booking.id)]) : ["", ""];
   // Everyone holding a live seat in the same group class, this guest included.
   const classmates = booking.classKey ? allBookings.filter((b) => b.classKey === booking.classKey && (b.status === "confirmed" || b.status === "pending_payment")) : [];
   const seatLimit = booking.classKey ? (await store.getEventType(user.id, booking.eventTypeId))?.seatLimit ?? null : null;
   const laterWeeks = series.filter((b) => (b.seriesIndex ?? 0) > (booking.seriesIndex ?? 0) && b.status === "confirmed" && b.startAt > now).length;
+  // The guest's private after-session feedback (src/lib/follow-ups), if they left any.
+  const feedback = authEnabled() ? await feedbackForBooking(getPool(process.env.DATABASE_URL as string), user.id, booking.id) : null;
   return (
     <div>
       <h1 className="font-display text-xl text-text">Booking with {booking.invitee.name}</h1>
@@ -225,6 +234,27 @@ export default async function BookingDetailPage({ params, searchParams }: { para
             </div>
           )}
         </section>
+      )}
+      {feedback && (
+        <section aria-labelledby="bk-feedback" className="mt-6 max-w-xl rounded-md bg-surface p-3">
+          <h2 id="bk-feedback" className="font-semibold text-text">Guest feedback: {feedback.rating} / 5</h2>
+          {feedback.comment && <p className="mt-1 whitespace-pre-line break-words text-text">{feedback.comment}</p>}
+          <p className="mt-1 text-sm text-text-muted">Left {formatDate(feedback.createdAt, tz)}. Only you see this.</p>
+        </section>
+      )}
+      {owner ? (
+        <section aria-labelledby="session-note" className="mt-6 max-w-xl">
+          <form action={saveSessionNote} className="grid gap-2">
+            <input type="hidden" name="bookingId" value={booking.id} />
+            <label id="session-note" htmlFor="note" className="font-semibold text-text">Session note</label>
+            <p className="text-sm text-text-muted">Private to you, encrypted when stored. It never goes into emails, and a second person on your Duo plan can&apos;t read it.</p>
+            <textarea id="note" name="note" rows={5} maxLength={MAX_NOTE} defaultValue={sessionNote} placeholder="What you covered, what to pick up next time."
+              className={`block w-full rounded-md border border-border-input bg-card p-3 text-base text-text ${focusRing}`} />
+            <div><Button type="submit" variant="secondary">Save session note</Button></div>
+          </form>
+        </section>
+      ) : (
+        <p className="mt-6 max-w-xl text-sm text-text-muted">Notes on this booking are private to the account owner.</p>
       )}
       {started && (
         <form action={setNoShow} className="mt-6">

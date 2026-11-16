@@ -3,7 +3,8 @@ import type { PackageUnavailableError } from "./packages/packages";
 import { bookedMinutes, hasDurationChoice, priceFor, resolveDuration, withDuration } from "./durations";
 import { computeOneOffSlots, computeSlotSeats, isSyncStale } from "./slots";
 import { isNamedError, type Booking, type DataStore, type EventType, type LinkUnavailableError, type User } from "./data/types";
-import { isLocale } from "./i18n/guest";
+import { isLocale, t } from "./i18n/guest";
+import { consentFor } from "./privacy/consent";
 import { waNumber } from "./whatsapp";
 import { smsNumber } from "./sms/config";
 import { BOOKING_LIMITS, type createRateLimiter } from "./rate-limit";
@@ -328,6 +329,7 @@ export async function handleCreateBooking(
     return { status: 400, body: { error: "invalid_request", fields: Object.fromEntries(missing.map((q) => [`answers.${q.id}`, "This one is required."])) } };
   }
 
+  const answers = questions.filter((q) => req.answers[q.id]).map((q) => ({ questionId: q.id, label: q.label, answer: req.answers[q.id] }));
   const bookingInput = {
     eventTypeId: eventType.id, startAt: req.start, idempotencyKey: req.idempotencyKey, ...(req.weeks > 1 ? { weeks: req.weeks } : {}),
     ...(hasDurationChoice(found.eventType) ? { durationMinutes: minutes } : {}),
@@ -336,7 +338,13 @@ export async function handleCreateBooking(
     ...(req.packageToken ? { packageToken: req.packageToken } : {}),
     invitee: {
       name: req.name, email: req.email, timezone: req.timezone, phone: req.phone, guests: req.guests, locale: req.locale, whatsappOptIn: req.whatsappOptIn, smsOptIn: req.smsOptIn,
-      answers: questions.filter((q) => req.answers[q.id]).map((q) => ({ questionId: q.id, label: q.label, answer: req.answers[q.id] })),
+      answers,
+      // What the guest agreed to, recorded with the booking (the consent log on the client's record).
+      consent: consentFor({
+        hostName: host.name, channel: found.linkToken ? "single_use_link" : req.packageToken ? "package_link" : "booking_page",
+        whatsappOptIn: req.whatsappOptIn && req.phone !== null, whatsappStatement: t(isLocale(req.locale) ? req.locale : "en", "whatsappOptIn"),
+        smsOptIn: req.smsOptIn && req.phone !== null, smsStatement: t(isLocale(req.locale) ? req.locale : "en", "smsOptIn"), questions, answers,
+      }),
     },
   };
 

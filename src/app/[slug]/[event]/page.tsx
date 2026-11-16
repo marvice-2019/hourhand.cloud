@@ -15,15 +15,25 @@ import { hostPlan } from "@/lib/billing/account";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
 import { smsOffered } from "@/lib/sms/offer";
 import { razorpayStatus } from "@/lib/payments/host-razorpay";
+import { rebookPrefill } from "@/lib/follow-ups/follow-ups";
+import { linkKey } from "@/lib/follow-ups/tokens";
 
-export default async function PublicEventPage({ params, searchParams }: { params: Promise<{ slug: string; event: string }>; searchParams: Promise<{ at?: string; lang?: string; name?: string; email?: string }> }) {
+export default async function PublicEventPage({ params, searchParams }: { params: Promise<{ slug: string; event: string }>; searchParams: Promise<{ at?: string; lang?: string; name?: string; email?: string; rebook?: string }> }) {
   const { slug, event } = await params;
-  const { at, lang, name: prefillName, email: prefillEmail } = await searchParams;
+  const { at, lang, name: prefillName, email: prefillEmail, rebook } = await searchParams;
   // ?name= and ?email= fill the form in, e.g. from a host's own site or CRM; the guest can still change them.
-  const prefill = { name: typeof prefillName === "string" ? prefillName.slice(0, 100) : "", email: typeof prefillEmail === "string" ? prefillEmail.slice(0, 254) : "" };
+  let prefill = { name: typeof prefillName === "string" ? prefillName.slice(0, 100) : "", email: typeof prefillEmail === "string" ? prefillEmail.slice(0, 254) : "" };
   const found = await store.getPublicEventType(slug, event);
   if (!found) notFound();
   const { host, eventType } = found;
+  // ?rebook= is a follow-up email's signed link: the guest's details come from their earlier booking with this host.
+  // A link that doesn't check out just leaves the form as it is.
+  if (typeof rebook === "string" && authEnabled()) {
+    let key: Buffer | null = null;
+    try { key = linkKey(); } catch { /* no signing key on this server */ }
+    const fromBooking = key ? await rebookPrefill(getPool(process.env.DATABASE_URL as string), key, rebook, host.id, new Date()) : null;
+    if (fromBooking) prefill = fromBooking;
+  }
   const locale = resolveLocale(lang, host.locale);
   const langQuery = typeof lang === "string" && lang === locale ? `?lang=${locale}` : "";
   const questions = (await store.listCustomQuestions(host.id, eventType.id))
