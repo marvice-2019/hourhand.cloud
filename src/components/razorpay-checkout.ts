@@ -43,3 +43,20 @@ export async function payWithRazorpay(payment: CheckoutPayment, info: { name: st
     rzp.open();
   });
 }
+
+/**
+ * Opens Checkout to authenticate a membership's subscription (card e-mandate or UPI Autopay; the first month is charged
+ * then). Resolves true when the client completes it, false if they close it. The result is never trusted: credits
+ * arrive only with the signed subscription.charged webhook.
+ */
+export async function subscribeWithRazorpay(s: { keyId: string; subscriptionId: string }, info: { name: string; description: string; prefill: { name: string; email: string; contact?: string } }): Promise<boolean> {
+  const Razorpay = await loadCheckout();
+  return new Promise((resolve) => {
+    const rzp = new Razorpay({
+      key: s.keyId, subscription_id: s.subscriptionId, name: info.name, description: info.description, prefill: info.prefill,
+      handler: () => resolve(true),
+      modal: { ondismiss: () => resolve(false) },
+    });
+    rzp.open();
+  });
+}
