@@ -54,6 +54,8 @@ export interface ClientExport {
   followUpOptOutAt: string | null;
   payments: { bookingId: string; kind: string; amountMinor: number; currency: string; status: string; refundedMinor: number; paidAt: string | null; providerPaymentId: string | null }[];
   packagePurchases: { id: string; package: string; sessions: number; priceMinor: number; currency: string; status: string; paidAt: string | null; expiresAt: string | null; name: string; email: string; phone: string | null }[];
+  /** Monthly memberships (3.1): the plan, its state and each paid month. */
+  memberships: { id: string; plan: string; sessionsPerMonth: number; priceMinor: number; currency: string; status: string; cancelAtPeriodEnd: boolean; joinedAt: string; paidThrough: string | null; endedAt: string | null; name: string; email: string; phone: string | null; charges: { periodStart: string; periodEnd: string; amountMinor: number; sessions: number }[] }[];
   invoices: { number: string; kind: string; issuedAt: string; buyerName: string; buyerEmail: string; description: string; placeOfSupply: string; totalMinor: number; taxableMinor: number; cgstMinor: number; sgstMinor: number; igstMinor: number }[];
   consentLog: (Omit<ConsentRecord, "recordedAt"> & { recordedAt: string })[];
   waitlist: { eventType: string; day: string; joinedAt: string; name: string }[];
@@ -76,10 +78,16 @@ export async function exportClient(db: Q, hostId: string, email: string, opts: {
   const { rows: packages } = await db.query(
     `select k.id, p.name as package_name, k.sessions, k.price_minor, k.currency, k.status, k.paid_at, k.expires_at, k.guest_name, k.guest_email, k.guest_phone
      from package_purchases k join packages p on p.id = k.package_id where k.host_id = $1 and k.guest_email = $2 order by k.created_at`, [hostId, email]);
+  const { rows: memberships } = await db.query(
+    `select m.id, p.name as plan_name, m.sessions, m.price_minor, m.currency, m.status, m.cancel_at_period_end, m.created_at, m.paid_through, m.ended_at,
+       m.guest_name, m.guest_email, m.guest_phone,
+       coalesce((select json_agg(json_build_object('periodStart', g.period_start, 'periodEnd', g.period_end, 'amountMinor', g.amount_minor, 'sessions', g.credits) order by g.period_start)
+         from membership_grants g where g.membership_id = m.id), '[]') as charges
+     from memberships m join membership_plans p on p.id = m.plan_id where m.host_id = $1 and m.guest_email = $2 order by m.created_at`, [hostId, email]);
   const { rows: waitlist } = await db.query(
     `select e.name as event_name, w.day::text as day, w.created_at, w.name from waitlist w join event_types e on e.id = w.event_type_id
      where w.host_id = $1 and w.email = $2 order by w.created_at`, [hostId, email]);
-  if (bookings.length === 0 && packages.length === 0 && waitlist.length === 0) return null;
+  if (bookings.length === 0 && packages.length === 0 && memberships.length === 0 && waitlist.length === 0) return null;
 
   const bookingIds = bookings.map((b) => b.id as string);
   const [{ rows: [host] }, { rows: payments }, { rows: invoices }, { rows: requests }, consents, { rows: feedback }, { rows: [optOut] }] = await Promise.all([
@@ -110,7 +118,7 @@ export async function exportClient(db: Q, hostId: string, email: string, opts: {
   return {
     format: "hourhand-client-export", version: 1, exportedAt: opts.now.toISOString(), privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
     host: { name: host.name, email: host.email },
-    client: { email, names: uniq([...bookings.map((b) => b.name), ...packages.map((k) => k.guest_name), ...waitlist.map((w) => w.name)]), phones: uniq([...bookings.map((b) => b.phone), ...packages.map((k) => k.guest_phone)]) },
+    client: { email, names: uniq([...bookings.map((b) => b.name), ...packages.map((k) => k.guest_name), ...memberships.map((m) => m.guest_name), ...waitlist.map((w) => w.name)]), phones: uniq([...bookings.map((b) => b.phone), ...packages.map((k) => k.guest_phone), ...memberships.map((m) => m.guest_phone)]) },
     includesPrivateNotes: opts.includeNotes,
     clientNote,
     bookings: bookings.map((b) => ({
@@ -124,6 +132,11 @@ export async function exportClient(db: Q, hostId: string, email: string, opts: {
     followUpOptOutAt: iso(optOut?.opted_out_at),
     payments: payments.map((p) => ({ bookingId: p.booking_id, kind: p.kind, amountMinor: p.amount_minor, currency: p.currency, status: p.status, refundedMinor: p.refunded_minor, paidAt: iso(p.paid_at), providerPaymentId: p.provider_payment_id })),
     packagePurchases: packages.map((k) => ({ id: k.id, package: k.package_name, sessions: k.sessions, priceMinor: k.price_minor, currency: k.currency, status: k.status, paidAt: iso(k.paid_at), expiresAt: iso(k.expires_at), name: k.guest_name, email: k.guest_email, phone: k.guest_phone })),
+    memberships: memberships.map((m) => ({
+      id: m.id, plan: m.plan_name, sessionsPerMonth: m.sessions, priceMinor: m.price_minor, currency: m.currency, status: m.status, cancelAtPeriodEnd: m.cancel_at_period_end,
+      joinedAt: iso(m.created_at)!, paidThrough: iso(m.paid_through), endedAt: iso(m.ended_at), name: m.guest_name, email: m.guest_email, phone: m.guest_phone,
+      charges: (m.charges as { periodStart: string; periodEnd: string; amountMinor: number; sessions: number }[]).map((c) => ({ ...c, periodStart: iso(c.periodStart)!, periodEnd: iso(c.periodEnd)! })),
+    })),
     invoices: invoices.map((v) => ({ number: v.number, kind: v.kind, issuedAt: iso(v.issued_at)!, buyerName: v.buyer_name, buyerEmail: v.buyer_email, description: v.description, placeOfSupply: v.place_of_supply, totalMinor: v.total_minor, taxableMinor: v.taxable_minor, cgstMinor: v.cgst_minor, sgstMinor: v.sgst_minor, igstMinor: v.igst_minor })),
     consentLog: consents.map((c) => ({ ...c, recordedAt: c.recordedAt.toISOString() })),
     waitlist: waitlist.map((w) => ({ eventType: w.event_name, day: w.day, joinedAt: iso(w.created_at)!, name: w.name })),
@@ -146,6 +159,7 @@ ${x.followUpOptOutAt ? `<p>Asked for no more follow-up emails on ${esc(x.followU
     x.includesPrivateNotes ? `<h2>Private note</h2><p class="pre">${esc(x.clientNote ?? "None.")}</p>` : "",
     `<h2>Payments</h2>${table(["Booking", "Kind", "Amount", "Status", "Refunded", "Paid at"], x.payments.map((p) => [p.bookingId, p.kind, money(p.amountMinor, p.currency), p.status, money(p.refundedMinor, p.currency), p.paidAt ?? ""]))}`,
     `<h2>Session packages</h2>${table(["Package", "Sessions", "Price", "Status", "Paid at", "Valid until"], x.packagePurchases.map((k) => [k.package, k.sessions, money(k.priceMinor, k.currency), k.status, k.paidAt ?? "", k.expiresAt ?? ""]))}`,
+    `<h2>Memberships</h2>${table(["Plan", "Each month", "Status", "Joined", "Paid until", "Paid months"], x.memberships.map((m) => [m.plan, `${m.sessionsPerMonth} sessions, ${money(m.priceMinor, m.currency)}`, m.cancelAtPeriodEnd && !m.endedAt ? "cancelling" : m.status, m.joinedAt, m.paidThrough ?? "", m.charges.length]))}`,
     `<h2>GST invoices and credit notes</h2>${table(["Number", "Kind", "Issued", "Buyer", "Description", "Total"], x.invoices.map((v) => [v.number, v.kind, v.issuedAt, v.buyerName, v.description, money(v.totalMinor, "INR")]))}`,
     `<h2>Consent log</h2>${table(["Recorded (UTC)", "Purpose", "Agreed", "Words shown", "Notice version", "Channel", "Language"], x.consentLog.map((c) => [c.recordedAt, c.purpose, c.granted ? "yes" : "no", c.statement, c.noticeVersion, c.channel, c.locale]))}`,
     `<h2>Waitlist</h2>${table(["Event", "Day", "Joined"], x.waitlist.map((w) => [w.eventType, w.day, w.joinedAt]))}`,
@@ -177,11 +191,11 @@ export class ErasureBlockedError extends Error {
 /**
  * Erases one client of `hostId`, irreversibly, in one transaction. Personal data comes out of every place Hourhand
  * keeps it for this host: booking details and answers, extra guests, notes, waitlist, queued and past message
- * recipients, package purchases, the consent log and requests. What the law requires stays (CGST Act ss.35 and 36):
+ * recipients, package purchases, memberships, the consent log and requests. What the law requires stays (CGST Act ss.35 and 36):
  * bookings, payments and invoices keep their dates, amounts and numbers, and an invoice keeps the buyer's name only
  * at or above INVOICE_NAME_THRESHOLD_MINOR. Changed invoices are logged in invoice_redactions (CGST Rule 56(8)).
  * The erasure itself is logged with who and when, never whom. Refused while the client has an upcoming booking, a
- * payment hold, or a payment or refund still settling: cancel or let those finish first.
+ * payment hold, a payment or refund still settling, or a membership that can still charge them: cancel or let those finish first.
  */
 export async function eraseClient(pool: Pick<pg.Pool, "connect">, hostId: string, actorId: string, email: string, now: Date): Promise<{ erasureId: string }> {
   if (!UUID.test(hostId)) throw new ErasureBlockedError("not_found");
@@ -195,11 +209,15 @@ export async function eraseClient(pool: Pick<pg.Pool, "connect">, hostId: string
       `select
          (select count(*) from package_purchases where host_id = $1 and guest_email = $2)::int as packages,
          (select count(*) from waitlist where host_id = $1 and email = $2)::int as waiting,
+         (select count(*) from memberships where host_id = $1 and guest_email = $2)::int as members,
          (select count(*) from bookings where id = any($3::uuid[]) and ((status = 'confirmed' and end_at > $4) or status = 'pending_payment'))::int as live,
          (select count(*) from payments where booking_id = any($3::uuid[]) and status in ('pending', 'refund_pending'))::int
-           + (select count(*) from package_purchases where host_id = $1 and guest_email = $2 and status = 'pending')::int as settling`,
+           + (select count(*) from package_purchases where host_id = $1 and guest_email = $2 and status = 'pending')::int
+           -- A membership that can still charge them: they cancel it first, or they'd be billed with no link to stop it.
+           + (select count(*) from memberships where host_id = $1 and guest_email = $2 and not cancel_at_period_end
+                and status in ('authenticated', 'active', 'pending', 'halted', 'paused'))::int as settling`,
       [hostId, email, bookingIds, now]);
-    if (invitees.length === 0 && counts.packages === 0 && counts.waiting === 0) throw new ErasureBlockedError("not_found");
+    if (invitees.length === 0 && counts.packages === 0 && counts.members === 0 && counts.waiting === 0) throw new ErasureBlockedError("not_found");
     if (counts.live > 0) throw new ErasureBlockedError("upcoming");
     if (counts.settling > 0) throw new ErasureBlockedError("payments_settling");
 
@@ -236,6 +254,12 @@ export async function eraseClient(pool: Pick<pg.Pool, "connect">, hostId: string
 
     await client.query(
       `update package_purchases set guest_name = $3, guest_email = $4, guest_phone = null, token = encode(gen_random_bytes(24), 'hex'), updated_at = $5
+       where host_id = $1 and guest_email = $2`, [hostId, email, ERASED_NAME, placeholder, now]);
+
+    // Memberships keep their plan, dates and paid months (what the grants and invoices point at); the person goes,
+    // and their old link stops working.
+    await client.query(
+      `update memberships set guest_name = $3, guest_email = $4, guest_phone = null, token = 'm' || encode(gen_random_bytes(24), 'hex'), short_url = null, updated_at = $5
        where host_id = $1 and guest_email = $2`, [hostId, email, ERASED_NAME, placeholder, now]);
 
     // Invoices: the legally required particulars stay; the email always goes, the name below the threshold.
