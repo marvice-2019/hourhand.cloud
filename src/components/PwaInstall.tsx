@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "./ui/Button";
+import { useHostI18n } from "./HostI18nProvider";
 
 const DISMISSED = "hh-install-dismissed";
 
@@ -30,6 +31,7 @@ function iosSafariBrowser(): boolean {
 
 /** Registers the service worker and offers "Install app" (or, on iOS Safari, a Share-menu hint). Dismissal is remembered. */
 export function PwaInstall() {
+  const { t } = useHostI18n();
   const [prompt, setPrompt] = useState<InstallPrompt | null>(null);
   const [closed, setClosed] = useState(false);
   // False on the server and during hydration, so the markup matches.
@@ -61,10 +63,10 @@ export function PwaInstall() {
 
   return (
     <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-2 text-sm text-text lg:px-8">
-      <span>{prompt ? "Put Hourhand on your home screen." : "Add to Home Screen from the Share menu"}</span>
+      <span>{prompt ? t("nav.installPrompt") : t("nav.installIos")}</span>
       <span className="flex gap-2">
-        {prompt && <Button size="sm" onClick={install}>Install app</Button>}
-        <Button variant="ghost" size="sm" onClick={dismiss}>Dismiss</Button>
+        {prompt && <Button size="sm" onClick={install}>{t("nav.install")}</Button>}
+        <Button variant="ghost" size="sm" onClick={dismiss}>{t("nav.dismiss")}</Button>
       </span>
     </div>
   );
