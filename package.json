@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:i18n": "vitest run src/lib/i18n",
     "db:migrate": "node scripts/migrate.ts",
     "db:seed": "node scripts/seed.ts",
     "db:purge-deleted": "node scripts/purge-deleted.ts"
