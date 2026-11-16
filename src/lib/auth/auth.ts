@@ -75,6 +75,17 @@ export function resolveBaseUrl(env: Record<string, string | undefined> = process
   return url;
 }
 
+/** The public booking pages' host name (e.g. hourhand.cloud), for link previews in the dashboard. */
+export function bookingHostName(env: Record<string, string | undefined> = process.env): string {
+  try {
+    const base = resolveBaseUrl(env);
+    if (base) return new URL(base).host;
+  } catch {
+    // a malformed BETTER_AUTH_URL falls through to the default
+  }
+  return "hourhand.cloud";
+}
+
 /**
  * An absolute URL on this site for redirects. Behind the proxy the request's own URL is the container's
  * (https://0.0.0.0:3000), so redirects built from it send people nowhere; the public base URL is used instead.
@@ -141,7 +152,8 @@ function createAuth() {
           before: async (user, ctx) => {
             if (refuseUnverifiedSignUp(user, ctx)) return false;
             const slug = await uniqueSlug(user.email, user.name, async (candidate) => {
-              const { rowCount } = await pool.query("select 1 from users where slug = $1", [candidate]);
+              // A practice page (Clinic plan) holds its slug too: hosts and practices share the top-level path.
+              const { rowCount } = await pool.query("select 1 from users where slug = $1 union all select 1 from practices where slug = $1", [candidate]);
               return (rowCount ?? 0) > 0;
             });
             return { data: { ...user, slug } };
