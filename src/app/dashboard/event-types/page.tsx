@@ -18,6 +18,7 @@ const locationLabel: Record<LocationKind, HostKey> = {
   in_person: "eventTypes.locInPerson",
   custom: "eventTypes.locCustomShort",
   ask_guest: "eventTypes.locAskGuest",
+  hourhand_video: "eventTypes.locHourhandVideoShort",
 };
 
 export const dynamic = "force-dynamic";

@@ -18,6 +18,8 @@ import { useTimeFormat } from "./useTimeFormat";
 import { WaitlistForm } from "./WaitlistForm";
 import { IntakeFields, answerErrorMessage, answersToSend, readAnswers } from "./intake/IntakeFields";
 import type { IntakeQuestion, RawAnswers } from "@/lib/intake/conditions";
+import { sendSlotClick } from "./analytics-beacon";
+import type { SourceInput } from "@/lib/analytics/source";
 
 const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -54,6 +56,8 @@ interface Props {
   sms?: boolean;
   /** Offers on a priced event: the price after today's campaign, a sliding scale, whether a code box is shown, the first-session line. */
   offers?: FlowOffers | null;
+  /** Where this visit came from (public booking pages only): sent with the slot beacon and the booking for the host's analytics. */
+  source?: SourceInput;
 }
 
 export interface FlowOffers {
@@ -69,17 +73,17 @@ export interface FlowOffers {
 }
 
 /** Public booking: pick a time, then fill in details. The picker stays mounted so "Pick another time" keeps the month and day. */
-export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = null, linkToken, initialAt, host, maxWeeks = 1, packageToken, waitlist = false, locale = "en", langQuery = "", prefill, whatsapp = false, sms = false, offers = null }: Props) {
+export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = null, linkToken, initialAt, host, maxWeeks = 1, packageToken, waitlist = false, locale = "en", langQuery = "", prefill, whatsapp = false, sms = false, source, offers = null }: Props) {
   const [picked, setPicked] = useState<{ slot: string; tz: string } | null>(null);
   return (
     <>
       <div hidden={picked !== null}>
-        <SlotPicker slug={slug} event={event} linkToken={linkToken} initialAt={initialAt} bookingWindowDays={bookingWindowDays} locale={locale} onPick={(slot, tz) => setPicked({ slot, tz })} />
+        <SlotPicker slug={slug} event={event} linkToken={linkToken} initialAt={initialAt} bookingWindowDays={bookingWindowDays} locale={locale} onPick={(slot, tz) => { if (source) sendSlotClick(slug, event, source); setPicked({ slot, tz }); }} />
         {waitlist && <WaitlistForm slug={slug} event={event} hostName={host.name} locale={locale} />}
       </div>
       {picked && (
         <DetailsForm
-          slug={slug} event={event} linkToken={linkToken} tz={picked.tz} slot={picked.slot} questions={questions} paid={packageToken ? null : paid} host={host} maxWeeks={maxWeeks} packageToken={packageToken} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={whatsapp} sms={sms}
+          slug={slug} event={event} linkToken={linkToken} tz={picked.tz} slot={picked.slot} questions={questions} paid={packageToken ? null : paid} host={host} maxWeeks={maxWeeks} packageToken={packageToken} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={whatsapp} sms={sms} source={source}
           offers={packageToken || paid?.deposit ? null : offers}
           onPick={(slot) => setPicked({ slot, tz: picked.tz })} onBack={() => setPicked(null)}
         />
@@ -91,10 +95,11 @@ export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = 
 interface FormProps {
   slug: string; event: string; linkToken?: string; tz: string; slot: string; questions: FlowQuestion[]; paid: Props["paid"]; host: Props["host"]; maxWeeks: number; packageToken?: string; locale: Locale; langQuery: string; prefill?: { name: string; email: string }; whatsapp: boolean; sms: boolean;
   offers: FlowOffers | null;
+  source?: SourceInput;
   onPick: (slot: string) => void; onBack: () => void;
 }
 
-function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, maxWeeks, packageToken, locale, langQuery, prefill, whatsapp, sms, offers, onPick, onBack }: FormProps) {
+function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, maxWeeks, packageToken, locale, langQuery, prefill, whatsapp, sms, offers, source, onPick, onBack }: FormProps) {
   const router = useRouter();
   // Offers: the code the guest applied and what the server quoted for it, and a sliding-scale amount in rupees.
   const [code, setCode] = useState("");
@@ -199,7 +204,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
     try {
       const res = await fetch("/api/bookings", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), ...(data.get("smsOptIn") ? { smsOptIn: true } : {}), locale, ...(offers && code.trim() ? { couponCode: code.trim() } : {}), ...(offers?.sliding && payMinor ? { payMinor } : {}) }),
+        body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), ...(data.get("smsOptIn") ? { smsOptIn: true } : {}), ...(source ? { src: source } : {}), locale, ...(offers && code.trim() ? { couponCode: code.trim() } : {}), ...(offers?.sliding && payMinor ? { payMinor } : {}) }),
       });
       const body = await res.json();
       if ((res.status === 201 || res.status === 200) && body.payment?.provider === "stripe" && typeof body.payment.url === "string") {

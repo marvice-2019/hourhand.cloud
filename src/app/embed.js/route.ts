@@ -10,6 +10,8 @@ const SCRIPT = `(function () {
   function ours(href) { try { var u = new URL(href, location.href); return u.origin === origin ? u : null; } catch (e) { return null; } }
   function frame(u) {
     var f = document.createElement("iframe");
+    // embed=1 tells the host's analytics this visit came through their own site; the referrer says which page.
+    u = new URL(u.toString()); u.searchParams.set("embed", "1");
     f.src = u.toString(); f.title = "Book a time"; f.loading = "lazy"; f.allow = "payment";
     f.style.cssText = "width:100%;border:0;min-height:640px;display:block;background:transparent";
     return f;

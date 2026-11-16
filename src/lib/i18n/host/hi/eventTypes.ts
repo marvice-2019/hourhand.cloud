@@ -294,4 +294,10 @@ export const eventTypes: Record<keyof typeof en, string> = {
   "eventTypes.connectPayments": "पेमेंट जोड़ें",
   "eventTypes.pricePayments": "पहले इंटीग्रेशन में Razorpay (भारत) या Stripe जोड़ें, ताकि पेमेंट आपके अकाउंट में आए।",
   "eventTypes.errSlugReserved": "यह लिंक आपका बुकिंग पेज ख़ुद इस्तेमाल करता है। कोई दूसरा चुनें।",
+  // Hourhand video (3.11)
+  "eventTypes.locHourhandVideo": "Hourhand video (Zoom या Meet अकाउंट की ज़रूरत नहीं)",
+  "eventTypes.locHourhandVideoShort": "Hourhand video",
+  "eventTypes.videoReady": "हर बुकिंग को एक निजी वीडियो रूम मिलता है। आप होस्ट के रूप में जुड़ते हैं और गेस्ट को लॉबी से अंदर लाते हैं। कॉल रिकॉर्ड नहीं होतीं।",
+  "eventTypes.videoNeedsPlan": "Hourhand video के लिए Solo या Duo प्लान चाहिए।",
+  "eventTypes.videoNotSetUp": "इस सर्वर पर Hourhand video अभी सेट अप नहीं है।",
 };

@@ -64,4 +64,9 @@ export const links: Record<keyof typeof en, string> = {
   "links.errTimesCount": "1 முதல் {n} நேரங்கள் வரை வழங்குங்கள்.",
   "links.errTimesFuture": "எல்லா நேரங்களும் எதிர்காலத்தில் இருக்க வேண்டும்.",
   "links.errTimesOnce": "ஒவ்வொரு நேரத்தையும் ஒரு முறை மட்டுமே வழங்கலாம்.",
+  // Hourhand video (3.11)
+  "links.locHourhandVideo": "Hourhand video (Zoom அல்லது Meet கணக்கு தேவையில்லை)",
+  "links.videoReady": "உங்கள் விருந்தினருக்குத் தனி வீடியோ அறை கிடைக்கும். நீங்கள் ஹோஸ்ட்டாகச் சேர்ந்து, அவரை லாபியிலிருந்து உள்ளே அனுமதிப்பீர்கள். கால்கள் பதிவு செய்யப்படாது.",
+  "links.videoNeedsPlan": "Hourhand video-க்கு Solo அல்லது Duo பிளான் தேவை.",
+  "links.videoNotSetUp": "இந்த சர்வரில் Hourhand video இன்னும் அமைக்கப்படவில்லை.",
 };

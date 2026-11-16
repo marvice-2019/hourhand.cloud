@@ -15,6 +15,8 @@ import { hostMetadata } from "@/lib/share-links";
 import { waLink } from "@/lib/whatsapp";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { resolveLocale, t } from "@/lib/i18n/guest";
+import { countPageView } from "@/lib/analytics/page-view";
+import { carryQuery } from "@/lib/analytics/source";
 import { CampaignBanner } from "@/components/CampaignBanner";
 import { hostPlan } from "@/lib/billing/account";
 import { campaignBanner } from "@/lib/offers/offers";
@@ -27,7 +29,7 @@ const load = cache(async (slug: string) => {
   return { host, profile };
 });
 
-type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ lang?: string }> };
+type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ lang?: string } & Record<string, string | string[] | undefined>> };
 
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const found = await load((await params).slug);
@@ -40,13 +42,17 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 
 export default async function ProfilePage({ params, searchParams }: Props) {
   const { slug } = await params;
-  const { lang } = await searchParams;
+  const query = await searchParams;
+  const { lang } = query;
   const found = await load(slug);
   if (!found) notFound();
   const { host, profile } = found;
   const locale = resolveLocale(lang, host.locale);
+  // Where this visit came from travels on to the event page, which otherwise would only see our own page as referrer.
+  const carried = carryQuery(await countPageView(host.id, null, query));
   // Keep an explicit choice as guests click through; otherwise the host's default applies on the next page too.
-  const q = typeof lang === "string" && lang === locale ? `?lang=${locale}` : "";
+  const langPart = typeof lang === "string" && lang === locale ? `lang=${locale}` : "";
+  const q = [langPart, carried].filter(Boolean).join("&").replace(/^(?=.)/, "?");
   const eventTypes = (await store.listEventTypes(host.id))
     .filter((et) => et.active && !et.hidden)
     .sort((a, b) => a.position - b.position);

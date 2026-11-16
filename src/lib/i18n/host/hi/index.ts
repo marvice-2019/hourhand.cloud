@@ -1,5 +1,6 @@
 // The host dashboard in Hindi: every namespace file in this folder, merged. Draft: needs native-speaker review.
 import type { HostCatalog } from "../index";
+import { analytics } from "./analytics";
 import { availability } from "./availability";
 import { bookings } from "./bookings";
 import { calendars } from "./calendars";
@@ -26,5 +27,5 @@ import { seat } from "./seat";
 import { settings } from "./settings";
 
 export const hi: HostCatalog = {
-  ...availability, ...bookings, ...calendars, ...clients, ...common, ...domain, ...earnings, ...eventTypes, ...feedback, ...getBooked, ...intake, ...integrations, ...invoices, ...links, ...mail, ...memberships, ...nav, ...offers, ...packages, ...plan, ...polls, ...profile, ...seat, ...settings,
+  ...analytics, ...availability, ...bookings, ...calendars, ...clients, ...common, ...domain, ...earnings, ...eventTypes, ...feedback, ...getBooked, ...intake, ...integrations, ...invoices, ...links, ...mail, ...memberships, ...nav, ...offers, ...packages, ...plan, ...polls, ...profile, ...seat, ...settings,
 };

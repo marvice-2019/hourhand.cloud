@@ -20,6 +20,7 @@ const items: { href: string; label: HostKey }[] = [
   { href: "/dashboard/offers", label: "nav.offers" },
   { href: "/dashboard/memberships", label: "nav.memberships" },
   { href: "/dashboard/earnings", label: "nav.earnings" },
+  { href: "/dashboard/analytics", label: "nav.analytics" },
   { href: "/dashboard/invoices", label: "nav.invoices" },
   { href: "/dashboard/availability", label: "nav.availability" },
   { href: "/dashboard/calendars", label: "nav.calendars" },
