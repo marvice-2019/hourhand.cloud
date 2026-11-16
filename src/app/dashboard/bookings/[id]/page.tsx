@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { freeSlots } from "@/lib/booking";
 import { store } from "@/lib/data";
 import { clientKey, sessionNumber } from "@/lib/clients";
+import { briefFor } from "@/lib/session-prep/prep";
 import { authEnabled } from "@/lib/auth/auth";
 import { getHostContext, requireHost } from "@/lib/auth/session";
 import { MAX_NOTE } from "@/lib/privacy/notes";
@@ -91,6 +92,8 @@ export default async function BookingDetailPage({ params, searchParams }: { para
   // Private notes are decrypted for the account owner only, never for a Duo second person managing the account.
   const owner = !(await getHostContext())?.acting;
   const [clientNote, sessionNote] = owner ? await Promise.all([store.getClientNote(user.id, booking.invitee.email), store.getBookingNote(user.id, booking.id)]) : ["", ""];
+  const prepPool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
+  const brief = prepPool ? await briefFor(prepPool, user.id, booking.id) : null;
   // Everyone holding a live seat in the same group class, this guest included.
   const classmates = booking.classKey ? allBookings.filter((b) => b.classKey === booking.classKey && (b.status === "confirmed" || b.status === "pending_payment")) : [];
   const seatLimit = booking.classKey ? (await store.getEventType(user.id, booking.eventTypeId))?.seatLimit ?? null : null;
@@ -167,6 +170,13 @@ export default async function BookingDetailPage({ params, searchParams }: { para
           <div key={a.questionId}><dt className="text-sm text-text-muted">{a.label}</dt><dd className="whitespace-pre-line text-text">{a.answer}</dd></div>
         ))}
       </dl>
+      {brief?.status === "ready" && (
+        <section aria-labelledby="prep" className="mt-6 max-w-xl rounded-md border border-border bg-card p-4">
+          <h2 id="prep" className="font-display text-lg text-text">{t("bookings.prepTitle")}</h2>
+          <p className="mt-1 whitespace-pre-line text-text">{brief.text}</p>
+          <p className="mt-2 text-xs text-text-muted">{t("bookings.prepNote", { name: booking.invitee.name.split(" ")[0] })}</p>
+        </section>
+      )}
       {upcoming && (
         <section aria-labelledby="whatsapp" className="mt-6 grid max-w-xl gap-2">
           <h2 id="whatsapp" className="font-display text-lg text-text">{t("bookings.whatsappTitle")}</h2>

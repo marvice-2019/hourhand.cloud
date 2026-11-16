@@ -59,6 +59,7 @@ export const integrations: Record<keyof typeof en, string> = {
   "integrations.zoomBody": "जिन इवेंट टाइप में Zoom चुना है, उनकी हर बुकिंग के लिए आपके अपने Zoom अकाउंट में नई मीटिंग बनती है। लिंक कन्फ़र्मेशन, कैलेंडर इनवाइट और बुकिंग पेज पर जाता है, बुकिंग का समय बदलने पर साथ में बदलता है, और कैंसल होने पर हट जाता है।",
   "integrations.zoomConnectedBadge": "कनेक्टेड",
   "integrations.zoomStopped": "Zoom ने Hourhand को {email} के लिए मीटिंग बनाने से रोक दिया है। जो बुकिंग पहले से हैं, उनके लिंक बने रहेंगे; फिर से कनेक्ट करें ताकि नई बुकिंग को भी लिंक मिले।",
+  "integrations.zoomStoppedNoEmail": "Zoom ने Hourhand को आपके लिए मीटिंग बनाने से रोक दिया है। जो बुकिंग पहले से हैं, उनके लिंक बने रहेंगे; फिर से कनेक्ट करें ताकि नई बुकिंग को भी लिंक मिले।",
   "integrations.zoomReconnect": "Zoom फिर से कनेक्ट करें",
   "integrations.zoomConnect": "Zoom कनेक्ट करें",
   "integrations.whatsappTitle": "WhatsApp · क्लाइंट मैसेज करके आपके समय देखते हैं",

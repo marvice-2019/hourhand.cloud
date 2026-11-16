@@ -20,6 +20,7 @@ import { freeSlots } from "../booking";
 import { pollMailData } from "../polls/polls";
 import { createPgStore } from "../data/pg-store";
 import { hostPlan } from "../billing/account";
+import { isClinicMail, renderClinicMail } from "../clinic/mail";
 import { buildFollowUp, FOLLOW_UP_KIND } from "../follow-ups/follow-ups";
 import { linkKey } from "../follow-ups/tokens";
 import { hostLocaleOf } from "../i18n/host";
@@ -446,7 +447,7 @@ async function renderZoomAlertMail(pool: pg.Pool, c: Claimed, baseUrl: string): 
   const { rows: [z] } = id ? await pool.query("select i.account_email, i.status, i.last_error, u.host_locale from integrations i join users u on u.id = i.user_id where i.id = $1", [id]) : { rows: [] };
   if (!z) return { skip: "Zoom connection removed" };
   if (z.status === "ok") return { skip: "Zoom reconnected" };
-  return renderZoomAlert({ accountEmail: z.account_email ?? "your Zoom account", lastError: z.last_error, integrationsUrl: `${baseUrl}/dashboard/integrations`, hostLocale: z.host_locale });
+  return renderZoomAlert({ accountEmail: z.account_email ?? null, lastError: z.last_error, integrationsUrl: `${baseUrl}/dashboard/integrations`, hostLocale: z.host_locale });
 }
 
 async function renderAlert(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
@@ -484,7 +485,7 @@ async function renderEarnings(pool: pg.Pool, c: Claimed, baseUrl: string, now: D
   const locale = hostLocaleOf({ hostLocale: u?.host_locale });
   const monthLabel = hostMonth(new Date(`${e.month}-01T00:00:00Z`), locale);
   return renderEarningsMail({ currency: e.currency, monthLabel, hostLocale: locale, netMinor: e.netMinor, bookingsMinor: e.bookingsMinor, packagesMinor: e.packagesMinor, refundsMinor: e.refundsMinor,
-    sessionsHeld: e.sessions.held, noShows: e.sessions.noShows, url: `${baseUrl}/dashboard/earnings?month=${e.month}` });
+    sessionsHeld: e.sessions.held, noShows: e.sessions.noShows, otherCurrencies: e.otherCurrencies, url: `${baseUrl}/dashboard/earnings?month=${e.month}` });
 }
 
 /** A Duo owner's invitation to their second person; skipped if it was withdrawn, moved to someone else, or accepted. */
@@ -602,7 +603,7 @@ export async function processDueNotifications(
       continue;
     }
     // Host emails about their account rather than a booking.
-    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind) || c.kind === "data_request_host" || c.kind === "membership_guest" || c.kind === "membership_host";
+    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind) || c.kind === "data_request_host" || c.kind === "membership_guest" || c.kind === "membership_host" || isClinicMail(c.kind);
     if (!isAccountMail) {
       if (!r?.id) { await skip(c, "booking no longer exists"); continue; }
       const why = skipReason(c.kind, r, now);
@@ -683,6 +684,7 @@ export async function processDueNotifications(
           : c.kind === FOLLOW_UP_KIND ? await buildFollowUp(pool, c, opts.baseUrl, now, followUpLinkKey())
           : isPollKind(c.kind) ? await renderPoll(pool, c, opts.baseUrl, now)
           : c.kind === "membership_guest" || c.kind === "membership_host" ? await renderMembership(pool, c, opts.baseUrl, now)
+          : isClinicMail(c.kind) ? await renderClinicMail(pool, c, opts.baseUrl)
           : renderBookingMail(c.kind as BookingEmailKind, {
             ...toContext(r, opts.baseUrl, c.kind.endsWith("_host") ? "host" : extraGuestMail(c, r) ? "extra_guest" : "guest"),
             extraGuest: extraGuestMail(c, r),

@@ -424,8 +424,18 @@ describe.skipIf(!BASE)("Zoom links (TEST_DATABASE_URL)", () => {
       const event = { event: "app_deauthorized", event_ts: Date.now(), payload: { account_id: "acc", user_id: "zu-priya", signature: "sig-1", deauthorization_time: new Date().toISOString(), client_id: "cid" } };
       const { raw, headers } = signed(event);
       expect(await handleZoomWebhook(pool, secret, raw, headers)).toMatchObject({ status: 200, body: { disconnected: 1 } });
-      expect(await integration()).toMatchObject({ status: "disconnected" });
+      expect(await integration()).toMatchObject({ status: "disconnected", public_id: null, account_email: null, granted_scopes: null });
+      expect((await integration()).credentials_encrypted.length).toBe(0);
+      // Only the event name and time are kept from Zoom's notice: no Zoom user or account ID.
+      const { rows: [stored] } = await pool.query("select payload::text as payload from webhook_events where provider = 'zoom' and external_id = 'sig-1'");
+      expect(stored.payload).not.toMatch(/zu-priya|"acc"/);
       expect(await alerts()).toHaveLength(1);
+      // The host's alert no longer names the Zoom account, which was deleted.
+      const { mailer, sent } = recordingMailer();
+      await run({ client, key }, mailer);
+      const alert = sent.find((m) => m.subject.startsWith("Reconnect Zoom"))!;
+      expect(alert.text).toContain("create meetings for you.");
+      expect(alert.text).not.toContain("priya@zoom.test");
       // Zoom retries the same notification: nothing more happens.
       expect(await handleZoomWebhook(pool, secret, raw, headers)).toMatchObject({ status: 200, body: { duplicate: true } });
       expect(await alerts()).toHaveLength(1);

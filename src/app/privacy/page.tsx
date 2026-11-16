@@ -21,7 +21,7 @@ export default function PrivacyPage() {
       </Link>
       <main>
         <h1 className="mt-6 font-display text-xl text-text">Privacy policy</h1>
-        <p className="mt-2 text-sm text-text-muted">Last updated 15 November 2026</p>
+        <p className="mt-2 text-sm text-text-muted">Last updated 16 November 2026</p>
 
         <p className={p}>
           This page explains what Hourhand collects, why, who helps us handle it, how long we keep it and what you can ask us to do with it. We have tried to write it in plain words. If anything is unclear, write to us and a person will answer.

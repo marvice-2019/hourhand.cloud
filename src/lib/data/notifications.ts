@@ -1,4 +1,5 @@
 import type pg from "pg";
+import type { ClinicMailKind } from "../clinic/mail";
 import { waNumber } from "../whatsapp";
 import { whatsappConfig } from "../whatsapp-cloud";
 import { queueFollowUp } from "../follow-ups/follow-ups";
@@ -25,7 +26,7 @@ export type InvoiceEmailKind = "invoice_guest";
 export type MembershipEmailKind = "membership_guest" | "membership_host";
 /** Last month's earnings, to the host on the 1st. */
 export type EarningsEmailKind = "earnings_host";
-export type NotificationKind = BookingEmailKind | CalendarJobKind | VideoJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | "calendar_alert_host" | "zoom_alert_host" | "renewal_reminder_host" | PollEmailKind | "follow_up_guest" | "data_request_host" | MembershipEmailKind;
+export type NotificationKind = BookingEmailKind | CalendarJobKind | VideoJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | ClinicMailKind | "calendar_alert_host" | "zoom_alert_host" | "renewal_reminder_host" | PollEmailKind | "follow_up_guest" | "data_request_host" | MembershipEmailKind;
 /** Meeting polls: an invitee's link to change their answers, and the host's nudge to pick a time once voting closes. */
 export type PollEmailKind = "poll_voter_link" | "poll_host_closed";
 
@@ -81,7 +82,8 @@ export async function queueBookingNotifications(
   // Extra guests get each guest email too, under their own keys (the worker leaves out the manage link for them).
   const extras: string[] = b.extra_guests ?? [];
   const toGuests = (kind: BookingEmailKind, sendAt: Date, key: string) => {
-    queued.push({ kind, channel: "email", to: b.guest_email, sendAt, key });
+    // A phone booking without an email has an address on the reserved .invalid domain (RFC 2606): nothing to send.
+    if (!/\.invalid$/i.test(b.guest_email)) queued.push({ kind, channel: "email", to: b.guest_email, sendAt, key });
     for (const g of extras) queued.push({ kind, channel: "email", to: g, sendAt, key: `${key}:to:${g.toLowerCase()}` });
   };
   // Calendar jobs name the target calendar; a delete finds the event's own calendar from the booking when it runs.

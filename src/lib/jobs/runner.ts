@@ -6,11 +6,13 @@ import { purgeClosedAccounts } from "../data/account-lifecycle";
 import type { Mailer } from "../mail/mailer";
 import { processRefunds, reconcilePayments, releaseDeposits, type PaymentCheckDeps } from "../payments/booking-payments";
 import { reconcilePurchases } from "../packages/packages";
+import { recordMissingFees, recordMissingStripeFees } from "../payments/fees";
 import { processStripeRefunds, reconcileStripePayments, reconcileStripePurchases, type StripeDeps } from "../payments/stripe-checkout";
 import { queueMonthlyReports } from "../earnings";
 import { pruneWaitlist } from "../waitlist";
 import { rollupAnalytics } from "../analytics/store";
 import { closeDuePolls } from "../polls/polls";
+import { prepareDueBriefs, prepClientFromEnv } from "../session-prep/prep";
 import { setJobKick } from "./kick";
 import { BATCH_SIZE, processDueNotifications, type CalendarDeps } from "./worker";
 import { whatsappConfig } from "../whatsapp-cloud";
@@ -32,6 +34,7 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
   let lastDomains = 0;
   let again = false;
   let lastPurge = 0;
+  const prepClient = prepClientFromEnv();
 
   async function purge(now: Date) {
     const client = await opts.pool.connect();
@@ -65,10 +68,12 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
         if (opts.payments) await releaseDeposits(opts.pool, new Date()).catch((error) => console.error("[jobs] deposit release failed", error));
         if (opts.payments) await processRefunds({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] refunds failed", error));
         if (opts.payments) await reconcilePurchases({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] package check failed", error));
+        if (opts.payments) await recordMissingFees({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] fee check failed", error));
         // Stripe hosts: payments the webhook hasn't settled, refunds (deposits released above included), package purchases.
         if (opts.stripe) await reconcileStripePayments(opts.stripe, new Date()).catch((error) => console.error("[jobs] Stripe payment check failed", error));
         if (opts.stripe) await processStripeRefunds(opts.stripe, new Date()).catch((error) => console.error("[jobs] Stripe refunds failed", error));
         if (opts.stripe) await reconcileStripePurchases(opts.stripe, new Date()).catch((error) => console.error("[jobs] Stripe package check failed", error));
+        if (opts.stripe) await recordMissingStripeFees(opts.stripe, new Date()).catch((error) => console.error("[jobs] Stripe fee check failed", error));
         // Last month's earnings emails: queued at most once an hour, and once per host per month by their dedupe key.
         if (Date.now() - lastReports > 3_600_000) {
           lastReports = Date.now();
@@ -79,6 +84,8 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
         }
         // Meeting polls past their deadline close (releasing their held times) and their hosts are emailed to pick a time.
         await closeDuePolls(opts.pool, new Date()).catch((error) => console.error("[jobs] closing polls failed", error));
+        // Session prep briefs for sessions in the next day, when this server has a Claude API key. A failure stops nothing.
+        if (prepClient) await prepareDueBriefs(opts.pool, prepClient, new Date()).catch((error) => console.error("[jobs] session prep failed", error));
         // A full batch means more may be due: keep going until a batch comes back short.
         for (;;) {
           const r = await processDueNotifications(opts.pool, opts.mailer, { baseUrl: opts.baseUrl, calendar: opts.calendar, zoom: opts.zoom, whatsapp: whatsappConfig(), sms: smsConfig() });
