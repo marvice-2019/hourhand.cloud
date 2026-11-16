@@ -13,7 +13,8 @@ import { formatDate, zoneName } from "@/lib/format";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { LOCATION_KEYS, resolveLocale, t, tNodes } from "@/lib/i18n/guest";
 import { AddToCalendar } from "@/components/AddToCalendar";
-import { resolveBaseUrl } from "@/lib/auth/auth";
+import { authEnabled, resolveBaseUrl } from "@/lib/auth/auth";
+import { pt } from "@/lib/i18n/portal";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,11 @@ export default async function ManageBookingPage({ params, searchParams }: { para
         {canSayRunningLate(booking.startAt, new Date()) && <RunningLate token={token} hostName={host.name} told={booking.invitee.runningLateMinutes} locale={locale} />}
         <ManageBooking token={token} slug={host.slug} event={eventType.slug} bookingWindowDays={eventType.bookingWindowDays} hostName={host.name} laterWeeks={laterWeeks} locale={locale} langQuery={q} cancelPolicy={eventType.cancelPolicy} groupSeat={booking.classKey !== null} />
         </>
+      )}
+      {authEnabled() && (
+        <p className="mt-8 max-w-md text-sm">
+          <Link href={`/${host.slug}/portal${q}`} target="_top" className="font-semibold text-accent underline">{pt(locale, "openPortal", { host: host.name })}</Link>
+        </p>
       )}
     </main>
   );

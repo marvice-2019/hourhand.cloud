@@ -50,7 +50,7 @@ export default function TermsPage() {
 
         <h2 className={h2}>Payments from your guests</h2>
         <p className={p}>
-          On a paid plan you can charge guests when they book. Those payments go straight from the guest to your own Razorpay account. Hourhand is not a party to them: we do not hold the money, and we are not the seller. You are responsible for refunds, taxes, invoices and your own terms with your guests, and for following Razorpay&apos;s terms. When you cancel a paid booking, Hourhand asks Razorpay to refund the guest from your account.
+          On a paid plan you can charge guests when they book. Those payments go straight from the guest to your own Razorpay account (in India) or your own Stripe account (elsewhere). Hourhand is not a party to them: we do not hold the money, and we are not the seller. You are responsible for refunds, taxes, invoices and your own terms with your guests, and for following Razorpay&apos;s or Stripe&apos;s terms. When you cancel a paid booking, Hourhand asks Razorpay or Stripe to refund the guest from your account.
         </p>
 
         <h2 className={h2}>Acceptable use</h2>
