@@ -63,7 +63,7 @@ If you want mail sent **to** booking@hourhand.cloud to arrive somewhere, add a m
 
 ## 5. Environment variables (Coolify → app → Environment)
 
-Generate the two random values on your own machine with `openssl rand -hex 32` (once each). **Keep `TOKEN_ENCRYPTION_KEY` in your password manager and never change it:** every connected calendar and every host's Razorpay key is sealed with it, so a new key disconnects them all.
+Generate the two random values on your own machine with `openssl rand -hex 32` (once each). **Keep `TOKEN_ENCRYPTION_KEY` in your password manager and never change it:** every connected calendar, every host's Razorpay key and every private client and session note is sealed with it, so a new key disconnects them all and makes notes unreadable.
 
 | Name | Value | Required |
 | --- | --- | --- |
@@ -80,12 +80,13 @@ Generate the two random values on your own machine with `openssl rand -hex 32` (
 | `STRIPE_SECRET_KEY`, `STRIPE_CONNECT_WEBHOOK_SECRET` | from Stripe (sandbox first), Runtime only | for hosts outside India taking payments through Stripe Connect. Both are needed; without them the Stripe option on Integrations says "not set up on this server" |
 | other `STRIPE_*` | only if you get Stripe for Hourhand plans (see backend.md) | no |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | from Entra (section 6) | for Outlook and Sign in with Microsoft |
+| `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ZOOM_WEBHOOK_SECRET` | from the Zoom app (section 6b), as **Runtime** variables | for Zoom links |
 | `TRUSTED_PROXIES` | leave unset (defaults cover Coolify's Docker network) | no |
 | `RAZORPAY_PLAN_DOMAIN_MONTH` | the Razorpay Plan id of the custom-domain add-on (section 5c) | for custom domains |
 | `TRAEFIK_DYNAMIC_DIR` | `/traefik-dynamic` (the mount in section 5c) | for custom domains |
 | `HOURHAND_UPSTREAM_URL` | `http://hourhand-app:3000` (section 5c) | for custom domains |
 
-Never set `HOURHAND_ALLOW_MEMORY`, `HOURHAND_MAIL_TO_LOG`, `HOURHAND_E2E`, `GOOGLE_API_BASE_URL`, `RAZORPAY_API_BASE_URL`, `STRIPE_API_BASE_URL`, `MICROSOFT_LOGIN_BASE_URL`, `MICROSOFT_GRAPH_BASE_URL` or `ICLOUD_CALDAV_URL` in production; they exist for local testing only.
+Never set `HOURHAND_ALLOW_MEMORY`, `HOURHAND_MAIL_TO_LOG`, `HOURHAND_E2E`, `GOOGLE_API_BASE_URL`, `RAZORPAY_API_BASE_URL`, `STRIPE_API_BASE_URL`, `MICROSOFT_LOGIN_BASE_URL`, `MICROSOFT_GRAPH_BASE_URL`, `ZOOM_OAUTH_BASE_URL`, `ZOOM_API_BASE_URL` or `ICLOUD_CALDAV_URL` in production; they exist for local testing only.
 
 iCloud calendars need no server keys: each host connects with their own Apple ID and app-specific password, sealed with `TOKEN_ENCRYPTION_KEY`.
 
@@ -99,7 +100,7 @@ iCloud calendars need no server keys: each host connects with their own Apple ID
 
 **Group classes and installable app (2026-10-13):** migrations run to `0025` (adds the seat column to bookings; existing bookings are untouched). No new variables. Hosts can install Hourhand to their phone's home screen from the dashboard.
 
-**Hourhand video (3.11):** migration `0046` adds the `hourhand_video` location and the `video_rooms` and `video_guest_links` tables. The feature stays off until `JITSI_DOMAIN`, `JITSI_APP_ID` and `JITSI_APP_SECRET` are set as Runtime variables, and it needs its own Jitsi server: see `docs/video-jitsi.md`.
+**Hourhand video (3.11):** migration `0053` adds the `hourhand_video` location and the `video_rooms` and `video_guest_links` tables. The feature stays off until `JITSI_DOMAIN`, `JITSI_APP_ID` and `JITSI_APP_SECRET` are set as Runtime variables, and it needs its own Jitsi server: see `docs/video-jitsi.md`.
 
 ## 5b. WhatsApp (D7: automatic confirmations and reminders)
 
@@ -380,6 +381,110 @@ Cost (Meta pricing from 1 October 2026): replies are service messages, free for 
 }
 ```
 
+## 5d. SMS (roadmap 1.2: booking texts through MSG91 and DLT)
+
+Off until every variable below is set. With any missing, nothing is queued, nothing is sent, and the booking form doesn't offer texts. Migration `0030` adds the opt-in, the short-link code and the opt-out table either way.
+
+Who gets texts: a guest who gives an **Indian mobile** (+91, starting 6–9) and ticks "Text me booking updates by SMS", on a host whose plan includes texts. They get four texts: booking confirmed, a reminder a day ahead, cancelled and rescheduled. Each text has a short link (`https://hourhand.cloud/m/<12-character code>`) that opens the booking's manage page. Guests with other numbers get email, and WhatsApp if they ticked it. If a guest ticks both WhatsApp and SMS, the message goes on WhatsApp. A text is sent only when that WhatsApp message can't go (the guest isn't on WhatsApp, Meta refuses it, it's reported undelivered, or the host is over their WhatsApp limit). The same message never goes on both channels. Guests can turn texts off, and back on, on the manage page.
+
+| Variable | Value | Required for SMS |
+| --- | --- | --- |
+| `SMS_PROVIDER` | `msg91` | yes |
+| `MSG91_AUTH_KEY` | MSG91 → API → Auth key | yes |
+| `MSG91_SENDER_ID` | your 6-letter DLT header, capitals (e.g. `HRHAND`) | yes |
+| `MSG91_TEMPLATE_BOOKED` | MSG91's template id (24 characters) for the English "booking confirmed" template | yes |
+| `MSG91_TEMPLATE_REMINDER` | same, English reminder | yes |
+| `MSG91_TEMPLATE_CANCELLED` | same, English cancelled | yes |
+| `MSG91_TEMPLATE_RESCHEDULED` | same, English rescheduled | yes |
+| `MSG91_TEMPLATE_BOOKED_HI` and the other three with `_HI` | MSG91's ids for the Hindi templates | no: Hindi guests get English until set |
+| `MSG91_WEBHOOK_SECRET` | any long random string you make up; type the same one in step 6 | yes |
+
+Set them in Coolify as **Runtime** variables, not Build variables, then redeploy.
+
+Steps (you; Claude never signs in to a DLT portal or MSG91):
+
+1. **DLT entity.** On one operator's DLT portal (Jio TrueConnect, Airtel, Vi, BSNL, Tata, SmartPing/Videocon or PingConnect; any one covers all networks), register Marvice Media Private Limited as a Principal Entity (PE). You need the PAN, GST certificate, a letter of authorisation and the signatory's ID. You get a 19-digit Entity ID. MSG91 lists portal fees of about ₹5,000 + GST and also says PingConnect is free; check the portal before you pay.
+2. **Header.** Register a 6-letter header (sender ID) in the **Service Implicit** category, e.g. `HRHAND`. These are booking updates for a service the guest asked for, which TRAI allows without separate consent. "Transactional" only covers texts sent within 30 minutes of the guest's own action, so reminders wouldn't qualify. Operators show it to the guest as e.g. `VM-HRHAND-S`.
+3. **URL whitelisting.** On the same portal, whitelist `https://hourhand.cloud/m/`. Since 1 October 2024, operators drop texts with links that aren't whitelisted.
+4. **Content templates.** Register the eight templates below as **Service Implicit**, linked to your header, with exactly the text shown (Hindi as Unicode). Each has three `{#var#}` slots, TRAI's default allowance; each slot carries at most 30 characters. Note each template's DLT Template ID.
+5. **Telemarketer binding.** Bind your Entity ID to MSG91 on the portal (PE–TM chain): Walkover Web Solutions Pvt. Ltd, TM ID `1302157225275643280` (from MSG91's help page; confirm it in your MSG91 panel). Since 11 December 2024, texts without a complete PE–TM chain are rejected.
+6. **MSG91.** Create an account and add your Entity ID and header. Add each template under SMS → Templates, pasting the DLT text with the slots renamed `##VAR1##`, `##VAR2##` and `##VAR3##` in order, and the DLT Template ID. Copy MSG91's template id of each into the variables above. Then go to Webhook (New), event "On Report Received", URL `https://hourhand.cloud/api/webhooks/sms`, and add a custom header `x-hourhand-secret` set to your `MSG91_WEBHOOK_SECRET`. MSG91 doesn't sign its webhooks, so this header is what keeps others from posting fake reports. If a header can't be added, use the URL `https://hourhand.cloud/api/webhooks/sms?secret=<your secret>`.
+7. Recharge MSG91 credits.
+
+Plan allowance per host per calendar month (IST): Free 0, Solo 100, Duo 200 texts. Over it, the text is skipped and email still goes. A Hindi text counts as one text against the allowance but MSG91 bills it by segment (up to 3).
+
+Opt-out: the manage page has an on/off switch for each booking. A delivery report saying a number is blocked (MSG91 status 17, or 9 NDNC) adds it to `sms_opt_outs`, and that number gets no more texts from any host. To block a number by hand: `insert into sms_opt_outs (phone, source) values ('91XXXXXXXXXX', 'manual');`.
+
+Check after go-live: book on your own page with your Indian mobile and the SMS tick (not WhatsApp). The confirmation text arrives within a minute, its link opens the booking, and the `notifications` row for it gets a `delivered_at`. Turn texts off on the manage page: the reminder row turns `skipped`.
+
+### SMS templates to register
+
+The texts the app sends. `docs/deploy.md` is checked against `src/lib/sms/templates.ts` by a test, so the two can't drift apart. If the site moves off hourhand.cloud, register new templates with the new address.
+
+#### Booking confirmed (English): `MSG91_TEMPLATE_BOOKED`
+
+```
+Your {#var#} is booked for {#var#}. To change or cancel: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 76% of the template. Longest real text: 133 GSM characters, 1 segment.
+
+#### Booking confirmed (Hindi): `MSG91_TEMPLATE_BOOKED_HI`
+
+```
+आपका {#var#} {#var#} के लिए बुक है। बदलने या रद्द करने के लिए: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 78% of the template. Longest real text: 139 Unicode characters, 3 segments.
+
+#### Day-ahead reminder (English): `MSG91_TEMPLATE_REMINDER`
+
+```
+Reminder: your {#var#} is on {#var#}. To change or cancel: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 77% of the template. Longest real text: 135 GSM characters, 1 segment.
+
+#### Day-ahead reminder (Hindi): `MSG91_TEMPLATE_REMINDER_HI`
+
+```
+याद दिला दें: आपका {#var#} {#var#} को है। बदलने या रद्द करने के लिए: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 79% of the template. Longest real text: 145 Unicode characters, 3 segments.
+
+#### Cancelled (English): `MSG91_TEMPLATE_CANCELLED`
+
+```
+Your {#var#} on {#var#} is cancelled. To book again: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 75% of the template. Longest real text: 129 GSM characters, 1 segment.
+
+#### Cancelled (Hindi): `MSG91_TEMPLATE_CANCELLED_HI`
+
+```
+{#var#} का आपका {#var#} रद्द हो गया है। फिर से बुक करने के लिए: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 78% of the template. Longest real text: 140 Unicode characters, 3 segments.
+
+#### Rescheduled (English): `MSG91_TEMPLATE_RESCHEDULED`
+
+```
+Your {#var#} has moved to {#var#}. To change or cancel: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 76% of the template. Longest real text: 132 GSM characters, 1 segment.
+
+#### Rescheduled (Hindi): `MSG91_TEMPLATE_RESCHEDULED_HI`
+
+```
+आपका {#var#} अब {#var#} को है। बदलने या रद्द करने के लिए: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 77% of the template. Longest real text: 134 Unicode characters, 2 segments.
+
 ## 5c. Custom domains (roadmap 1.1: book.coachname.com)
 
 Hosts on Solo or Duo buy the **Custom domain add-on** (₹199 + 18% GST = ₹234.82 a month) and serve their booking pages at their own domain. It costs nothing extra to run: certificates come from the same Coolify Traefik that serves hourhand.cloud, through one small config file per domain that the app writes. No Cloudflare.
@@ -459,6 +564,19 @@ Done 2026-10-13: the Entra app is registered and `MICROSOFT_CLIENT_ID` and `MICR
 Teams links only work for work or school Microsoft 365 accounts; personal Outlook.com accounts get Outlook calendar sync but no Teams link.
 
 **Action needed:** a client secret value was pasted into chat on 2026-10-11. Delete it in Entra and create a new one (step 4).
+
+## 6b. Zoom app (2.4: a Zoom link for every Zoom booking)
+
+Not done yet. Until `ZOOM_CLIENT_ID` and `ZOOM_CLIENT_SECRET` are set, the Zoom option still saves, the editor says "Zoom isn't set up on this server", and Zoom bookings get no link.
+
+1. [marketplace.zoom.us](https://marketplace.zoom.us) → Develop → Build App → **General App**, **User-managed** (each host authorises their own Zoom account). Name `Hourhand`.
+2. Basic Information → OAuth Information: redirect URL `https://hourhand.cloud/api/integrations/zoom/callback`. Add the same URL to the **OAuth allow list**, plus `http://localhost:3000/api/integrations/zoom/callback` for development. Copy **Client ID** and **Client Secret** into Coolify as `ZOOM_CLIENT_ID` and `ZOOM_CLIENT_SECRET` (Runtime variables, not build-time).
+3. Scopes: `meeting:write:meeting`, `meeting:update:meeting`, `meeting:delete:meeting`, `user:read:user`. Nothing else. A host who unticks one is sent back with "Zoom didn't grant the permission to create meetings".
+4. Features → Access → **Event Subscription** on: add the endpoint `https://hourhand.cloud/api/webhooks/zoom`, subscribe to **App Deauthorized** (under Marketplace / App). Copy the **Secret Token** into Coolify as `ZOOM_WEBHOOK_SECRET`. Zoom checks the URL when you save it; Hourhand answers that check once the variable is set and the app redeployed.
+5. Redeploy. Integrations → Connect Zoom with your own Zoom account; make a test booking on an event type set to Zoom and check the link in the confirmation email, the calendar invite and the booking page. Reschedule it (same link, new time in Zoom) and cancel it (meeting gone from Zoom).
+6. Until the app is **published** on the Zoom Marketplace, only users on the Zoom account that owns the app can connect, and Zoom sends the deauthorization notice only for published apps. A handful of outside hosts can test it first through Zoom's beta sharing (Beta Test → Request to share; Zoom approves it, for limited users and time). For every host to connect, submit it for Marketplace review: listing, privacy policy (`https://hourhand.cloud/privacy`), terms, support URL, a test plan linked in the release notes, a test account, and the Technical Design Document. Sources: https://developers.zoom.us/docs/distribute/sharing-private-and-beta-apps/ and https://developers.zoom.us/docs/distribute/app-submission/common-rejection-issues/
+
+What hosts get: each Zoom booking gets its own scheduled meeting in the host's Zoom (waiting room on, join before host off, passcode per the host's Zoom setting, topic "event name with guest name"). Group class seats share one meeting. Zoom's limit is 100 meetings created or updated per host per day.
 
 ## 7. Watch it (first week)
 

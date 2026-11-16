@@ -3,7 +3,9 @@
 import { useActionState, useState } from "react";
 import { createOneOff, createSingleUseLink, type LinkFormState } from "@/app/dashboard/links/actions";
 import { VIDEO_NEEDS_PLAN, VIDEO_NOT_SET_UP, type VideoAvailability } from "@/lib/video/gate";
+import type { ZoomSetup } from "@/lib/zoom/connection";
 import { CopyLinkButton } from "./CopyLinkButton";
+import { ZoomHint } from "./ZoomHint";
 import { Button } from "./ui/Button";
 import { Input, Label } from "./ui/Input";
 import { focusRing } from "./ui/focus";
@@ -55,7 +57,7 @@ const LOCATIONS: { kind: string; label: string; needs?: string }[] = [
   { kind: "custom", label: "Somewhere else", needs: "Location details" },
 ];
 
-export function OneOffForm({ timeZone, video = "not_set_up" }: { timeZone: string; video?: VideoAvailability }) {
+export function OneOffForm({ timeZone, zoomSetup = "not_configured", video = "not_set_up" }: { timeZone: string; zoomSetup?: ZoomSetup; video?: VideoAvailability }) {
   const [state, action, pending] = useActionState(createOneOff, idle);
   const [rows, setRows] = useState<number[]>([0, 1, 2]);
   const [next, setNext] = useState(3);
@@ -77,6 +79,7 @@ export function OneOffForm({ timeZone, video = "not_set_up" }: { timeZone: strin
               : video === "plan" ? VIDEO_NEEDS_PLAN : VIDEO_NOT_SET_UP}
           </p>
         )}
+        {kind === "zoom" && <ZoomHint setup={zoomSetup} />}
       </div>
       {needs && <div><Label htmlFor="oo-location-value">{needs}</Label><Input id="oo-location-value" name="locationValue" /></div>}
       <div><Label htmlFor="oo-description">Note for your guest (optional)</Label><Input id="oo-description" name="description" maxLength={2000} /></div>

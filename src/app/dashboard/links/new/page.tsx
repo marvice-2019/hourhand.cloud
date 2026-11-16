@@ -2,6 +2,8 @@ import Link from "next/link";
 import { OneOffForm } from "@/components/LinkForms";
 import { requireHost } from "@/lib/auth/session";
 import { videoAvailabilityFor } from "@/lib/video/server";
+import { getPool } from "@/lib/data/pg-store";
+import { zoomSetupFor } from "@/lib/zoom/connection";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +18,7 @@ export default async function NewOneOffPage() {
         Offer a few times for one person. They get a link, pick one, and the link stops working. Times you&apos;re booked or busy
         for by then are hidden from them.
       </p>
-      <div className="mt-6"><OneOffForm timeZone={user.timezone} video={video} /></div>
+      <div className="mt-6"><OneOffForm timeZone={user.timezone} zoomSetup={await zoomSetupFor(() => getPool(process.env.DATABASE_URL as string), user.id)} video={video} /></div>
     </div>
   );
 }
