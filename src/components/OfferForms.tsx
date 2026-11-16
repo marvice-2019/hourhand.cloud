@@ -35,12 +35,12 @@ function DiscountFields({ prefix, errors, kind = "percent", value = "" }: { pref
   );
 }
 
-/** Which paid event types and packages an offer is for; none ticked means all of them. */
-function ItemPicker({ prefix, eventTypes, packages }: { prefix: string; eventTypes: Item[]; packages: Item[] }) {
-  if (eventTypes.length + packages.length === 0) return null;
+/** Which paid event types, packages and membership plans an offer is for; none ticked means all of them. */
+function ItemPicker({ prefix, eventTypes, packages, plans }: { prefix: string; eventTypes: Item[]; packages: Item[]; plans: Item[] }) {
+  if (eventTypes.length + packages.length + plans.length === 0) return null;
   return (
     <fieldset>
-      <legend className="text-sm font-semibold text-text">For (leave all unticked for every paid event type and package)</legend>
+      <legend className="text-sm font-semibold text-text">For (leave all unticked for everything you sell)</legend>
       <div className="mt-2 grid gap-1">
         {eventTypes.map((e) => (
           <label key={e.id} className="flex min-h-11 items-center gap-2 text-text"><input type="checkbox" name="eventTypeIds" value={e.id} id={`${prefix}-e-${e.id}`} className="size-5 accent-accent" />{e.name}</label>
@@ -48,12 +48,15 @@ function ItemPicker({ prefix, eventTypes, packages }: { prefix: string; eventTyp
         {packages.map((p) => (
           <label key={p.id} className="flex min-h-11 items-center gap-2 text-text"><input type="checkbox" name="packageIds" value={p.id} id={`${prefix}-p-${p.id}`} className="size-5 accent-accent" />{p.name} (package)</label>
         ))}
+        {plans.map((m) => (
+          <label key={m.id} className="flex min-h-11 items-center gap-2 text-text"><input type="checkbox" name="membershipPlanIds" value={m.id} id={`${prefix}-m-${m.id}`} className="size-5 accent-accent" />{m.name} (membership, first month)</label>
+        ))}
       </div>
     </fieldset>
   );
 }
 
-export function CouponForm({ eventTypes, packages }: { eventTypes: Item[]; packages: Item[] }) {
+export function CouponForm({ eventTypes, packages, plans }: { eventTypes: Item[]; packages: Item[]; plans: Item[] }) {
   const [state, action, pending] = useActionState(createCouponAction, idle);
   const errors = state.status === "error" ? state.errors : {};
   return (
@@ -65,14 +68,14 @@ export function CouponForm({ eventTypes, packages }: { eventTypes: Item[]; packa
         <div><Label htmlFor="cp-max">Total uses (optional)</Label><Input id="cp-max" name="maxUses" inputMode="numeric" placeholder="50" error={errors.maxUses} /></div>
         <div><Label htmlFor="cp-per">Uses per client (optional)</Label><Input id="cp-per" name="maxUsesPerEmail" inputMode="numeric" placeholder="1" error={errors.maxUsesPerEmail} /></div>
       </div>
-      <ItemPicker prefix="cp" eventTypes={eventTypes} packages={packages} />
+      <ItemPicker prefix="cp" eventTypes={eventTypes} packages={packages} plans={plans} />
       <Outcome state={state} />
       <div><Button type="submit" loading={pending}>Create code</Button></div>
     </form>
   );
 }
 
-export function CampaignForm({ eventTypes, packages, today }: { eventTypes: Item[]; packages: Item[]; today: string }) {
+export function CampaignForm({ eventTypes, packages, plans, today }: { eventTypes: Item[]; packages: Item[]; plans: Item[]; today: string }) {
   const [state, action, pending] = useActionState(createCampaignAction, idle);
   const errors = state.status === "error" ? state.errors : {};
   return (
@@ -84,7 +87,7 @@ export function CampaignForm({ eventTypes, packages, today }: { eventTypes: Item
         <div><Label htmlFor="cm-start">First day</Label><Input id="cm-start" name="startsOn" type="date" min={today} defaultValue={today} error={errors.startsOn} /></div>
         <div><Label htmlFor="cm-end">Last day</Label><Input id="cm-end" name="endsOn" type="date" min={today} error={errors.endsOn} /></div>
       </div>
-      <ItemPicker prefix="cm" eventTypes={eventTypes} packages={packages} />
+      <ItemPicker prefix="cm" eventTypes={eventTypes} packages={packages} plans={plans} />
       <Outcome state={state} />
       <div><Button type="submit" loading={pending}>Schedule campaign</Button></div>
     </form>

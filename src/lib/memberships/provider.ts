@@ -18,8 +18,15 @@ export interface MembershipProvider {
   publicKey: string;
   /** A monthly plan at this price. Provider plans can't be edited, so a new price means a new plan. */
   createPlan(p: { name: string; amountMinor: number; currency: string; notes: Record<string, string> }): Promise<{ id: string }>;
-  /** A subscription the client authenticates (card e-mandate or UPI Autopay) on the provider's page or Checkout. */
-  createSubscription(p: { planId: string; totalCount: number; notes: Record<string, string> }): Promise<ProviderSubscription>;
+  /**
+   * A subscription the client authenticates (card e-mandate or UPI Autopay) on the provider's page or Checkout. With
+   * `firstMonth`, the first plan charge falls on `firstMonth.startAt` and the client pays `firstMonth.amountMinor` (the
+   * discounted first month) once, when they authenticate.
+   */
+  createSubscription(p: {
+    planId: string; totalCount: number; notes: Record<string, string>;
+    firstMonth?: { startAt: Date; amountMinor: number; currency: string; label: string };
+  }): Promise<ProviderSubscription>;
   /** atPeriodEnd: stop renewing and end when the paid month runs out; otherwise end now. */
   cancel(subscriptionId: string, atPeriodEnd: boolean): Promise<ProviderSubscription>;
 }
@@ -27,7 +34,8 @@ export interface MembershipProvider {
 /** What a webhook means for a membership, whatever the provider. */
 export interface MembershipEvent {
   eventId: string;
-  type: "authenticated" | "activated" | "charged" | "pending" | "halted" | "cancelled" | "completed" | "paused" | "resumed" | "other";
+  /** invoice_paid: an invoice on the subscription was paid; it is how a discounted first month's upfront payment shows up. */
+  type: "authenticated" | "activated" | "charged" | "invoice_paid" | "pending" | "halted" | "cancelled" | "completed" | "paused" | "resumed" | "other";
   subscriptionId: string | null;
   status: MembershipStatus | null;
   currentStart: Date | null;
@@ -65,8 +73,13 @@ export function razorpayMembershipProvider(auth: HostRazorpayAuth, opts: { baseU
     },
     async createSubscription(p) {
       // No start_at: the subscription starts once the client authenticates, and the first month is charged then.
+      // With a discounted first month: start_at a month out, and the discounted amount as an upfront addon, which
+      // Razorpay collects in the authentication payment (and does not refund, unlike the plain ₹5 authorisation).
       // customer_notify: Razorpay emails/SMSes the client about the mandate and each charge.
-      const r = await call("POST", "/subscriptions", { plan_id: p.planId, total_count: p.totalCount, quantity: 1, customer_notify: true, notes: p.notes });
+      const first = p.firstMonth
+        ? { start_at: Math.floor(p.firstMonth.startAt.getTime() / 1000), addons: [{ item: { name: p.firstMonth.label.slice(0, 100), amount: p.firstMonth.amountMinor, currency: p.firstMonth.currency } }] }
+        : {};
+      const r = await call("POST", "/subscriptions", { plan_id: p.planId, total_count: p.totalCount, quantity: 1, customer_notify: true, notes: p.notes, ...first });
       if (typeof r.id !== "string") throw new BillingApiError("Razorpay returned no subscription id", null, false);
       return toSub(r);
     },
@@ -92,6 +105,21 @@ export function parseRazorpayMembershipEvent(body: Json, eventIdHeader: string |
   const event = str(body.event);
   if (!event) return null;
   const payload = obj(body.payload);
+  if (event === "invoice.paid") {
+    // A paid invoice on a subscription. Only a subscription's invoices matter here; its amount and payment id stand in
+    // for the payment, and "paid" means the money was captured.
+    const inv = obj(obj(payload.invoice).entity);
+    const subscriptionId = str(inv.subscription_id);
+    const paymentId = str(inv.payment_id) ?? str(obj(obj(payload.payment).entity).id);
+    return {
+      eventId: eventIdHeader ?? `${event}:${str(inv.id) ?? "none"}:${String(body.created_at ?? "")}`,
+      type: subscriptionId ? "invoice_paid" : "other", subscriptionId, status: null, currentStart: null, currentEnd: null,
+      createdAt: unix(body.created_at) ?? now,
+      payment: paymentId ? {
+        id: paymentId, amount: Number(inv.amount_paid ?? inv.amount), currency: String(inv.currency ?? ""), status: inv.status === "paid" ? "captured" : String(inv.status ?? ""),
+      } : null,
+    };
+  }
   const sub = obj(obj(payload.subscription).entity);
   const pay = obj(obj(payload.payment).entity);
   const subscriptionId = event.startsWith("subscription.") ? str(sub.id) : null;

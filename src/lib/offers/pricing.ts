@@ -69,10 +69,15 @@ export function campaignLive(c: { startsOn: string; endsOn: string }, now: Date,
   return c.startsOn <= today && today <= c.endsOn;
 }
 
-/** Empty lists mean every paid event type and package; otherwise only the ones listed. */
-export function appliesTo(target: { eventTypeIds: string[]; packageIds: string[] }, item: { kind: "event_type" | "package"; id: string }): boolean {
-  if (target.eventTypeIds.length === 0 && target.packageIds.length === 0) return true;
-  return (item.kind === "event_type" ? target.eventTypeIds : target.packageIds).includes(item.id);
+export type ItemKind = "event_type" | "package" | "membership";
+
+/** Empty lists mean every paid event type, package and membership plan; otherwise only the ones listed. */
+export function appliesTo(
+  target: { eventTypeIds: string[]; packageIds: string[]; membershipPlanIds?: string[] }, item: { kind: ItemKind; id: string },
+): boolean {
+  const plans = target.membershipPlanIds ?? [];
+  if (target.eventTypeIds.length === 0 && target.packageIds.length === 0 && plans.length === 0) return true;
+  return (item.kind === "event_type" ? target.eventTypeIds : item.kind === "package" ? target.packageIds : plans).includes(item.id);
 }
 
 /** "20% off" or "₹200 off" (English; host-facing and invoice text). */

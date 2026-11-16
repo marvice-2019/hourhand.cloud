@@ -19,6 +19,9 @@ import {
 import { parseRazorpayMembershipEvent, razorpayMembershipProvider } from "./provider";
 import { handleMembershipWebhook, webhookSecret } from "./webhook";
 import { eraseClient, exportClient } from "../privacy/rights";
+import { createCampaign, createCoupon } from "../offers/manage";
+import { couponUses } from "../offers/offers";
+import { saveTaxProfile } from "../gst/invoices";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const DAY = 86_400_000;
@@ -84,6 +87,16 @@ describe("Razorpay subscription events", () => {
     }, "evt_1", new Date());
     expect(e).toMatchObject({ eventId: "evt_1", type: "charged", subscriptionId: "sub_1", status: "active", payment: { id: "pay_1", amount: 600_000, status: "captured" } });
     expect(e!.currentEnd!.getTime()).toBe(1_802_592_000_000);
+  });
+
+  it("reads a subscription's paid invoice (how an upfront first month arrives); other invoices are ignored", () => {
+    const e = parseRazorpayMembershipEvent({
+      event: "invoice.paid", created_at: 1_800_000_000,
+      payload: { invoice: { entity: { id: "inv_1", subscription_id: "sub_1", payment_id: "pay_up", amount_paid: 480_000, currency: "INR", status: "paid" } } },
+    }, "evt_inv", new Date());
+    expect(e).toMatchObject({ type: "invoice_paid", subscriptionId: "sub_1", status: null, payment: { id: "pay_up", amount: 480_000, currency: "INR", status: "captured" } });
+    const plain = parseRazorpayMembershipEvent({ event: "invoice.paid", payload: { invoice: { entity: { id: "inv_2", payment_id: "pay_2", amount_paid: 100, status: "paid" } } } }, null, new Date());
+    expect(plain).toMatchObject({ type: "other", subscriptionId: null });
   });
 
   it("keeps a stable id without the event-id header, and ignores events it doesn't use", () => {
@@ -397,5 +410,111 @@ describe.skipIf(!BASE)("memberships (Postgres)", () => {
     expect(after.guest_email).not.toBe(m.guestEmail);
     expect(after.guest_name).not.toBe(m.guestName);
     expect(after).toMatchObject({ guest_phone: null, charges: 1 }); // the paid months stay
+  });
+
+  describe("offers on the first month", () => {
+    const today = () => new Date().toISOString().slice(0, 10);
+    const invoiceFor = async (subId: string, paymentId: string, amount: number) => ({
+      entity: "event", event: "invoice.paid", created_at: unix(new Date()),
+      payload: { invoice: { entity: { id: `inv_${Math.random().toString(36).slice(2, 8)}`, subscription_id: subId, payment_id: paymentId, amount_paid: amount, currency: "INR", status: "paid" } } },
+    });
+    const grantsOf = async (token: string) => (await pool.query(
+      `select g.amount_minor, g.period_start, g.period_end, v.total_minor, v.discount_minor, v.discount_label from membership_grants g
+       join memberships m on m.id = g.membership_id left join invoices v on v.membership_grant_id = g.id and v.kind = 'invoice'
+       where m.token = $1 order by g.granted_at`, [token])).rows;
+
+    it("a code discounts month one only: the subscription starts a month out and the discounted month is paid upfront", async () => {
+      await saveTaxProfile(pool, priya.id, { legalName: "Priya Raman Coaching", address: "12 MG Road, Bengaluru", stateCode: "29", gstin: "29ABCDE1234F1Z5", sac: "999293", rateBp: 1800, invoicePrefix: "PR" });
+      const fake = fakeRazorpay();
+      const plan = await createMembershipPlan({ pool, provider: fake.provider }, priya.id, input());
+      const code = `MEMBER${++n}`;
+      const couponId = await createCoupon(pool, priya.id, "Asia/Kolkata", {
+        code, discount: { kind: "percent", value: 20 }, expiresOn: null, maxUses: 5, maxUsesPerEmail: null, eventTypeIds: [], packageIds: [], membershipPlanIds: [plan.id],
+      });
+      const before = Date.now();
+      const r = await handleJoin(deps(fake), plan.id, { name: "Kavya", email: `kavya-code${n}@example.in`, idempotencyKey: `join-code-${n}-key`, couponCode: code.toLowerCase() });
+      expect(r).toMatchObject({ status: 200, body: { offer: { kind: "coupon", code, listMinor: 600_000, discountMinor: 120_000, chargeMinor: 480_000 } } });
+      const body = r.body as { token: string; checkout: { subscriptionId: string } };
+      const sub = fake.state.subs.get(body.checkout.subscriptionId)!;
+      expect(sub.addons).toEqual([{ item: { name: expect.stringContaining("first month"), amount: 480_000, currency: "INR" } }]);
+      const startAt = (sub.start_at as number) * 1000;
+      expect(startAt).toBeGreaterThan(before + 27 * DAY);
+      expect(startAt).toBeLessThan(before + 32 * DAY);
+      expect(await couponUses(pool, couponId, new Date())).toMatchObject({ used: 0, reserved: 1 }); // held while the mandate is approved
+
+      // The client approves the mandate and pays ₹4,800; it arrives as the subscription's paid invoice.
+      await deliver(subEvent("subscription.authenticated", body.checkout.subscriptionId, "authenticated", new Date()));
+      expect(await deliver(await invoiceFor(body.checkout.subscriptionId, "pay_upfront_1", 480_000))).toMatchObject({ status: 200, body: { outcome: "granted" } });
+      expect(await left(body.token)).toBe(4);
+      const m = (await membershipByToken(pool, body.token))!;
+      expect(m.status).toBe("authenticated");
+      expect(m.paidThrough!.getTime()).toBe(startAt);
+      expect(await couponUses(pool, couponId, new Date())).toMatchObject({ used: 1, reserved: 0 });
+      // The same payment in a charged event later is neither a second grant nor an error.
+      expect(await deliver(subEvent("subscription.charged", body.checkout.subscriptionId, "authenticated", new Date(), new Date(),
+        { id: "pay_upfront_1", amount: 480_000, currency: "INR", status: "captured" }))).toMatchObject({ body: { outcome: "already_granted" } });
+      expect((await pool.query("select last_error from memberships where token = $1", [body.token])).rows[0].last_error).toBeNull();
+
+      // Month two renews at the full price, with no discount on its invoice; its own paid invoice adds nothing.
+      expect(await deliver(charge(body.checkout.subscriptionId, new Date(startAt)))).toMatchObject({ body: { outcome: "granted" } });
+      expect(await deliver(await invoiceFor(body.checkout.subscriptionId, "pay_renewal_x", 600_000))).toMatchObject({ body: { outcome: "ignored" } });
+      const grants = await grantsOf(body.token);
+      expect(grants.map((g) => [g.amount_minor, g.total_minor, g.discount_minor, g.discount_label])).toEqual([
+        [480_000, 480_000, expect.any(Number), `Code ${code}`],
+        [600_000, 600_000, null, null],
+      ]);
+      // GST invoice: value before discount − discount = taxable value (18% inclusive on ₹6,000 and ₹4,800).
+      const { rows: [inv] } = await pool.query(
+        "select gross_minor, discount_minor, taxable_minor from invoices v join membership_grants g on g.id = v.membership_grant_id where g.provider_payment_id = 'pay_upfront_1'");
+      expect(inv.gross_minor - inv.discount_minor).toBe(inv.taxable_minor);
+      expect(inv.gross_minor).toBe(Math.round(600_000 * 10_000 / 11_800));
+      expect(new Date(grants[0].period_end).getTime()).toBe(startAt);
+    });
+
+    it("the upfront month credits once whichever event brings it; a join with no offer charges month one as before", async () => {
+      const fake = fakeRazorpay();
+      const plan = await createMembershipPlan({ pool, provider: fake.provider }, priya.id, input());
+      await createCampaign(pool, priya.id, {
+        name: "Diwali", banner: "₹500 off your first month", discount: { kind: "fixed", value: 50_000 }, startsOn: today(), endsOn: today(),
+        eventTypeIds: [], packageIds: [], membershipPlanIds: [plan.id],
+      });
+      const r = await startMembership({ pool, provider: fake.provider }, { planId: plan.id, ...person() }, { plan: "solo", couponCode: null, now: new Date() });
+      expect(r.offer).toMatchObject({ kind: "campaign", chargeMinor: 550_000 });
+      const subId = r.checkout!.subscriptionId;
+      // Razorpay puts the payment on the authenticated event here; a later paid invoice for it does nothing.
+      expect(await deliver(subEvent("subscription.authenticated", subId, "authenticated", new Date(), new Date(),
+        { id: "pay_up_auth", amount: 550_000, currency: "INR", status: "captured" }))).toMatchObject({ body: { outcome: "granted" } });
+      expect(await deliver(await invoiceFor(subId, "pay_up_auth", 550_000))).toMatchObject({ body: { outcome: "ignored" } });
+      expect(await left(r.token)).toBe(4);
+      // Not captured yet: no credits.
+      const r2 = await startMembership({ pool, provider: fake.provider }, { planId: plan.id, ...person() }, { plan: "solo", couponCode: null, now: new Date() });
+      expect(await deliver(subEvent("subscription.authenticated", r2.checkout!.subscriptionId, "authenticated", new Date(), new Date(),
+        { id: "pay_up_auth2", amount: 550_000, currency: "INR", status: "authorized" }))).toMatchObject({ body: { outcome: "updated" } });
+      expect(await left(r2.token)).toBe(0);
+
+      // The campaign is for this plan only: another plan joins at full price, with no start_at and no addon.
+      const other = await createMembershipPlan({ pool, provider: fake.provider }, priya.id, input({ name: "Other" }));
+      const plain = await startMembership({ pool, provider: fake.provider }, { planId: other.id, ...person() }, { plan: "solo", couponCode: null, now: new Date() });
+      expect(plain.offer).toBeNull();
+      expect(fake.state.subs.get(plain.checkout!.subscriptionId)).not.toHaveProperty("start_at");
+      expect(fake.state.subs.get(plain.checkout!.subscriptionId)).not.toHaveProperty("addons");
+      // On Free, offers are off: same plan, full price.
+      const free = await startMembership({ pool, provider: fake.provider }, { planId: plan.id, ...person() }, { plan: "free", couponCode: null, now: new Date() });
+      expect(free.offer).toBeNull();
+    });
+
+    it("a code that doesn't apply refuses the join before anything is made at Razorpay", async () => {
+      const fake = fakeRazorpay();
+      const plan = await createMembershipPlan({ pool, provider: fake.provider }, priya.id, input());
+      const elsewhere = await createMembershipPlan({ pool, provider: fake.provider }, priya.id, input({ name: "Elsewhere" }));
+      const code = `OTHERPLAN${++n}`;
+      await createCoupon(pool, priya.id, "Asia/Kolkata", {
+        code, discount: { kind: "percent", value: 10 }, expiresOn: null, maxUses: null, maxUsesPerEmail: null, eventTypeIds: [], packageIds: [], membershipPlanIds: [elsewhere.id],
+      });
+      const r = await handleJoin(deps(fake), plan.id, { name: "Kavya", email: "kavya-bad@example.in", idempotencyKey: `join-bad-${n}-key`, couponCode: code });
+      expect(r).toMatchObject({ status: 400, body: { error: "coupon_invalid", fields: { couponCode: expect.any(String) } } });
+      expect(fake.state.subs.size).toBe(0);
+      expect((await pool.query("select count(*)::int as n from memberships where idempotency_key = $1", [`join-bad-${n}-key`])).rows[0].n).toBe(0);
+    });
   });
 });

@@ -12,6 +12,7 @@ import { getPool } from "@/lib/data/pg-store";
 import { dayKey, formatDate } from "@/lib/format";
 import { getFirstSession, listCampaigns, listCoupons, listSlidingScales } from "@/lib/offers/manage";
 import { campaignLive, describeDiscount } from "@/lib/offers/pricing";
+import { listMembershipPlans } from "@/lib/memberships/memberships";
 import { listPackages } from "@/lib/packages/packages";
 
 export const dynamic = "force-dynamic";
@@ -25,15 +26,21 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
   const plan = db ? await hostPlan(db, user.id) : "free";
   const now = new Date();
   const today = dayKey(now, user.timezone);
-  const [eventTypes, packages, coupons, campaigns, first, sliding] = await Promise.all([
-    store.listEventTypes(user.id), db ? listPackages(db, user.id) : [], db ? listCoupons(db, user.id, now) : [], db ? listCampaigns(db, user.id) : [],
+  const [eventTypes, packages, membershipPlans, coupons, campaigns, first, sliding] = await Promise.all([
+    store.listEventTypes(user.id), db ? listPackages(db, user.id) : [], db ? listMembershipPlans(db, user.id) : [], db ? listCoupons(db, user.id, now) : [], db ? listCampaigns(db, user.id) : [],
     db ? getFirstSession(db, user.id) : null, db ? listSlidingScales(db, user.id) : new Map(),
   ]);
   const paid = eventTypes.filter((e) => e.priceMinor !== null).map(({ id, name, priceMinor }) => ({ id, name, priceMinor: priceMinor! }));
   const pkgs = packages.filter((p) => p.active).map(({ id, name }) => ({ id, name }));
-  const names = new Map<string, string>([...eventTypes.map((e) => [e.id, e.name] as const), ...packages.map((p) => [p.id, `${p.name} (package)`] as const)]);
-  const forWhat = (o: { eventTypeIds: string[]; packageIds: string[] }) =>
-    o.eventTypeIds.length + o.packageIds.length === 0 ? "every paid event type and package" : [...o.eventTypeIds, ...o.packageIds].map((id) => names.get(id) ?? "removed").join(", ");
+  const plans = membershipPlans.filter((m) => m.active).map(({ id, name }) => ({ id, name }));
+  const names = new Map<string, string>([
+    ...eventTypes.map((e) => [e.id, e.name] as const), ...packages.map((p) => [p.id, `${p.name} (package)`] as const),
+    ...membershipPlans.map((m) => [m.id, `${m.name} (membership, first month)`] as const),
+  ]);
+  const forWhat = (o: { eventTypeIds: string[]; packageIds: string[]; membershipPlanIds: string[] }) => {
+    const all = [...o.eventTypeIds, ...o.packageIds, ...o.membershipPlanIds];
+    return all.length === 0 ? "everything you sell (a membership's first month only)" : all.map((id) => names.get(id) ?? "removed").join(", ");
+  };
 
   if (!LIMITS[plan].offers) {
     return (
@@ -52,7 +59,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
     <div>
       <h1 className="font-display text-xl text-text">Offers</h1>
       <p className="mt-2 max-w-xl text-text-muted">
-        Each booking or package gets at most one offer: whichever gives the client the best price. GST is worked out on the price after the
+        Each booking, package or membership sign-up gets at most one offer: whichever gives the client the best price. GST is worked out on the price after the
         discount, and the invoice shows the discount. A code use counts only once the payment goes through.
       </p>
       {error === "not_found" && <p role="alert" className="mt-4 rounded-md bg-danger-bg p-3 text-sm text-danger">That offer isn&apos;t yours, or no longer exists.</p>}
@@ -60,7 +67,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
 
       <section aria-labelledby="of-codes" className="mt-8">
         <h2 id="of-codes" className="font-semibold text-text">Discount codes</h2>
-        <Card className="mt-3 max-w-xl"><CouponForm eventTypes={paid} packages={pkgs} /></Card>
+        <Card className="mt-3 max-w-xl"><CouponForm eventTypes={paid} packages={pkgs} plans={plans} /></Card>
         {coupons.length > 0 && (
           <ul className="mt-4 grid max-w-xl gap-3">
             {coupons.map((c) => (
@@ -98,7 +105,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
       <section aria-labelledby="of-camp" className="mt-8">
         <h2 id="of-camp" className="font-semibold text-text">Campaigns</h2>
         <p className="mt-1 max-w-xl text-sm text-text-muted">A dated offer with a banner on your booking page. It switches itself on and off by date in your time zone ({user.timezone}).</p>
-        <Card className="mt-3 max-w-xl"><CampaignForm eventTypes={paid} packages={pkgs} today={today} /></Card>
+        <Card className="mt-3 max-w-xl"><CampaignForm eventTypes={paid} packages={pkgs} plans={plans} today={today} /></Card>
         {campaigns.length > 0 && (
           <ul className="mt-4 grid max-w-xl gap-3">
             {campaigns.map((c) => {

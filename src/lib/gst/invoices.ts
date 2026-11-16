@@ -1,6 +1,6 @@
 import type pg from "pg";
 import { financialYear, GST_STATES, invoiceNumber, isValidGstin, placeOfSupply, splitInclusive, GST_RATES_BP } from "./gst";
-import { offerForBooking, offerForPurchase, type AppliedOffer } from "../offers/offers";
+import { offerForBooking, offerForMembership, offerForPurchase, type AppliedOffer } from "../offers/offers";
 
 // GST invoices and credit notes. Issued inside the same transaction that records the money (a captured payment, a paid
 // package, a refund), so an invoice exists exactly when the payment does. Hosts without a tax profile get none.
@@ -144,12 +144,14 @@ export async function invoiceForPurchase(db: Db, purchaseId: string, now: Date):
 /** A tax invoice for one month of a membership, issued with the charge that paid for it. At most one per charge. */
 export async function invoiceForMembershipGrant(db: Db, grantId: string, now: Date): Promise<string | null> {
   const { rows: [g] } = await db.query(
-    `select g.host_id, g.amount_minor, g.credits, g.period_start, g.period_end, m.guest_name, m.guest_email, p.name as plan_name,
+    `select g.host_id, g.amount_minor, g.credits, g.period_start, g.period_end, m.id as membership_id, m.guest_name, m.guest_email, p.name as plan_name,
        exists (select 1 from invoices v where v.membership_grant_id = g.id and v.kind = 'invoice') as done
      from membership_grants g join memberships m on m.id = g.membership_id join membership_plans p on p.id = m.plan_id where g.id = $1`, [grantId]);
   if (!g || g.done) return null;
   return issue(db, {
     hostId: g.host_id, totalMinor: g.amount_minor, buyerName: g.guest_name, buyerEmail: g.guest_email, membershipGrantId: grantId,
+    // A membership's offer is on its first month only; discountLine leaves it off any charge of another amount (renewals).
+    offer: await offerForMembership(db, g.membership_id),
     description: `${g.plan_name}: ${g.credits} sessions, ${istDate(new Date(g.period_start))} to ${istDate(new Date(g.period_end))}`,
   }, now);
 }
