@@ -12,6 +12,7 @@ import { getPool } from "@/lib/data/pg-store";
 import { packagesForEventType } from "@/lib/packages/packages";
 import { hostPlan } from "@/lib/billing/account";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
+import { smsOffered } from "@/lib/sms/offer";
 import { razorpayStatus } from "@/lib/payments/host-razorpay";
 import { pagePricing } from "@/lib/offers/offers";
 import { discountText } from "@/lib/offers/labels";
@@ -83,7 +84,7 @@ export default async function PublicEventPage({ params, searchParams }: { params
         </ul>
       )}
       <BookingFlow
-        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)}
+        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)}
         offers={pricing && eventType.priceMinor !== null ? {
           listMinor: eventType.priceMinor, currency, campaign: pricing.campaign && { name: pricing.campaign.name, chargeMinor: pricing.campaign.chargeMinor },
           sliding: pricing.sliding, coupons: pricing.coupons, firstSession: pricing.firstSession && discountText(pricing.firstSession),

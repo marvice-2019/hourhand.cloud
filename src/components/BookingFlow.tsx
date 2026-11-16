@@ -47,6 +47,8 @@ interface Props {
   waitlist?: boolean;
   /** Offer automatic WhatsApp updates to the phone the guest gives. */
   whatsapp?: boolean;
+  /** Offer booking texts (SMS) to an Indian mobile the guest gives. */
+  sms?: boolean;
   /** Offers on a priced event: the price after today's campaign, a sliding scale, whether a code box is shown, the first-session line. */
   offers?: FlowOffers | null;
 }
@@ -64,7 +66,7 @@ export interface FlowOffers {
 }
 
 /** Public booking: pick a time, then fill in details. The picker stays mounted so "Pick another time" keeps the month and day. */
-export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = null, linkToken, initialAt, host, maxWeeks = 1, packageToken, waitlist = false, locale = "en", langQuery = "", prefill, whatsapp = false, offers = null }: Props) {
+export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = null, linkToken, initialAt, host, maxWeeks = 1, packageToken, waitlist = false, locale = "en", langQuery = "", prefill, whatsapp = false, sms = false, offers = null }: Props) {
   const [picked, setPicked] = useState<{ slot: string; tz: string } | null>(null);
   return (
     <>
@@ -74,7 +76,7 @@ export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = 
       </div>
       {picked && (
         <DetailsForm
-          slug={slug} event={event} linkToken={linkToken} tz={picked.tz} slot={picked.slot} questions={questions} paid={packageToken ? null : paid} host={host} maxWeeks={maxWeeks} packageToken={packageToken} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={whatsapp}
+          slug={slug} event={event} linkToken={linkToken} tz={picked.tz} slot={picked.slot} questions={questions} paid={packageToken ? null : paid} host={host} maxWeeks={maxWeeks} packageToken={packageToken} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={whatsapp} sms={sms}
           offers={packageToken || paid?.deposit ? null : offers}
           onPick={(slot) => setPicked({ slot, tz: picked.tz })} onBack={() => setPicked(null)}
         />
@@ -84,12 +86,12 @@ export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = 
 }
 
 interface FormProps {
-  slug: string; event: string; linkToken?: string; tz: string; slot: string; questions: FlowQuestion[]; paid: Props["paid"]; host: Props["host"]; maxWeeks: number; packageToken?: string; locale: Locale; langQuery: string; prefill?: { name: string; email: string }; whatsapp: boolean;
+  slug: string; event: string; linkToken?: string; tz: string; slot: string; questions: FlowQuestion[]; paid: Props["paid"]; host: Props["host"]; maxWeeks: number; packageToken?: string; locale: Locale; langQuery: string; prefill?: { name: string; email: string }; whatsapp: boolean; sms: boolean;
   offers: FlowOffers | null;
   onPick: (slot: string) => void; onBack: () => void;
 }
 
-function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, maxWeeks, packageToken, locale, langQuery, prefill, whatsapp, offers, onPick, onBack }: FormProps) {
+function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, maxWeeks, packageToken, locale, langQuery, prefill, whatsapp, sms, offers, onPick, onBack }: FormProps) {
   const router = useRouter();
   // Offers: the code the guest applied and what the server quoted for it, and a sliding-scale amount in rupees.
   const [code, setCode] = useState("");
@@ -191,7 +193,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
     try {
       const res = await fetch("/api/bookings", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), locale, ...(offers && code.trim() ? { couponCode: code.trim() } : {}), ...(offers?.sliding && payMinor ? { payMinor } : {}) }),
+        body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), ...(data.get("smsOptIn") ? { smsOptIn: true } : {}), locale, ...(offers && code.trim() ? { couponCode: code.trim() } : {}), ...(offers?.sliding && payMinor ? { payMinor } : {}) }),
       });
       const body = await res.json();
       if ((res.status === 201 || res.status === 200) && body.payment?.provider === "stripe" && typeof body.payment.url === "string") {
@@ -221,7 +223,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
       else if (res.status === 409) { setTaken(body.nextSlots ?? []); setErrors({}); }
       else if (res.status === 400) {
         // Server messages are English; show ours for the fields it names.
-        const own: Record<string, GuestKey> = { name: "errName", email: "errEmail", phone: "errPhone", timezone: "errTimezone", guests: "errGuests", couponCode: "offerCodeInvalid" };
+        const own: Record<string, GuestKey> = { name: "errName", email: "errEmail", phone: "errPhone", smsOptIn: "errSmsPhone", timezone: "errTimezone", guests: "errGuests", couponCode: "offerCodeInvalid" };
         const fields = (body.fields ?? {}) as Record<string, string>;
         const range = offers?.sliding ? { min: money(offers.sliding.minMinor), max: money(offers.sliding.maxMinor) } : { min: "", max: "" };
         setErrors(Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, k === "payMinor" ? t(locale, "errPay", range) : own[k] ? t(locale, own[k]) : k.startsWith("answers.") ? t(locale, "errAnswer") : v])));
@@ -295,12 +297,21 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
       )}
       <div><Label htmlFor="name">{t(locale, "yourName")}</Label><Input id="name" name="name" autoComplete="name" required maxLength={100} defaultValue={prefill?.name} error={errors.name} /></div>
       <div><Label htmlFor="email">{t(locale, "email")}</Label><Input id="email" name="email" type="email" autoComplete="email" required defaultValue={prefill?.email} error={errors.email} /></div>
-      <div><Label htmlFor="phone">{t(locale, "phoneOptional")}</Label><Input id="phone" name="phone" type="tel" autoComplete="tel" error={errors.phone} /></div>
+      <div><Label htmlFor="phone">{t(locale, sms && !whatsapp ? "phoneOptionalSms" : "phoneOptional")}</Label><Input id="phone" name="phone" type="tel" autoComplete="tel" error={errors.phone} /></div>
       {whatsapp && (
         <label className="flex items-start gap-2 text-text">
           <input type="checkbox" name="whatsappOptIn" value="1" className="mt-1 size-5 accent-accent" />
           <span>{t(locale, "whatsappOptIn")}</span>
         </label>
+      )}
+      {sms && (
+        <div>
+          <label className="flex items-start gap-2 text-text">
+            <input type="checkbox" name="smsOptIn" value="1" className="mt-1 size-5 accent-accent" aria-describedby={errors.smsOptIn ? "sms-error" : undefined} />
+            <span>{t(locale, "smsOptIn")}</span>
+          </label>
+          {errors.smsOptIn && <p id="sms-error" className="mt-1 text-sm text-danger" role="alert">{errors.smsOptIn}</p>}
+        </div>
       )}
       {showGuests || errors.guests ? (
         <div>
