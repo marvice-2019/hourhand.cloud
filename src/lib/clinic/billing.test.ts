@@ -7,7 +7,7 @@ import { planForPriceId, priceLine, PRICES, PLAN_NAMES } from "../billing/plans"
 import type { BillingProvider, ProviderSubscription } from "../billing/providers";
 import { BillingApiError } from "../billing/providers";
 import { saveSubscription } from "../billing/sync";
-import { creditNoteForRefund, invoiceById, invoiceForPayment, saveTaxProfile } from "../gst/invoices";
+import { creditNoteForRefund, invoiceById, invoiceForPayment, invoiceForPurchase, saveTaxProfile } from "../gst/invoices";
 import { processRefunds } from "../payments/booking-payments";
 import type { HostRazorpayAuth } from "../payments/host-razorpay";
 import type { RazorpayOrders } from "../payments/razorpay-orders";
@@ -223,8 +223,22 @@ describe.skipIf(!BASE)("Clinic subscription, payments and invoices (Postgres)", 
     expect(cn.number).toBe("CNMC/2627/000001");
     expect(cn.hostId).toBe(owner.id);
 
+    // A package Dr Kavya sells is collected and invoiced by the practice too, and stays so after she leaves.
+    const ek = await eventType(pool, dr3.id, "Course", "course-kavya", { price: 100_000 });
+    const { rows: [pk] } = await pool.query(
+      "insert into packages (user_id, event_type_id, name, sessions, price_minor, valid_days) values ($1, $2, 'Five sessions', 5, 450000, 90) returning id", [dr3.id, ek]);
+    const { rows: [pp] } = await pool.query(
+      `insert into package_purchases (package_id, host_id, event_type_id, sessions, price_minor, valid_days, guest_name, guest_email, idempotency_key)
+       values ($1, $2, $3, 5, 450000, 90, 'Pkg Buyer', 'pkg@c.test', 'pkg-key-1') returning id, collected_by`, [pk.id, dr3.id, ek]);
+    expect(pp.collected_by).toBe(owner.id);
+    await leavePractice(pool, dr3);
+    const ip = (await invoiceById(pool, (await invoiceForPurchase(pool, pp.id, now))!))!;
+    expect(ip.number).toBe("MC/2627/000004");
+    expect(ip.description).toContain("with Dr Kavya");
+
     // Admins (here the owner) see the series; practitioners don't.
-    expect((await listPracticeInvoices(pool, owner.id)).map((v) => v.number).sort()).toEqual(["CNMC/2627/000001", "MC/2627/000001", "MC/2627/000002", "MC/2627/000003"]);
-    await expect(listPracticeInvoices(pool, dr3.id)).rejects.toMatchObject({ name: "ClinicAccessError" });
+    expect((await listPracticeInvoices(pool, owner.id)).map((v) => v.number).sort()).toEqual(["CNMC/2627/000001", "MC/2627/000001", "MC/2627/000002", "MC/2627/000003", "MC/2627/000004"]);
+    await expect(listPracticeInvoices(pool, dr2.id)).rejects.toMatchObject({ name: "ClinicAccessError" });
+    await expect(listPracticeInvoices(pool, asst.id)).rejects.toMatchObject({ name: "ClinicAccessError" });
   });
 });

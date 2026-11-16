@@ -24,3 +24,16 @@ begin
 end $$;
 create trigger payments_collected_by before insert on payments for each row execute function payments_collected_by();
 create index payments_collected_by_idx on payments (collected_by) where collected_by is distinct from host_id;
+
+-- Package purchases too: confirming one, and its invoice, use the account that took the money.
+alter table package_purchases add column collected_by uuid references users(id) on delete set null;
+update package_purchases set collected_by = host_id where collected_by is null;
+
+create function package_purchases_collected_by() returns trigger language plpgsql as $$
+begin
+  if new.collected_by is null then
+    new.collected_by := case when new.provider = 'razorpay' then clinic_payment_account(new.host_id) else new.host_id end;
+  end if;
+  return new;
+end $$;
+create trigger package_purchases_collected_by before insert on package_purchases for each row execute function package_purchases_collected_by();

@@ -64,9 +64,10 @@ export async function handleConfirmPurchase(
   if (bad.length > 0) return { status: 400, body: { error: "invalid_request", fields: Object.fromEntries(bad.map((k) => [k, "Required."])) } };
   if (limit && !limit.limiter.take(`confirm-purchase:${limit.clientKey}`, CONFIRM_PAYMENT_LIMIT)) return { status: 429, body: { error: "too_many_requests" } };
   if (!deps) return { status: 409, body: { error: "payments_unavailable" } };
-  const { rows: [p] } = await deps.pool.query("select host_id from package_purchases where token = $1", [body.token]);
+  const { rows: [p] } = await deps.pool.query("select host_id, collected_by from package_purchases where token = $1", [body.token]);
   if (!p) return { status: 404, body: { error: "not_found" } };
-  const auth = await deps.authFor(p.host_id);
+  // The account that created the order: a Clinic practice owner's resolves to itself.
+  const auth = await deps.authFor(p.collected_by ?? p.host_id);
   if (!auth) return { status: 409, body: { error: "payments_unavailable" } };
   try {
     const status = await confirmPurchase({ pool: deps.pool, auth, orders: deps.ordersFor(auth) }, { token: body.token as string, paymentId: body.paymentId as string, signature: body.signature as string }, now);

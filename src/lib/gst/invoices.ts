@@ -122,14 +122,14 @@ export async function invoiceForPayment(db: Db, paymentId: string, now: Date): P
 /** A tax invoice for a paid session package. At most one per purchase. */
 export async function invoiceForPurchase(db: Db, purchaseId: string, now: Date): Promise<string | null> {
   const { rows: [p] } = await db.query(
-    `select p.host_id, h.name as host_name, p.price_minor, p.currency, p.guest_name, p.guest_email, p.sessions, k.name as package_name, e.name as event_name,
+    `select p.host_id, p.collected_by, h.name as host_name, p.price_minor, p.currency, p.guest_name, p.guest_email, p.sessions, k.name as package_name, e.name as event_name,
        exists (select 1 from invoices v where v.package_purchase_id = p.id and v.kind = 'invoice') as done
      from package_purchases p join packages k on k.id = p.package_id join event_types e on e.id = p.event_type_id join users h on h.id = p.host_id
      where p.id = $1`, [purchaseId]);
   if (!p || p.done || p.currency !== "INR") return null;
   return issue(db, {
     hostId: p.host_id, totalMinor: p.price_minor, buyerName: p.guest_name, buyerEmail: p.guest_email, purchaseId,
-    issuer: { id: await paymentAccountFor(db, p.host_id), practitionerName: p.host_name },
+    issuer: { id: p.collected_by ?? await paymentAccountFor(db, p.host_id), practitionerName: p.host_name },
     description: `${p.package_name}: ${p.sessions} × ${p.event_name}`,
   }, now);
 }
