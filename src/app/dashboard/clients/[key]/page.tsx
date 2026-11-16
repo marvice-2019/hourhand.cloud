@@ -5,6 +5,10 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { requireHost } from "@/lib/auth/session";
 import { clientKey, summarizeClients } from "@/lib/clients";
+import { clientMoney, latestAnswers } from "@/lib/client-file";
+import { ClientFile } from "@/components/ClientFile";
+import { authEnabled } from "@/lib/auth/auth";
+import { getPool } from "@/lib/data/pg-store";
 import { store } from "@/lib/data";
 import { formatDate, formatTime } from "@/lib/format";
 import { focusRing } from "@/components/ui/focus";
@@ -20,6 +24,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   if (!client) notFound();
   const history = all.filter((b) => clientKey(b.invitee.email) === key && b.status !== "pending_payment").sort((a, b) => b.startAt.getTime() - a.startAt.getTime());
   const note = await store.getClientNote(user.id, client.email);
+  const money = authEnabled() ? await clientMoney(getPool(process.env.DATABASE_URL as string), user.id, client.email) : null;
   const tz = user.timezone;
   return (
     <div>
@@ -32,6 +37,8 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
         <div><dt className="text-sm text-text-muted">No-shows</dt><dd className="text-lg font-semibold text-text">{client.noShows}</dd></div>
         <div><dt className="text-sm text-text-muted">Client since</dt><dd className="text-lg font-semibold text-text">{formatDate(client.firstAt, tz)}</dd></div>
       </dl>
+
+      <ClientFile answers={latestAnswers(history)} money={money} tz={tz} />
 
       <Card className="mt-6 max-w-xl">
         <form action={saveClientNoteAction} className="grid gap-3">
