@@ -116,16 +116,21 @@ export function priceLine(plan: PaidPlan, interval: BillingInterval, currency: C
 // ---------- Add-ons ----------
 
 /** Extras sold on top of a paid plan, each its own monthly subscription. */
-export type Addon = "domain";
+export type Addon = "domain" | "voice";
 
-export const ADDON_NAMES: Record<Addon, string> = { domain: "Custom domain" };
+export const ADDON_NAMES: Record<Addon, string> = { domain: "Custom domain", voice: "Phone receptionist" };
 
 /** Add-on prices before tax, in minor units. INR only for now (Razorpay); monthly only. */
 export const ADDON_PRICES: Record<Addon, { month: { INR: number } }> = {
   domain: { month: { INR: 19_900 } },
+  // Duo and Clinic only. Includes VOICE_INCLUDED_MINUTES of calls a month (docs/voice-receptionist.md has the cost case).
+  voice: { month: { INR: 399_900 } },
 };
 
-const ADDON_ENV_NAMES: Record<Addon, string> = { domain: "RAZORPAY_PLAN_DOMAIN_MONTH" };
+/** Call minutes a month the phone receptionist add-on includes; the host's cap can't go above it. */
+export const VOICE_INCLUDED_MINUTES = 100;
+
+const ADDON_ENV_NAMES: Record<Addon, string> = { domain: "RAZORPAY_PLAN_DOMAIN_MONTH", voice: "RAZORPAY_PLAN_VOICE_MONTH" };
 
 /** The Razorpay Plan id for an add-on, or null when it isn't configured. */
 export function addonPriceId(addon: Addon, env: Env = process.env): string | null {

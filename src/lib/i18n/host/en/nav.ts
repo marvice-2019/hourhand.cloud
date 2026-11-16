@@ -18,6 +18,7 @@ export const nav = {
   "nav.calendars": "Calendars",
   "nav.integrations": "Integrations",
   "nav.domain": "Custom domain",
+  "nav.voice": "Phone receptionist",
   "nav.practice": "Practice",
   "nav.practiceInvited": "{name} invited you to their practice on Hourhand.",
   "nav.practiceSeeInvite": "See the invitation",
