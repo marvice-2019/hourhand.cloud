@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { BookingFlow } from "@/components/BookingFlow";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { resolveLocale, t } from "@/lib/i18n/guest";
-import { formatMoney } from "@/lib/billing/plans";
+import { formatAmount } from "@/lib/money";
 import { guestDurations, lengthsLabel, priceRange } from "@/lib/durations";
 import { authEnabled } from "@/lib/auth/auth";
 import { store } from "@/lib/data";
@@ -38,11 +38,11 @@ export default async function PublicEventPage({ params, searchParams }: { params
       <LanguageSwitcher locale={locale} path={`/${host.slug}/${eventType.slug}`} params={{ at: typeof at === "string" ? at : undefined }} />
       <Link href={`/${host.slug}${langQuery}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-accent underline">{host.name}</Link>
       <h1 className="font-display text-xl text-text">{eventType.name}</h1>
-      <p className="mt-2 text-text-muted">{t(locale, "minutes", { n: lengthsLabel(eventType) })}{eventType.priceMinor !== null && ` · ${priceRange(eventType, (m) => formatMoney(m, "INR"))}`}</p>
+      <p className="mt-2 text-text-muted">{t(locale, "minutes", { n: lengthsLabel(eventType) })}{eventType.priceMinor !== null && ` · ${priceRange(eventType, (m) => formatAmount(m, eventType.currency))}`}</p>
       {eventType.description && <p className="mt-2 text-text">{eventType.description}</p>}
       {eventType.priceMinor === null && eventType.depositMinor !== null && (
         <p className="mt-2 max-w-xl rounded-md bg-surface p-3 text-sm text-text">
-          {t(locale, "depositNote", { amount: formatMoney(eventType.depositMinor, "INR"), host: host.name })}
+          {t(locale, "depositNote", { amount: formatAmount(eventType.depositMinor, eventType.currency), host: host.name })}
         </p>
       )}
       {eventType.cancelPolicy && (
@@ -56,16 +56,16 @@ export default async function PublicEventPage({ params, searchParams }: { params
           {packages.map((p) => (
             <li key={p.id}>
               <Link href={`/pkg/${p.id}`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">
-                {t(locale, "packageOffer", { n: p.sessions, price: formatMoney(p.priceMinor, "INR") })}
+                {t(locale, "packageOffer", { n: p.sessions, price: formatAmount(p.priceMinor, p.currency) })}
               </Link>
             </li>
           ))}
         </ul>
       )}
       <BookingFlow
-        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} durations={guestDurations(eventType, (m) => formatMoney(m, "INR"))} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)}
-        paid={eventType.priceMinor !== null ? { price: formatMoney(eventType.priceMinor, "INR"), hostName: host.name, eventName: eventType.name }
-          : eventType.depositMinor !== null ? { price: formatMoney(eventType.depositMinor, "INR"), hostName: host.name, eventName: eventType.name, deposit: true } : null}
+        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} durations={guestDurations(eventType, (m) => formatAmount(m, eventType.currency))} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)}
+        paid={eventType.priceMinor !== null ? { price: formatAmount(eventType.priceMinor, eventType.currency), hostName: host.name, eventName: eventType.name }
+          : eventType.depositMinor !== null ? { price: formatAmount(eventType.depositMinor, eventType.currency), hostName: host.name, eventName: eventType.name, deposit: true } : null}
       />
       <BookingFooter hostId={host.id} locale={locale} />
     </main>

@@ -541,7 +541,7 @@ describe.skipIf(!BASE)("paid bookings (Postgres)", () => {
 
     it("a free event with a deposit holds the booking for the deposit amount", async () => {
       await setPrice(null);
-      await pool.query("update event_types set deposit_minor = 20000 where id = $1", [eventTypeId]);
+      await pool.query("update event_types set deposit_minor = 20000, currency = 'INR' where id = $1", [eventTypeId]);
       et = (await store.listEventTypes(priya.id)).find((e) => e.id === eventTypeId)!;
       try {
         const fake = fakeRazorpay();
@@ -552,7 +552,7 @@ describe.skipIf(!BASE)("paid bookings (Postgres)", () => {
         expect((await pool.query("select kind, amount_minor from payments where booking_id = $1", [body.bookingId])).rows[0]).toEqual({ kind: "deposit", amount_minor: 20_000 });
         expect(await handleCreateBooking(store, { ...(await request()), weeks: 2 }, now(), undefined, deps(fake))).toMatchObject({ status: 400 });
       } finally {
-        await pool.query("update event_types set deposit_minor = null where id = $1", [eventTypeId]);
+        await pool.query("update event_types set deposit_minor = null, currency = case when price_minor is null then null else currency end where id = $1", [eventTypeId]);
       }
     });
 

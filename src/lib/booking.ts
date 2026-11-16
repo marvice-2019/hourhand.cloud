@@ -8,6 +8,8 @@ import { waNumber } from "./whatsapp";
 import { BOOKING_LIMITS, type createRateLimiter } from "./rate-limit";
 import type { Plan } from "./billing/plans";
 import { startPaidBooking } from "./payments/booking-payments";
+import { chargeableCurrency, startStripeBooking, type StripeDeps } from "./payments/stripe-checkout";
+import { stripeReady } from "./payments/stripe-connect";
 import type { HostRazorpayAuth } from "./payments/host-razorpay";
 import type { RazorpayOrders } from "./payments/razorpay-orders";
 
@@ -47,7 +49,7 @@ export async function freeSlotSeats(store: DataStore, host: User, eventType: Eve
     const [times, connections, busyBlocks, bookings] = await Promise.all([
       store.listOneOffTimes(eventType.id),
       store.listCalendarConnections(host.id),
-      store.listBusyBlocks(host.id, new Date(from.getTime() - DAY), new Date(to.getTime() + DAY)),
+      busyWithPollHolds(store, host.id, from, to, now),
       store.listBookings(host.id),
     ]);
     return computeOneOffSlots({
@@ -58,13 +60,22 @@ export async function freeSlotSeats(store: DataStore, host: User, eventType: Eve
   const [{ schedule, rules }, connections, busyBlocks, bookings] = await Promise.all([
     store.getDefaultSchedule(host.id),
     store.listCalendarConnections(host.id),
-    store.listBusyBlocks(host.id, new Date(from.getTime() - DAY), new Date(to.getTime() + DAY)),
+    busyWithPollHolds(store, host.id, from, to, now),
     store.listBookings(host.id),
   ]);
   return computeSlotSeats({
     eventType, schedule, rules, busyBlocks, bookings: bookings.filter((b) => b.id !== movingId), now, rangeStart: from, rangeEnd: to,
     syncStale: isSyncStale(connections, now),
   });
+}
+
+/** The host's busy calendar time around [from, to), plus the times their open meeting polls hold, which block slots the same way. */
+async function busyWithPollHolds(store: DataStore, hostId: string, from: Date, to: Date, now: Date): Promise<{ start: Date; end: Date }[]> {
+  const [busy, holds] = await Promise.all([
+    store.listBusyBlocks(hostId, new Date(from.getTime() - DAY), new Date(to.getTime() + DAY)),
+    store.listPollHolds(hostId, new Date(from.getTime() - DAY), new Date(to.getTime() + DAY), now),
+  ]);
+  return [...busy, ...holds];
 }
 
 type Target = { host: User; eventType: EventType; linkToken: string | null };
@@ -263,6 +274,8 @@ export interface PaymentDeps {
   authFor(hostId: string): Promise<HostRazorpayAuth | null>;
   ordersFor(auth: HostRazorpayAuth): RazorpayOrders;
   planFor(hostId: string): Promise<Plan>;
+  /** Hosts on Stripe Connect, and this site's public address for Checkout's return URLs. Absent where Stripe isn't set up. */
+  stripe?: { deps: StripeDeps; baseUrl: string } | null;
 }
 
 /**
@@ -322,18 +335,44 @@ export async function handleCreateBooking(
     },
   };
 
-  // Paid bookings need a paid plan and the host's own Razorpay; checked before the limiter so a refusal costs nothing.
-  let paid: { auth: HostRazorpayAuth; deps: PaymentDeps } | null = null;
+  // Paid bookings need a paid plan and the host's own Razorpay or Stripe account, taking the event's currency; checked
+  // before the limiter so a refusal costs nothing.
+  type Paid = { provider: "razorpay"; auth: HostRazorpayAuth; deps: PaymentDeps } | { provider: "stripe"; stripe: NonNullable<PaymentDeps["stripe"]>; host: NonNullable<Awaited<ReturnType<StripeDeps["accountFor"]>>> & { currency: string } };
+  let paid: Paid | null = null;
   if (priceMinor) {
-    const auth = payments && (await payments.planFor(host.id)) !== "free" ? await payments.authFor(host.id) : null;
-    if (!payments || !auth) return { status: 409, body: { error: "payments_unavailable" } };
-    paid = { auth, deps: payments };
+    if (!payments || (await payments.planFor(host.id)) === "free") return { status: 409, body: { error: "payments_unavailable" } };
+    // Prices saved before the currency was recorded are rupees.
+    const currency = eventType.currency ?? "INR";
+    const auth = await payments.authFor(host.id);
+    if (auth && currency === "INR") paid = { provider: "razorpay", auth, deps: payments };
+    else if (!auth && payments.stripe) {
+      const s = await payments.stripe.deps.accountFor(host.id);
+      // A price in another currency than the account settles in (the host switched providers and hasn't re-priced) can't be charged.
+      if (stripeReady(s) && chargeableCurrency(s.currency) && s.currency === currency) paid = { provider: "stripe", stripe: payments.stripe, host: s };
+    }
+    if (!paid) return { status: 409, body: { error: "payments_unavailable" } };
   }
 
-  const startPaid = async (p: { auth: HostRazorpayAuth; deps: PaymentDeps }, priceMinor: number, status: number): Promise<HandlerResult> => {
+  const startPaid = async (p: Paid, priceMinor: number, status: number): Promise<HandlerResult> => {
+    if (p.provider === "stripe") {
+      const base = p.stripe.baseUrl.replace(/\/+$/, "");
+      const lang = req.locale ? `&lang=${encodeURIComponent(req.locale)}` : "";
+      const { booking, payment } = await startStripeBooking(
+        { pool: p.stripe.deps.pool, store, api: p.stripe.deps.api, host: p.host },
+        {
+          ...bookingInput, priceMinor, kind: paymentKind,
+          productName: paymentKind === "deposit" ? `Refundable deposit: ${eventType.name} with ${host.name}` : `${eventType.name} with ${host.name}`,
+          urls: (b) => {
+            const page = `${base}/${host.slug}/${eventType.slug}/booked/${b.id}`;
+            // Stripe fills in {CHECKOUT_SESSION_ID}; the booked page reads that session back from Stripe before confirming.
+            return { successUrl: `${page}?session_id={CHECKOUT_SESSION_ID}${lang}`, cancelUrl: `${page}${lang ? `?${lang.slice(1)}` : ""}` };
+          },
+        }, now);
+      return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, holdExpiresAt: payment.holdExpiresAt.toISOString() } } };
+    }
     const { booking, payment } = await startPaidBooking(
       { pool: p.deps.pool, store, auth: p.auth, orders: p.deps.ordersFor(p.auth) }, { ...bookingInput, priceMinor, kind: paymentKind }, now);
-    return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, holdExpiresAt: payment.holdExpiresAt.toISOString() } } };
+    return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, provider: "razorpay", holdExpiresAt: payment.holdExpiresAt.toISOString() } } };
   };
 
   try {

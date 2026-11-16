@@ -174,7 +174,7 @@ export function SlotPicker({ slug, event, bookingWindowDays, manageToken, linkTo
             <ul className="mt-2 grid gap-2">
               {byDay.get(day)!.map((s) => (
                 <li key={s}>
-                  <Button variant="secondary" className="w-full" onClick={() => onPick(s, tz)} aria-label={`${formatDate(new Date(s), tz, locale)}, ${formatTime(new Date(s), tz, cycle, locale)} ${zoneName(tz)}${loaded?.seatsLeft?.[s] !== undefined ? `, ${t(locale, "seatsLeft", { n: loaded.seatsLeft[s] })}` : ""}`}>
+                  <Button variant={initial && Date.parse(s) === initial.getTime() ? "primary" : "secondary"} className="w-full" onClick={() => onPick(s, tz)} aria-label={`${formatDate(new Date(s), tz, locale)}, ${formatTime(new Date(s), tz, cycle, locale)} ${zoneName(tz)}${loaded?.seatsLeft?.[s] !== undefined ? `, ${t(locale, "seatsLeft", { n: loaded.seatsLeft[s] })}` : ""}`}>
                     {formatTime(new Date(s), tz, cycle, locale)}
                     {loaded?.seatsLeft?.[s] !== undefined && <span className="ml-2 text-sm font-normal text-text-muted">{t(locale, "seatsLeft", { n: loaded.seatsLeft[s] })}</span>}
                   </Button>
