@@ -16,10 +16,11 @@ import { smsOffered } from "@/lib/sms/offer";
 import { razorpayStatus } from "@/lib/payments/host-razorpay";
 import { rebookPrefill } from "@/lib/follow-ups/follow-ups";
 import { linkKey } from "@/lib/follow-ups/tokens";
+import { getHostContext } from "@/lib/auth/session";
 
-export default async function PublicEventPage({ params, searchParams }: { params: Promise<{ slug: string; event: string }>; searchParams: Promise<{ at?: string; lang?: string; name?: string; email?: string; rebook?: string }> }) {
+export default async function PublicEventPage({ params, searchParams }: { params: Promise<{ slug: string; event: string }>; searchParams: Promise<{ at?: string; lang?: string; name?: string; email?: string; rebook?: string; onbehalf?: string }> }) {
   const { slug, event } = await params;
-  const { at, lang, name: prefillName, email: prefillEmail, rebook } = await searchParams;
+  const { at, lang, name: prefillName, email: prefillEmail, rebook, onbehalf } = await searchParams;
   // ?name= and ?email= fill the form in, e.g. from a host's own site or CRM; the guest can still change them.
   let prefill = { name: typeof prefillName === "string" ? prefillName.slice(0, 100) : "", email: typeof prefillEmail === "string" ? prefillEmail.slice(0, 254) : "" };
   const found = await store.getPublicEventType(slug, event);
@@ -33,10 +34,16 @@ export default async function PublicEventPage({ params, searchParams }: { params
     const fromBooking = key ? await rebookPrefill(getPool(process.env.DATABASE_URL as string), key, rebook, host.id, new Date()) : null;
     if (fromBooking) prefill = fromBooking;
   }
+  // ?onbehalf=1 from the client file's "Book for them": only for someone signed in to this host's account (the owner or
+  // their Duo second person). Anyone else gets the normal page. The booking API checks the session again.
+  const onBehalf = onbehalf === "1" && (await getHostContext())?.host.id === host.id;
+  const paidEvent = eventType.priceMinor !== null || eventType.depositMinor !== null;
   const locale = resolveLocale(lang, host.locale);
   const langQuery = typeof lang === "string" && lang === locale ? `?lang=${locale}` : "";
   const questions = (await store.listCustomQuestions(host.id, eventType.id))
     .sort((a, b) => a.position - b.position)
+    // Consent questions are the client's to answer, so they aren't shown when the host books for them.
+    .filter((q) => !onBehalf || q.kind !== "consent")
     .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
   // Packages need Postgres, a paid plan and the host's Razorpay; offered only when a buyer could actually pay.
   const pool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
@@ -72,11 +79,18 @@ export default async function PublicEventPage({ params, searchParams }: { params
           ))}
         </ul>
       )}
-      <BookingFlow
-        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)}
+      {onBehalf && (
+        <p role="note" className="mt-4 max-w-xl rounded-md border border-accent bg-surface p-3 text-sm text-text">
+          {paidEvent
+            ? "You're signed in as the host. Paid sessions can't be booked for a client here, because you would be the one paying. Send them the link instead."
+            : "You're booking for your client. They get the confirmation email. Their consent questions and WhatsApp or SMS updates are left for them: the consent log records this booking as made by you."}
+        </p>
+      )}
+      {onBehalf && paidEvent ? null : <BookingFlow
+        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)} onBehalf={onBehalf}
         paid={eventType.priceMinor !== null ? { price: formatAmount(eventType.priceMinor, eventType.currency), hostName: host.name, eventName: eventType.name }
           : eventType.depositMinor !== null ? { price: formatAmount(eventType.depositMinor, eventType.currency), hostName: host.name, eventName: eventType.name, deposit: true } : null}
-      />
+      />}
       <BookingFooter hostId={host.id} locale={locale} />
     </main>
   );
