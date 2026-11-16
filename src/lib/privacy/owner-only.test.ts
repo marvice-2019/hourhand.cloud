@@ -1,4 +1,5 @@
-// A Duo second person managing an owner's account can't read or write the owner's private notes. Runs the real
+// A Duo second person managing an owner's account can't read or write the owner's private notes, export or erase a
+// client, or answer data requests. Runs the real
 // session check (getHostContext / requireOwnAccount) and server actions, with Next's request APIs stubbed.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +20,12 @@ vi.mock("@/lib/auth/auth", () => ({
 }));
 vi.mock("@/lib/data/pg-store", () => ({ getPool: () => ({}) }));
 vi.mock("@/lib/seats", () => ({ canActFor: async (_db: unknown, member: string, owner: string) => member === MEMBER.id && owner === OWNER.id }));
+vi.mock("@/lib/privacy/rights", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./rights")>()),
+  eraseClient: async (_db: unknown, host: string) => { calls.push(`eraseClient:${host}`); return { erasureId: "e1" }; },
+  exportClient: async (_db: unknown, host: string) => { calls.push(`exportClient:${host}`); return null; },
+  resolveRequest: async (_db: unknown, host: string) => { calls.push(`resolveRequest:${host}`); return true; },
+}));
 vi.mock("@/lib/data", () => ({
   store: {
     getUser: async (id: string) => [OWNER, MEMBER].find((u) => u.id === id) ?? null,
@@ -51,5 +58,33 @@ describe("private notes are the owner's alone", () => {
     await expect(saveClientNoteAction(form({ key: clientKey("client@example.com"), note: "x" }))).rejects.toThrow(/REDIRECT \/dashboard\/clients\/.*saved=1/);
     await expect(saveSessionNote(form({ bookingId: "b1", note: "x" }))).rejects.toThrow("REDIRECT /dashboard/bookings/b1?done=note_saved");
     expect(calls).toEqual([`saveClientNote:${OWNER.id}`, `saveBookingNote:${OWNER.id}`]);
+  });
+
+  it("sends a Duo second person away from exporting, erasing or answering requests", async () => {
+    state.signedIn = MEMBER.id; state.acting = OWNER.id;
+    const { clientKey } = await import("@/lib/clients");
+    const key = clientKey("client@example.com");
+    const { eraseClientAction, resolveRequestAction } = await import("@/app/dashboard/clients/privacy-actions");
+    const { GET } = await import("@/app/dashboard/clients/[key]/export/route");
+    const { NextRequest } = await import("next/server");
+    const res = await GET(new NextRequest(`http://localhost/dashboard/clients/${key}/export?format=json&notes=1`), { params: Promise.resolve({ key }) });
+    expect(res.status).toBe(403);
+    await expect(eraseClientAction(form({ key, confirm: "client@example.com" }))).rejects.toThrow("REDIRECT /dashboard/bookings");
+    await expect(resolveRequestAction(form({ id: "33333333-3333-4333-8333-333333333333", status: "done" }))).rejects.toThrow("REDIRECT /dashboard/bookings");
+    expect(calls).toEqual([]);
+  });
+
+  it("lets the owner export and, with the email typed exactly, erase", async () => {
+    state.signedIn = OWNER.id; state.acting = undefined;
+    const { clientKey } = await import("@/lib/clients");
+    const key = clientKey("client@example.com");
+    const { eraseClientAction } = await import("@/app/dashboard/clients/privacy-actions");
+    const { GET } = await import("@/app/dashboard/clients/[key]/export/route");
+    const { NextRequest } = await import("next/server");
+    expect((await GET(new NextRequest(`http://localhost/x?format=json`), { params: Promise.resolve({ key }) })).status).toBe(404); // the stub has no data
+    await expect(eraseClientAction(form({ key, confirm: "someone else" }))).rejects.toThrow("confirm_mismatch");
+    expect(calls).toEqual([`exportClient:${OWNER.id}`]);
+    await expect(eraseClientAction(form({ key, confirm: " CLIENT@example.com " }))).rejects.toThrow("REDIRECT /dashboard/clients?erased=1");
+    expect(calls).toEqual([`exportClient:${OWNER.id}`, `eraseClient:${OWNER.id}`]);
   });
 });
