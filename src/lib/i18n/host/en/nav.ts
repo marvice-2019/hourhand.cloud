@@ -12,6 +12,7 @@ export const nav = {
   "nav.offers": "Offers",
   "nav.memberships": "Memberships",
   "nav.earnings": "Earnings",
+  "nav.analytics": "Analytics",
   "nav.invoices": "Invoices",
   "nav.availability": "Availability",
   "nav.calendars": "Calendars",

@@ -32,6 +32,9 @@ export interface PlanLimits {
   whatsappBooking: boolean;
   /** Booking texts (SMS) a host's guests can get per calendar month (IST). Over it, email still goes. */
   smsPerMonth: number;
+  /** Booking analytics: how many days back the host can see, and whether they can download it as CSV. */
+  analyticsDays: number;
+  analyticsExport: boolean;
   /** Monthly memberships sold to clients through the host's own payment account. */
   memberships: boolean;
   /** Named availability schedules a host can keep, the default included. */
@@ -43,9 +46,9 @@ export interface PlanLimits {
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, memberships: false, schedules: 1, offers: false, hourhandVideo: false },
-  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true },
-  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true },
+  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, memberships: false, schedules: 1, offers: false, hourhandVideo: false, analyticsDays: 7, analyticsExport: false },
+  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true, analyticsDays: 90, analyticsExport: true },
+  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true, analyticsDays: 90, analyticsExport: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {
