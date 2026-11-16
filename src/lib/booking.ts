@@ -274,13 +274,27 @@ export interface PaymentDeps {
   stripe?: { deps: StripeDeps; baseUrl: string } | null;
 }
 
+/** A step of the booking funnel, reported to analytics. The reporter must not throw; handleCreateBooking guards it anyway. */
+export type FunnelStep = { kind: "booking_started" | "booking_created"; hostId: string; eventTypeId: string; bookingId?: string };
+export type FunnelReporter = (step: FunnelStep) => void;
+
+/** Analytics never gets in a booking's way: a reporter that throws is logged and ignored. */
+function report(reporter: FunnelReporter | undefined, step: FunnelStep): void {
+  if (!reporter) return;
+  try {
+    reporter(step);
+  } catch (error) {
+    console.error("[analytics] funnel step not reported", error);
+  }
+}
+
 /**
  * POST /api/bookings. With `limit`, new bookings are rate limited per client address (see clientIp) and per guest
  * email; the route always passes it, unit tests of the booking rules leave it out. A priced event also needs `payments`:
  * its booking is held as pending_payment and the response carries what Razorpay Checkout needs.
  */
 export async function handleCreateBooking(
-  store: DataStore, input: unknown, now: Date, limit?: { clientKey: string; limiter: Limiter }, payments?: PaymentDeps | null,
+  store: DataStore, input: unknown, now: Date, limit?: { clientKey: string; limiter: Limiter }, payments?: PaymentDeps | null, funnel?: FunnelReporter,
 ): Promise<HandlerResult> {
   const v = validateBookingRequest(input);
   if (!v.ok) return { status: 400, body: { error: "invalid_request", fields: v.fields } };
@@ -382,6 +396,9 @@ export async function handleCreateBooking(
     return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, provider: "razorpay", holdExpiresAt: payment.holdExpiresAt.toISOString() }, ...offerBody } };
   };
 
+  // A first attempt at this booking (not a repeat of one already made) that passed every shape check.
+  if (!existing) report(funnel, { kind: "booking_started", hostId: host.id, eventTypeId: eventType.id });
+
   try {
     // The repeat skips the slot re-check and the limiter, as the free repeat above does.
     if (existing && paid && priceMinor) return await startPaid(paid, priceMinor, 200);
@@ -400,8 +417,14 @@ export async function handleCreateBooking(
       return { status: 429, body: { error: "too_many_requests" } };
     }
 
-    if (paid && priceMinor) return await startPaid(paid, priceMinor, 201);
+    if (paid && priceMinor) {
+      const started = await startPaid(paid, priceMinor, 201);
+      // Razorpay or Stripe alike: analytics counts it as completed only once the booking is confirmed (paid).
+      report(funnel, { kind: "booking_created", hostId: host.id, eventTypeId: eventType.id, bookingId: (started.body as { bookingId: string }).bookingId });
+      return started;
+    }
     const booking = await store.createBooking(bookingInput);
+    report(funnel, { kind: "booking_created", hostId: host.id, eventTypeId: eventType.id, bookingId: booking.id });
     return { status: 201, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken } };
   } catch (err) {
     if (isNamedError(err, "SlotTakenError")) return slotTaken(store, host, eventType, req.start, now);

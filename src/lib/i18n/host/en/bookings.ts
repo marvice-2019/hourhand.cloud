@@ -101,4 +101,10 @@ export const bookings = {
   "bookings.undoNoShow": "Undo no-show",
   "bookings.markNoShow": "Mark as no-show",
   "bookings.back": "Back to bookings",
+  // Hourhand video (3.11)
+  "bookings.videoTitle": "Hourhand video",
+  "bookings.videoStart": "Start the call",
+  "bookings.videoHintGuest": "Opens 15 minutes before the start. You join as the host and let your guest in from the lobby.",
+  "bookings.videoHintClass": "Opens 15 minutes before the start. You join as the host and let your class in from the lobby.",
+  "bookings.videoBack": "Back to the booking",
 } as const;

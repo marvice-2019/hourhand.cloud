@@ -36,6 +36,7 @@ export const polls = {
   "polls.locInPerson": "In person",
   "polls.locCustomGuest": "Details from the host",
   "polls.locAskGuest": "Your chosen location",
+  "polls.locHourhandVideo": "Hourhand video",
   "polls.doneCreated": "Your poll is ready. Share the link below.",
   "polls.doneConfirmed": "Booked. Everyone who said yes or if needed is getting their confirmation now.",
   "polls.doneCancelled": "Poll cancelled. Its times are released and nothing was booked.",
