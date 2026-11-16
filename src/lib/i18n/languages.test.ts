@@ -18,7 +18,7 @@ const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1
 /** The Unicode block each language is written in, to catch a line left in English or pasted from the wrong language. */
 const SCRIPT: Record<(typeof NEW)[number], RegExp> = { mr: /[ऀ-ॿ]/, bn: /[ঀ-৿]/, ml: /[ഀ-ൿ]/, gu: /[઀-૿]/ };
 /** Lines that are brand or product names, the same in every language. */
-const SAME_EVERYWHERE = new Set(["locGoogleMeet", "locZoom", "locTeams"]);
+const SAME_EVERYWHERE = new Set(["locGoogleMeet", "locZoom", "locTeams", "locHourhandVideo"]);
 
 describe("every language has every line", () => {
   for (const [name, catalogs] of [["guest", CATALOGS], ["mail", MAIL_CATALOGS], ["poll", POLL_CATALOGS], ["portal", PORTAL_CATALOGS]] as const) {
@@ -201,4 +201,21 @@ describe("booking-page lines in the new languages", () => {
       for (const key of Object.values(LOCATION_KEYS)) expect(t(locale, key)).not.toBe("");
     }
   });
+});
+
+describe("meeting polls and the client portal in the new languages", () => {
+  for (const [name, catalogs] of [["poll", POLL_CATALOGS], ["portal", PORTAL_CATALOGS]] as const) {
+    it(`${name}: every new language is translated, not the English stand-in`, () => {
+      const en = catalogs.en as Record<string, string>;
+      for (const locale of NEW) {
+        const lines = catalogs[locale] as Record<string, string>;
+        expect(lines, `${name}.${locale} is still the English catalog`).not.toBe(catalogs.en);
+        expect(Object.keys(lines).sort()).toEqual(Object.keys(en).sort());
+        for (const [key, english] of Object.entries(en)) {
+          expect(placeholders(lines[key] ?? ""), `${name}.${locale}.${key}`).toEqual(placeholders(english));
+          if (/[a-z]{3}/i.test(english.replace(/\{\w+\}|Hourhand|WhatsApp|Google|PDF|GST|UPI/g, ""))) expect(lines[key], `${name}.${locale}.${key}`).toMatch(SCRIPT[locale]);
+        }
+      }
+    });
+  }
 });

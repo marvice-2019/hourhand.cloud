@@ -6,8 +6,9 @@ import { authEnabled } from "@/lib/auth/auth";
 import { requireHost } from "@/lib/auth/session";
 import { getPool } from "@/lib/data/pg-store";
 import { isNamedError } from "@/lib/data/types";
+import { getHostI18n } from "@/lib/i18n/host/server";
 import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
-import { createPackage, setPackageActive, validatePackageForm } from "@/lib/packages/packages";
+import { createPackage, PACKAGE_LIMITS, setPackageActive, validatePackageForm } from "@/lib/packages/packages";
 
 // Each action checks the session itself; every query takes the signed-in host's id, so another host's package or event
 // type is simply not found.
@@ -18,14 +19,27 @@ const field = (form: FormData, name: string) => String(form.get(name) ?? "").tri
 
 export async function createPackageAction(_prev: PackageFormState, form: FormData): Promise<PackageFormState> {
   const user = await requireHost();
-  if (!authEnabled()) return { status: "error", errors: { form: "Packages need payments, which this demo copy doesn't have." } };
+  const { t } = await getHostI18n();
+  if (!authEnabled()) return { status: "error", errors: { form: t("packages.demo") } };
   const v = validatePackageForm({ eventTypeId: field(form, "eventTypeId"), name: field(form, "name"), sessions: field(form, "sessions"), price: field(form, "price"), validDays: field(form, "validDays") });
-  if (!v.ok) return { status: "error", errors: v.errors };
+  if (!v.ok) {
+    const { sessions: s, validDays: d } = PACKAGE_LIMITS;
+    const messages = {
+      eventTypeId: t("packages.errorEventType"),
+      name: t("packages.errorName"),
+      sessions: t("packages.errorSessions", { min: s.min, max: s.max }),
+      price: t("packages.errorPrice"),
+      validDays: t("packages.errorValidDays", { min: d.min, max: d.max }),
+    };
+    const errors: Record<string, string> = {};
+    for (const name of Object.keys(v.errors) as (keyof typeof messages)[]) errors[name] = messages[name];
+    return { status: "error", errors };
+  }
   try {
     const pool = getPool(process.env.DATABASE_URL as string);
     await createPackage(pool, user.id, { ...v.value, currency: priceCurrency(await paymentAccount(pool, user.id)) });
   } catch (error) {
-    if (isNamedError(error, "NotFoundError")) return { status: "error", errors: { eventTypeId: "That event type isn't available. Turn it on first, or pick another." } };
+    if (isNamedError(error, "NotFoundError")) return { status: "error", errors: { eventTypeId: t("packages.eventTypeUnavailable") } };
     throw error;
   }
   revalidatePath("/dashboard/packages");

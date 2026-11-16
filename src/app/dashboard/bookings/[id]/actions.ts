@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireHost } from "@/lib/auth/session";
+import { requireHost, requireOwnAccount } from "@/lib/auth/session";
 import { store } from "@/lib/data";
 import { isNamedError, NotFoundError } from "@/lib/data/types";
 import { handleHostReschedule } from "@/lib/manage";
+import { MAX_NOTE } from "@/lib/privacy/notes";
 
 // Each action checks the session itself; the store methods only touch bookings whose host_id is the signed-in host.
 
@@ -65,5 +66,20 @@ export async function setNoShow(form: FormData): Promise<void> {
     if (booking.status !== "confirmed" || booking.startAt > now) return `${page(id)}?error=not_started`;
     await store.setNoShow(user.id, id, on, now);
     return `${page(id)}?done=${on ? "no_show" : "no_show_undone"}`;
+  });
+}
+
+/**
+ * The owner's private session note on one booking, sealed before it is stored. Owner only: a Duo second person is sent
+ * away by requireOwnAccount, and the store writes nothing unless the booking is the owner's.
+ */
+export async function saveSessionNote(form: FormData): Promise<void> {
+  const user = await requireOwnAccount();
+  const id = field(form, "bookingId");
+  const note = String(form.get("note") ?? "");
+  if (note.length > MAX_NOTE) redirect(`${page(id)}?error=note_too_long`);
+  await run(id, async () => {
+    await store.saveBookingNote(user.id, id, note);
+    return `${page(id)}?done=note_saved`;
   });
 }
