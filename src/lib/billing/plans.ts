@@ -35,12 +35,14 @@ export interface PlanLimits {
   /** Booking analytics: how many days back the host can see, and whether they can download it as CSV. */
   analyticsDays: number;
   analyticsExport: boolean;
+  /** Monthly memberships sold to clients through the host's own payment account. */
+  memberships: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, analyticsDays: 7, analyticsExport: false },
-  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, analyticsDays: 90, analyticsExport: true },
-  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, analyticsDays: 90, analyticsExport: true },
+  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, analyticsDays: 7, analyticsExport: false, memberships: false },
+  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, analyticsDays: 90, analyticsExport: true, memberships: true },
+  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, analyticsDays: 90, analyticsExport: true, memberships: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {
