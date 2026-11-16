@@ -13,6 +13,7 @@ import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
 import { queueWaitlistFor } from "../waitlist";
 import { classKeyOf, localDay, weekOf } from "../slots";
+import { hostDisplayName } from "../display-name";
 import {
   DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type AvailabilityRule, type BookingLink,
   type BookingWithInvitee, type CreateBookingInput, type DataStore, type EventType, type EventTypeDraft, type Interval, type User,
@@ -35,7 +36,7 @@ export function getPool(databaseUrl: string): pg.Pool {
 }
 
 const USER = "id, email, coalesce(name, '') as name, slug, timezone, time_format, locale, host_locale";
-const toUser = (r: Row): User => ({ id: r.id as string, email: r.email as string, name: r.name as string, slug: r.slug as string, timezone: r.timezone as string, timeFormat: r.time_format as User["timeFormat"], locale: r.locale as string, hostLocale: (r.host_locale as string | null) ?? "en" });
+const toUser = (r: Row): User => ({ id: r.id as string, email: r.email as string, name: hostDisplayName(r.name as string | null, r.email as string), slug: r.slug as string, timezone: r.timezone as string, timeFormat: r.time_format as User["timeFormat"], locale: r.locale as string, hostLocale: (r.host_locale as string | null) ?? "en" });
 
 const EVENT = `id, user_id, schedule_id, name, slug, description, duration_minutes, min_notice_minutes, booking_window_days, start_increment_minutes,
   buffer_before_minutes, buffer_after_minutes, daily_limit, cancel_cutoff_minutes, price_minor, currency, hidden, active, position, kind, max_repeats, deposit_minor, redirect_url, weekly_limit, cancellation_policy, seat_limit`;

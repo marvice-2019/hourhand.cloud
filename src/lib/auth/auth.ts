@@ -74,6 +74,17 @@ export function resolveBaseUrl(env: Record<string, string | undefined> = process
   return url;
 }
 
+/** The public booking pages' host name (e.g. hourhand.cloud), for link previews in the dashboard. */
+export function bookingHostName(env: Record<string, string | undefined> = process.env): string {
+  try {
+    const base = resolveBaseUrl(env);
+    if (base) return new URL(base).host;
+  } catch {
+    // a malformed BETTER_AUTH_URL falls through to the default
+  }
+  return "hourhand.cloud";
+}
+
 /**
  * An absolute URL on this site for redirects. Behind the proxy the request's own URL is the container's
  * (https://0.0.0.0:3000), so redirects built from it send people nowhere; the public base URL is used instead.

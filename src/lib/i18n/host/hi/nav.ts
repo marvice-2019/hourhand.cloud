@@ -36,6 +36,8 @@ export const nav: Record<keyof typeof en, string> = {
   "nav.syncSlow": "सिंक धीमा है · फिर से कोशिश हो रही है",
   "nav.syncDown": "डिस्कनेक्ट है। बुकिंग रुकी हुई हैं",
   "nav.reconnect": "फिर से जोड़ें",
+  "nav.syncNone": "कोई कैलेंडर नहीं जुड़ा",
+  "nav.connect": "जोड़ें",
   "nav.installPrompt": "Hourhand को अपनी होम स्क्रीन पर रखें।",
   "nav.installIos": "Share मेन्यू से Add to Home Screen चुनें",
   "nav.install": "ऐप इंस्टॉल करें",
