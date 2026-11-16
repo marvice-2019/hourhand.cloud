@@ -1025,6 +1025,15 @@ const mr: Catalog = {
   guestsHint: "जास्तीत जास्त 5, स्वल्पविरामाने वेगळे करा. त्यांना तपशील आणि रिमाइंडर मिळतील; बुकिंग फक्त तुम्हीच बदलू शकता.",
   errGuests: "पाहुण्यांचे ईमेल तपासा: जास्तीत जास्त 5 योग्य पत्ते.",
   cancelPolicy: "रद्द करण्याचे धोरण",
+  phoneOptionalSms: "मोबाइल नंबर (ऐच्छिक)",
+  smsOptIn: "बुकिंगचे अपडेट मला SMS ने पाठवा (फक्त भारतीय मोबाइल नंबर).",
+  errSmsPhone: "SMS अपडेट फक्त भारतीय मोबाइल नंबरवर जातात, उदा. +91 98765 43210.",
+  textsHeading: "SMS संदेश",
+  textsOn: "बुकिंगचे अपडेट {phone} वर SMS ने पाठवले जातात.",
+  textsOff: "या बुकिंगसाठी SMS बंद आहेत.",
+  textsTurnOff: "SMS बंद करा",
+  textsTurnOn: "SMS सुरू करा",
+  textsFailed: "बदल सेव्ह झाला नाही. पुन्हा प्रयत्न करा.",
 };
 
 // Bengali (bn): DRAFT, needs native-speaker review before Hourhand is marketed in Bengali. Written from the English source.
@@ -1185,6 +1194,15 @@ const bn: Catalog = {
   guestsHint: "সর্বোচ্চ 5 জন, কমা দিয়ে আলাদা করুন। তাঁরা বিস্তারিত তথ্য ও রিমাইন্ডার পাবেন; বুকিং শুধু আপনিই বদলাতে পারবেন।",
   errGuests: "অতিথিদের ইমেল দেখে নিন: সর্বোচ্চ 5টি সঠিক ঠিকানা।",
   cancelPolicy: "বাতিলের নীতি",
+  phoneOptionalSms: "মোবাইল নম্বর (ঐচ্ছিক)",
+  smsOptIn: "বুকিংয়ের আপডেট আমাকে SMS-এ পাঠান (শুধু ভারতীয় মোবাইল নম্বর)।",
+  errSmsPhone: "SMS আপডেট শুধু ভারতীয় মোবাইল নম্বরে যায়, যেমন +91 98765 43210।",
+  textsHeading: "SMS বার্তা",
+  textsOn: "বুকিংয়ের আপডেট {phone} নম্বরে SMS-এ পাঠানো হয়।",
+  textsOff: "এই বুকিংয়ের জন্য SMS বন্ধ আছে।",
+  textsTurnOff: "SMS বন্ধ করুন",
+  textsTurnOn: "SMS চালু করুন",
+  textsFailed: "পরিবর্তন সেভ হয়নি। আবার চেষ্টা করুন।",
 };
 
 // Malayalam (ml): DRAFT, needs native-speaker review before Hourhand is marketed in Malayalam. Written from the English source.
@@ -1345,6 +1363,15 @@ const ml: Catalog = {
   guestsHint: "പരമാവധി 5, കോമ ഇട്ട് വേർതിരിക്കൂ. അവർക്ക് വിവരങ്ങളും റിമൈൻഡറുകളും ലഭിക്കും; ബുക്കിംഗ് മാറ്റാൻ താങ്കൾക്ക് മാത്രമേ കഴിയൂ.",
   errGuests: "അതിഥികളുടെ ഇമെയിലുകൾ പരിശോധിക്കൂ: പരമാവധി 5 ശരിയായ വിലാസങ്ങൾ.",
   cancelPolicy: "ക്യാൻസലേഷൻ നയം",
+  phoneOptionalSms: "മൊബൈൽ നമ്പർ (ഓപ്ഷണൽ)",
+  smsOptIn: "ബുക്കിംഗ് അപ്ഡേറ്റുകൾ എനിക്ക് SMS ആയി അയയ്ക്കുക (ഇന്ത്യൻ മൊബൈൽ നമ്പറുകൾ മാത്രം).",
+  errSmsPhone: "SMS അപ്ഡേറ്റുകൾ ഇന്ത്യൻ മൊബൈൽ നമ്പറുകളിലേക്ക് മാത്രമേ പോകൂ, ഉദാ. +91 98765 43210.",
+  textsHeading: "SMS സന്ദേശങ്ങൾ",
+  textsOn: "ബുക്കിംഗ് അപ്ഡേറ്റുകൾ {phone} എന്ന നമ്പറിലേക്ക് SMS ആയി അയയ്ക്കുന്നു.",
+  textsOff: "ഈ ബുക്കിംഗിന് SMS ഓഫാണ്.",
+  textsTurnOff: "SMS ഓഫാക്കുക",
+  textsTurnOn: "SMS ഓണാക്കുക",
+  textsFailed: "മാറ്റം സേവ് ആയില്ല. വീണ്ടും ശ്രമിക്കുക.",
 };
 
 // Gujarati (gu): DRAFT, needs native-speaker review before Hourhand is marketed in Gujarati. Written from the English source.
@@ -1505,6 +1532,15 @@ const gu: Catalog = {
   guestsHint: "વધુમાં વધુ 5, અલ્પવિરામથી અલગ કરીને. તેમને વિગતો અને રિમાઇન્ડર મળશે; બુકિંગ ફક્ત તમે જ બદલી શકો છો.",
   errGuests: "મહેમાનોના ઈમેલ તપાસો: વધુમાં વધુ 5 સાચાં સરનામાં.",
   cancelPolicy: "કેન્સલેશન પૉલિસી",
+  phoneOptionalSms: "મોબાઇલ નંબર (વૈકલ્પિક)",
+  smsOptIn: "બુકિંગના અપડેટ મને SMS થી મોકલો (ફક્ત ભારતીય મોબાઇલ નંબર).",
+  errSmsPhone: "SMS અપડેટ ફક્ત ભારતીય મોબાઇલ નંબર પર જાય છે, જેમ કે +91 98765 43210.",
+  textsHeading: "SMS સંદેશા",
+  textsOn: "બુકિંગના અપડેટ {phone} પર SMS થી મોકલાય છે.",
+  textsOff: "આ બુકિંગ માટે SMS બંધ છે.",
+  textsTurnOff: "SMS બંધ કરો",
+  textsTurnOn: "SMS ચાલુ કરો",
+  textsFailed: "ફેરફાર સેવ ન થયો. ફરી પ્રયાસ કરો.",
 };
 
 export const CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn, mr, bn, ml, gu };
