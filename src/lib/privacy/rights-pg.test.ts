@@ -163,6 +163,7 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
   });
 
   it("erases the client's personal data everywhere, keeps what GST law requires, and logs who and when only", async () => {
+    await pool.query("insert into session_briefs (booking_id, host_id, status, brief, model) values ($1, $2, 'ready', 'Meera: third session, working on anxiety.', 'test')", [past.id, priya.id]);
     const { erasureId } = await eraseClient(pool, priya.id, priya.id, "meera@example.com", now);
     const meeraRows = (sql: string) => count(sql, [priya.id]);
     // No trace of her email, name or phone left in Priya's data.
@@ -175,6 +176,7 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
     expect(await meeraRows("select count(*)::int as n from bookings where host_id = $1 and cancel_reason like '%Meera%'")).toBe(0);
     expect(await meeraRows("select count(*)::int as n from client_notes where host_id = $1 and email = 'meera@example.com'")).toBe(0);
     expect(await count("select count(*)::int as n from booking_notes where booking_id = $1", [past.id])).toBe(0);
+    expect(await count("select count(*)::int as n from session_briefs where booking_id = $1", [past.id])).toBe(0);
     expect(await meeraRows("select count(*)::int as n from waitlist where host_id = $1")).toBe(0);
     expect((await pool.query("select rating, comment from booking_feedback where booking_id = $1", [past.id])).rows[0]).toEqual({ rating: 4, comment: null });
     expect((await pool.query("select comment from booking_feedback where booking_id = $1", [ravisBooking.id])).rows[0].comment).toBe("Ravi: great");

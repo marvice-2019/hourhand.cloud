@@ -216,6 +216,8 @@ export async function eraseClient(pool: Pick<pg.Pool, "connect">, hostId: string
     await client.query("update bookings set cancel_reason = null, location_value = null where id = any($1::uuid[]) and host_id = $2", [bookingIds, hostId]);
     await client.query("delete from booking_guests where booking_id = any($1::uuid[])", [bookingIds]);
     await client.query("delete from booking_notes where host_id = $1 and booking_id = any($2::uuid[])", [hostId, bookingIds]);
+    // Session prep (3.5): AI briefs were written from their answers and history, so they go too.
+    await client.query("delete from session_briefs where host_id = $1 and booking_id = any($2::uuid[])", [hostId, bookingIds]);
     await client.query("delete from client_notes where host_id = $1 and email = $2", [hostId, email]);
     await client.query("delete from waitlist where host_id = $1 and email = $2", [hostId, email]);
     // Session follow-ups (2.6): the guest's own words go; the 1-5 rating stays on the now anonymous booking.
