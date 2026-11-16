@@ -28,7 +28,7 @@ So notice (s.5, Rule 3), consent (s.6), the fiduciary's duties (s.8), the rights
 
 ## Retention rule on erasure
 
-What an erasure removes: the client's name, email, phone, answers, extra guests, WhatsApp opt-in, running-late note and manage link on every booking; cancellation reasons and location values on those bookings; private client and session notes; waitlist entries; queued messages (deleted) and the address on sent ones; package purchase name, email, phone and link; the identity on consent records and requests. Calendar events already written into the host's own Google or Microsoft calendar are outside Hourhand; the host deletes those.
+What an erasure removes: the client's name, email, phone, answers, extra guests, WhatsApp opt-in, running-late note and manage link on every booking; cancellation reasons and location values on those bookings; private client and session notes; waitlist entries; client portal sessions and sign-in links; queued messages (deleted) and the address on sent ones; package purchase name, email, phone and link; the identity on consent records and requests. Calendar events already written into the host's own Google or Microsoft calendar are outside Hourhand; the host deletes those.
 
 What it keeps, and why:
 

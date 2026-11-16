@@ -19,7 +19,7 @@ function draft(overrides: Partial<EventTypeForm> = {}): EventTypeDraft {
 }
 
 describe("priceGateError", () => {
-  const ok = { priceMinor: 49900, demo: false, plan: "solo", razorpayConnected: true } as const;
+  const ok = { priceMinor: 49900, demo: false, plan: "solo", paymentsReady: true } as const;
 
   it("lets a paid-plan host with Razorpay connected set a price", () => {
     expect(priceGateError(ok)).toBeNull();
@@ -35,11 +35,11 @@ describe("priceGateError", () => {
   });
 
   it("refuses a price until Razorpay is connected", () => {
-    expect(priceGateError({ ...ok, razorpayConnected: false })).toBe("Connect Razorpay first, so payments go to your account.");
+    expect(priceGateError({ ...ok, paymentsReady: false })).toBe("Connect Razorpay (India) or Stripe under Integrations first, so payments go to your account.");
   });
 
   it("always allows a free event", () => {
-    expect(priceGateError({ priceMinor: null, demo: true, plan: "free", razorpayConnected: false })).toBeNull();
+    expect(priceGateError({ priceMinor: null, demo: true, plan: "free", paymentsReady: false })).toBeNull();
   });
 });
 

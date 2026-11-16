@@ -208,6 +208,9 @@ export async function eraseClient(pool: Pick<pg.Pool, "connect">, hostId: string
     await client.query("delete from booking_notes where host_id = $1 and booking_id = any($2::uuid[])", [hostId, bookingIds]);
     await client.query("delete from client_notes where host_id = $1 and email = $2", [hostId, email]);
     await client.query("delete from waitlist where host_id = $1 and email = $2", [hostId, email]);
+    // The client portal (3.2): sign them out and void any emailed sign-in link.
+    await client.query("delete from portal_sessions where host_id = $1 and email = $2", [hostId, email]);
+    await client.query("delete from portal_links where host_id = $1 and email = $2", [hostId, email]);
 
     // Messages: anything still queued for them never goes; sent ones keep their status but not the address.
     await client.query(

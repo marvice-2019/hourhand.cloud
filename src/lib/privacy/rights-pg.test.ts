@@ -77,6 +77,11 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
     await pool.query(
       `insert into waitlist (host_id, event_type_id, day, timezone, window_start, window_end, name, email) values ($1, $2, '2031-06-10', 'Asia/Kolkata', '2031-06-09T18:30:00Z', '2031-06-10T18:30:00Z', 'Meera Iyer', 'meera@example.com')`,
       [priya.id, coaching.id]);
+    // Signed in to Priya's client portal, and to Arun's (which must survive Priya's erasure).
+    for (const [host, tag] of [[priya.id, "p"], [arun.id, "a"]]) {
+      await pool.query("insert into portal_sessions (id_hash, host_id, email, expires_at) values ($1, $2, 'meera@example.com', $3::timestamptz + interval '30 days')", [`sess-${tag}`, host, now]);
+      await pool.query("insert into portal_links (nonce_hash, host_id, email, expires_at) values ($1, $2, 'meera@example.com', $3::timestamptz + interval '15 minutes')", [`link-${tag}`, host, now]);
+    }
     await store.saveClientNote(priya.id, "meera@example.com", "Generalised anxiety; CBT plan.");
     await store.saveBookingNote(priya.id, past.id, "Session 1: breathing exercise.");
     await store.saveClientNote(priya.id, "ravi@example.com", "Ravi's note.");
@@ -162,6 +167,9 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
     expect(await meeraRows("select count(*)::int as n from client_notes where host_id = $1 and email = 'meera@example.com'")).toBe(0);
     expect(await count("select count(*)::int as n from booking_notes where booking_id = $1", [past.id])).toBe(0);
     expect(await meeraRows("select count(*)::int as n from waitlist where host_id = $1")).toBe(0);
+    expect(await meeraRows("select count(*)::int as n from portal_sessions where host_id = $1")).toBe(0);
+    expect(await meeraRows("select count(*)::int as n from portal_links where host_id = $1")).toBe(0);
+    expect(await count("select count(*)::int as n from portal_sessions where host_id = $1 and email = 'meera@example.com'", [arun.id])).toBe(1);
     expect(await meeraRows("select count(*)::int as n from package_purchases where host_id = $1 and (guest_email = 'meera@example.com' or guest_name like '%Meera%' or guest_phone is not null)")).toBe(0);
     expect(await meeraRows("select count(*)::int as n from consent_records where host_id = $1 and email = 'meera@example.com'")).toBe(0);
     expect(await meeraRows("select count(*)::int as n from consent_records where host_id = $1 and email like 'erased-%'")).toBe(4); // that consent was given stays

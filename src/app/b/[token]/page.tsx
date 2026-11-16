@@ -17,6 +17,7 @@ import { authEnabled, resolveBaseUrl } from "@/lib/auth/auth";
 import { DataRequest } from "@/components/DataRequest";
 import { getPool } from "@/lib/data/pg-store";
 import { openRequestsForToken } from "@/lib/privacy/rights";
+import { pt } from "@/lib/i18n/portal";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +85,11 @@ export default async function ManageBookingPage({ params, searchParams }: { para
         {canSayRunningLate(booking.startAt, new Date()) && <RunningLate token={token} hostName={host.name} told={booking.invitee.runningLateMinutes} locale={locale} />}
         <ManageBooking token={token} slug={host.slug} event={eventType.slug} bookingWindowDays={eventType.bookingWindowDays} hostName={host.name} laterWeeks={laterWeeks} locale={locale} langQuery={q} cancelPolicy={eventType.cancelPolicy} groupSeat={booking.classKey !== null} />
         </>
+      )}
+      {authEnabled() && (
+        <p className="mt-8 max-w-md text-sm">
+          <Link href={`/${host.slug}/portal${q}`} target="_top" className="font-semibold text-accent underline">{pt(locale, "openPortal", { host: host.name })}</Link>
+        </p>
       )}
       {openRequests && <DataRequest token={token} hostName={host.name} tz={tz} open={openRequests} locale={locale} />}
     </main>
