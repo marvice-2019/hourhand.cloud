@@ -19,6 +19,7 @@ export default async function ProfileSettingsPage() {
       <p className="mt-2 max-w-xl text-text-muted">
         Your booking page doubles as a small website: your photo, a few lines about you, your services and prices, and how to reach you.
         Share <Link href={`/${user.slug}`} className="font-semibold text-accent underline">/{user.slug}</Link> as your homepage.
+        To add it to Instagram or your Google Business Profile, see <Link href="/dashboard/get-booked" className="font-semibold text-accent underline">Instagram &amp; Google</Link>.
       </p>
       {!profile ? <p className="mt-6 text-text-muted">This demo copy has no database, so the page can&apos;t be edited here.</p> : (
         <>
