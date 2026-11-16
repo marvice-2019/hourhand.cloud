@@ -14,7 +14,7 @@ export const bookings: Record<keyof typeof en, string> = {
 
   // One booking
   "bookings.detailTitle": "{name} உடன் புக்கிங்",
-  "bookings.returningClient": "மீண்டும் வரும் கிளையன்ட், செஷன் {n}",
+  "bookings.returningClient": "மீண்டும் வரும் கிளையன்ட், {n}-வது செஷன்",
   "bookings.firstSession": "முதல் செஷன்",
   "bookings.clientHistory": "கிளையன்ட் வரலாறும் குறிப்புகளும்",
   "bookings.yourNote": "உங்கள் குறிப்பு:",
@@ -28,12 +28,12 @@ export const bookings: Record<keyof typeof en, string> = {
   "bookings.email": "ஈமெயில்",
   "bookings.alsoInvited": "அழைக்கப்பட்ட மற்றவர்கள்",
   "bookings.payment": "பேமெண்ட்",
-  "bookings.paymentPending": "{amount}, விருந்தினர் பணம் செலுத்தக் காத்திருக்கிறது",
+  "bookings.paymentPending": "{amount}, விருந்தினர் பணம் செலுத்துவதற்குக் காத்திருக்கிறது",
   "bookings.paymentPaid": "{amount}, உங்கள் கணக்குக்கு வந்துவிட்டது",
   "bookings.paymentFailed": "{amount}, பேமெண்ட் முடியவில்லை",
   "bookings.paymentRefundPending": "{amount}, ரீஃபண்ட் ஆகிக்கொண்டிருக்கிறது",
   "bookings.paymentRefunded": "{amount}, விருந்தினருக்கு ரீஃபண்ட் ஆனது",
-  "bookings.depositPending": "டெபாசிட்: {amount}, விருந்தினர் பணம் செலுத்தக் காத்திருக்கிறது",
+  "bookings.depositPending": "டெபாசிட்: {amount}, விருந்தினர் பணம் செலுத்துவதற்குக் காத்திருக்கிறது",
   "bookings.depositPaid": "டெபாசிட்: {amount}, உங்கள் கணக்குக்கு வந்துவிட்டது",
   "bookings.depositFailed": "டெபாசிட்: {amount}, பேமெண்ட் முடியவில்லை",
   "bookings.depositRefundPending": "டெபாசிட்: {amount}, ரீஃபண்ட் ஆகிக்கொண்டிருக்கிறது",
@@ -54,7 +54,7 @@ export const bookings: Record<keyof typeof en, string> = {
   "bookings.errorSlotTaken": "அந்த நேரம் இப்போதுதான் எடுக்கப்பட்டது. வேறொன்றைத் தேர்ந்தெடுங்கள்.",
   "bookings.errorNotMovable": "இந்த புக்கிங்கின் நேரத்தை மாற்ற முடியாது. வரவிருக்கும் உறுதியான புக்கிங்குகளுக்கு மட்டுமே முடியும்.",
   "bookings.errorGroupSeat": "குழு வகுப்பின் ஒரு இடத்தை மட்டும் தனியாக மாற்ற முடியாது. அதைக் கேன்சல் செய்யுங்கள்; விருந்தினர் வேறொரு வகுப்பை புக் செய்யலாம்.",
-  "bookings.errorBadTime": "அந்த நேரம் சரியாக வரவில்லை. பட்டியலில் இருந்து ஒன்றைத் தேர்ந்தெடுங்கள்.",
+  "bookings.errorBadTime": "அந்த நேரம் எங்களுக்குச் சரியாக வந்து சேரவில்லை. பட்டியலில் இருந்து ஒன்றைத் தேர்ந்தெடுங்கள்.",
   "bookings.errorNotStarted": "புக்கிங் தொடங்கிய பிறகுதான் 'வரவில்லை' எனக் குறிக்க முடியும்.",
   "bookings.doneNoteSaved": "செஷன் குறிப்பு சேமிக்கப்பட்டது.",
   "bookings.errorNoteTooLong": "செஷன் குறிப்பை 5000 எழுத்துகளுக்குள் வையுங்கள்.",
@@ -89,7 +89,7 @@ export const bookings: Record<keyof typeof en, string> = {
 
   // Changing the booking
   "bookings.changeTitle": "இந்த புக்கிங்கை மாற்றுங்கள்",
-  "bookings.reasonLabel": "{name} அவர்களுக்கான காரணம் (விருப்பத்தேர்வு)",
+  "bookings.reasonLabel": "{name} அவர்களுக்குத் தெரிவிக்கும் காரணம் (விருப்பத்தேர்வு)",
   "bookings.alsoCancelNextWeek": "இந்தத் தொடரின் அடுத்த வாரத்தையும் கேன்சல் செய்",
   "bookings.alsoCancelLaterWeeks": "இந்தத் தொடரின் அடுத்த {n} வாரங்களையும் கேன்சல் செய்",
   "bookings.cancelNote": "நீங்கள் கேன்சல் செய்ததை {name} அவர்களுக்கு ஈமெயில் செய்வோம். பணம் செலுத்திய புக்கிங்குக்கு முழுத் தொகையும் ரீஃபண்ட் ஆகும்.",
