@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { BookingFooter } from "@/components/BookingFooter";
 import { PackageCheckout } from "@/components/PackageCheckout";
 import { authEnabled } from "@/lib/auth/auth";
-import { formatMoney } from "@/lib/billing/plans";
+import { formatAmount } from "@/lib/money";
 import { getPool } from "@/lib/data/pg-store";
 import { publicPackage } from "@/lib/packages/packages";
 
@@ -13,8 +13,8 @@ export default async function BuyPackagePage({ params }: { params: Promise<{ id:
   const found = authEnabled() ? await publicPackage(getPool(process.env.DATABASE_URL as string), id) : null;
   if (!found) notFound();
   const { pkg, host, eventType } = found;
-  const price = formatMoney(pkg.priceMinor, "INR");
-  const each = formatMoney(Math.round(pkg.priceMinor / pkg.sessions), "INR");
+  const price = formatAmount(pkg.priceMinor, pkg.currency);
+  const each = formatAmount(Math.round(pkg.priceMinor / pkg.sessions), pkg.currency);
   return (
     <main className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
       <p className="text-sm font-semibold text-text-muted">{host.name}</p>
