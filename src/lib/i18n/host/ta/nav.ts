@@ -2,6 +2,8 @@
 import type { nav as en } from "../en/nav";
 export const nav: Record<keyof typeof en, string> = {
   "nav.bookings": "புக்கிங்குகள்",
+  "nav.addEmail": "புக்கிங் உறுதிப்படுத்தல்களும் நினைவூட்டல்களும் உங்களுக்கு வர உங்கள் ஈமெயிலைச் சேர்க்கவும்.",
+  "nav.addEmailLink": "ஈமெயில் சேர்",
   "nav.clients": "கிளையன்ட்கள்",
   "nav.feedback": "கருத்துகள்",
   "nav.profile": "உங்கள் பக்கம்",
