@@ -8,7 +8,7 @@ import type { Plan } from "../billing/plans";
 import { OfferRefusedError, resolvePrice, type AppliedOffer, type ResolvePriceInput } from "../offers/offers";
 import type { PaymentCheckDeps } from "../payments/booking-payments";
 import type { HostRazorpayAuth } from "../payments/host-razorpay";
-import type { RazorpayOrders, RazorpayPayment } from "../payments/razorpay-orders";
+import type { PaymentFee, RazorpayOrders, RazorpayPayment } from "../payments/razorpay-orders";
 
 // Session packages: a host sells N sessions of one event type for one price, paid once into the host's own Razorpay
 // account. The buyer gets a private link (/p/<token>) to book them. Credits are never stored: a credit is used by a
@@ -263,7 +263,7 @@ export async function startPurchase(
  * Marks a purchase paid from a captured payment and queues the buyer's and host's emails. A purchase already paid (the
  * reconciler or the browser got there first) is left as it is.
  */
-export async function applyPurchasePayment(pool: pg.Pool, purchaseId: string, razorpayPaymentId: string, now: Date): Promise<"paid" | "already"> {
+export async function applyPurchasePayment(pool: pg.Pool, purchaseId: string, razorpayPaymentId: string, now: Date, fee: PaymentFee | null = null): Promise<"paid" | "already"> {
   const result = await inTx(pool, async (client) => {
     const { rows: [p] } = await client.query(
       "select p.status, p.valid_days, p.host_id, p.guest_email, u.email as host_email from package_purchases p join users u on u.id = p.host_id where p.id = $1 for update of p",
@@ -272,8 +272,9 @@ export async function applyPurchasePayment(pool: pg.Pool, purchaseId: string, ra
     if (p.status === "paid") return "already" as const;
     // A purchase marked failed (no payment seen for a day) still becomes paid if the money did arrive.
     await client.query(
-      `update package_purchases set status = 'paid', provider_payment_id = $2, paid_at = $3, expires_at = $4, last_error = null, updated_at = $3 where id = $1`,
-      [purchaseId, razorpayPaymentId, now, new Date(now.getTime() + p.valid_days * DAY)]);
+      `update package_purchases set status = 'paid', provider_payment_id = $2, paid_at = $3, expires_at = $4, last_error = null, updated_at = $3,
+         fee_minor = $5, fee_tax_minor = $6 where id = $1`,
+      [purchaseId, razorpayPaymentId, now, new Date(now.getTime() + p.valid_days * DAY), fee?.feeMinor ?? null, fee?.taxMinor ?? null]);
     await invoiceForPurchase(client, purchaseId, now);
     for (const [kind, to] of [["package_guest", p.guest_email], ["package_host", p.host_email]]) {
       await client.query(
@@ -325,7 +326,7 @@ export async function confirmPurchase(
   if (p.orderId !== row.provider_order_id || p.amount !== row.price_minor || p.currency !== row.currency) throw new PurchaseVerifyError("mismatch");
   if (p.status === "authorized") p = await captureOnce(orders, p.id, row.price_minor, row.currency);
   if (p.status !== "captured") throw new PurchaseVerifyError("not_paid");
-  return applyPurchasePayment(pool, row.id, p.id, now);
+  return applyPurchasePayment(pool, row.id, p.id, now, p.fee);
 }
 
 // A purchase is checked once it is a minute old and at most once a minute; with no payment for a day it is marked failed.
@@ -370,7 +371,7 @@ export async function reconcilePurchases(deps: PaymentCheckDeps & { pool: pg.Poo
       const authorized = items.find((p) => p.status === "authorized" && ours(p));
       const paid = captured ?? (authorized ? await captureOnce(orders, authorized.id, r.price_minor, r.currency) : null);
       if (paid?.status === "captured") {
-        if ((await applyPurchasePayment(pool, r.id, paid.id, now)) === "paid") result.paid += 1;
+        if ((await applyPurchasePayment(pool, r.id, paid.id, now, paid.fee)) === "paid") result.paid += 1;
       } else {
         await giveUp(r);
       }

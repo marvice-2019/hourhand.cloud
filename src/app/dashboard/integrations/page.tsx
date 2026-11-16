@@ -111,7 +111,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         ) : zoomReady ? (
           <div className="mt-4 grid gap-3">
             {zoom.state === "disconnected" && (
-              <p className="text-sm text-danger">{t("integrations.zoomStopped", { email: zoom.email })}</p>
+              <p className="text-sm text-danger">{zoom.email ? t("integrations.zoomStopped", { email: zoom.email }) : t("integrations.zoomStoppedNoEmail")}</p>
             )}
             <div><Link prefetch={false} href="/api/integrations/zoom/connect" className={buttonClasses()}>{zoom.state === "disconnected" ? t("integrations.zoomReconnect") : t("integrations.zoomConnect")}</Link></div>
           </div>

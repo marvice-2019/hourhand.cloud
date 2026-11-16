@@ -5,7 +5,7 @@ import type { BookingWithInvitee, CreateBookingInput, DataStore } from "../data/
 import { kickJobs } from "../jobs/kick";
 import { creditNoteForRefund, invoiceForPayment } from "../gst/invoices";
 import type { HostRazorpayAuth } from "./host-razorpay";
-import type { RazorpayOrders, RazorpayPayment } from "./razorpay-orders";
+import type { PaymentFee, RazorpayOrders, RazorpayPayment } from "./razorpay-orders";
 
 // Priced bookings: the guest pays the host's own Razorpay account. The booking holds its slot as pending_payment while
 // the guest pays, and only becomes confirmed (with its emails) once the captured payment is checked against our records.
@@ -101,7 +101,7 @@ export async function startPaidBooking(
  * Records a captured payment. A held booking becomes confirmed and its emails go out; a booking cancelled meanwhile
  * (hold lapsed, host cancelled) stays cancelled and its payment is marked for refund, never reviving the slot.
  */
-export async function applyCapturedPayment(pool: pg.Pool, bookingId: string, razorpayPaymentId: string, now: Date): Promise<"confirmed" | "already" | "refund_pending"> {
+export async function applyCapturedPayment(pool: pg.Pool, bookingId: string, razorpayPaymentId: string, now: Date, fee: PaymentFee | null = null): Promise<"confirmed" | "already" | "refund_pending"> {
   const result = await inTx(pool, async (client) => {
     const { rows } = await client.query("select status from bookings where id = $1 for update", [bookingId]);
     const status = rows[0]?.status as BookingWithInvitee["status"] | undefined;
@@ -110,13 +110,16 @@ export async function applyCapturedPayment(pool: pg.Pool, bookingId: string, raz
     if (status === "cancelled") {
       // Only a payment we haven't settled yet; a refund already under way or done is left alone.
       await client.query(
-        `update payments set status = 'refund_pending', provider_payment_id = $2, paid_at = coalesce(paid_at, $3), updated_at = $3
-         where booking_id = $1 and status in ('pending', 'failed')`, [bookingId, razorpayPaymentId, now]);
+        `update payments set status = 'refund_pending', provider_payment_id = $2, paid_at = coalesce(paid_at, $3), updated_at = $3,
+           fee_minor = coalesce($4, fee_minor), fee_tax_minor = coalesce($5, fee_tax_minor)
+         where booking_id = $1 and status in ('pending', 'failed')`, [bookingId, razorpayPaymentId, now, fee?.feeMinor ?? null, fee?.taxMinor ?? null]);
       return "refund_pending" as const;
     }
     await client.query("update bookings set status = 'confirmed', hold_expires_at = null where id = $1", [bookingId]);
     const { rows: [paid] } = await client.query(
-      "update payments set status = 'paid', provider_payment_id = $2, paid_at = $3, updated_at = $3 where booking_id = $1 returning id", [bookingId, razorpayPaymentId, now]);
+      `update payments set status = 'paid', provider_payment_id = $2, paid_at = $3, updated_at = $3,
+         fee_minor = coalesce($4, fee_minor), fee_tax_minor = coalesce($5, fee_tax_minor) where booking_id = $1 returning id`,
+      [bookingId, razorpayPaymentId, now, fee?.feeMinor ?? null, fee?.taxMinor ?? null]);
     await queueBookingNotifications(client, bookingId, "booked", now);
     // A GST-registered host's guest gets a tax invoice with the payment (deposits aren't invoiced).
     if (paid) await invoiceForPayment(client, paid.id, now);
@@ -144,7 +147,7 @@ export async function confirmPayment(
   if (p.amount !== row.amount_minor || p.currency !== row.currency) throw new PaymentVerifyError("mismatch");
   if (p.status === "authorized") p = await captureOnce(orders, p.id, row.amount_minor, row.currency);
   if (p.status !== "captured") throw new PaymentVerifyError("not_paid");
-  return applyCapturedPayment(pool, input.bookingId, p.id, now);
+  return applyCapturedPayment(pool, input.bookingId, p.id, now, p.fee);
 }
 
 /**
@@ -244,10 +247,10 @@ export async function reconcilePayments(deps: PaymentCheckDeps & { pool: pg.Pool
       const captured = items.find((p) => p.status === "captured");
       const authorized = items.find((p) => p.status === "authorized");
       if (captured) {
-        count(await applyCapturedPayment(pool, row.booking_id, captured.id, now));
+        count(await applyCapturedPayment(pool, row.booking_id, captured.id, now, captured.fee));
       } else if (authorized) {
         const p = await captureOnce(orders, authorized.id, authorized.amount, authorized.currency);
-        count(await applyCapturedPayment(pool, row.booking_id, p.id, now));
+        count(await applyCapturedPayment(pool, row.booking_id, p.id, now, p.fee));
       } else if (holdLapsed(row)) {
         if (await expireHold(pool, row.booking_id, now)) result.expired += 1;
       } else if (pastLateWindow(row)) {
