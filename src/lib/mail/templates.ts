@@ -63,7 +63,7 @@ export interface BookingMailContext {
   locale?: string;
 }
 
-export interface RenderedMail { subject: string; text: string; html: string; attachments?: Attachment[]; replyTo?: string }
+export interface RenderedMail { subject: string; text: string; html: string; attachments?: Attachment[]; replyTo?: string; headers?: Record<string, string> }
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -279,6 +279,17 @@ export function renderCalendarAlert(a: { accountEmail: string; disconnected: boo
   });
 }
 
+/** Zoom stopped letting Hourhand make meetings: the grant was revoked, expired, or the app was removed in Zoom. */
+export function renderZoomAlert(a: { accountEmail: string; lastError: string | null; integrationsUrl: string }): RenderedMail {
+  return render("Reconnect Zoom to keep sending meeting links", {
+    heading: "Your Zoom is disconnected",
+    intro: `Zoom no longer lets Hourhand create meetings for ${a.accountEmail}. Bookings you already have keep their Zoom links. New Zoom bookings are still taken, but get no link until you reconnect.`,
+    rows: a.lastError ? [["Last error", a.lastError.slice(0, 200)]] : [],
+    link: { label: "Reconnect Zoom", url: a.integrationsUrl },
+    footer: "Sent by Hourhand about your booking page.",
+  });
+}
+
 export function renderRenewalReminder(a: { planName: string; price: string; renewsOn: Date; timezone: string; planUrl: string }): RenderedMail {
   const on = formatDate(a.renewsOn, a.timezone);
   return render(`Your Hourhand ${a.planName} plan renews on ${on}`, {
@@ -343,6 +354,22 @@ export function renderSeatInviteMail(c: { ownerName: string; ownerEmail: string;
     note: "Once you accept, you get your own booking page on Duo and can manage their bookings. If you weren't expecting this, ignore it.",
     footer: `Sent by Hourhand for ${c.ownerName}. Reply to reach them.`,
   }, { replyTo: c.ownerEmail });
+}
+
+/**
+ * To the host: one of their clients asked, from their booking's manage link, for a copy or deletion of their data. It
+ * carries no details of the client; the host opens the dashboard to see who and act.
+ */
+export function renderDataRequestMail(c: { kind: "access" | "erasure"; dueAt: Date; timezone: string; url: string }): RenderedMail {
+  const what = c.kind === "access" ? "a copy of the data you hold about them" : "deletion of the data you hold about them";
+  return render(c.kind === "access" ? "A client asked for a copy of their data" : "A client asked you to delete their data", {
+    heading: "A client made a data request", intro: `One of your clients asked, from their booking link, for ${what}.`,
+    rows: [["Respond by", when(c.dueAt, c.timezone, "12h")]], link: { label: "Open the request", url: c.url },
+    note: c.kind === "access"
+      ? "Download their export from the client's page and send it to them, then mark the request done. Leave out your private notes unless you mean to share them."
+      : "Erase the client from their page once nothing is upcoming or still being paid. Bookings and invoices stay as the law requires, without their details.",
+    footer: "Sent by Hourhand. You are responsible for answering your clients' data requests; Hourhand gives you the tools.",
+  });
 }
 
 export function renderWaitlistMail(c: { guestName: string; hostName: string; eventName: string; start: Date; timezone: string; url: string }): RenderedMail {
