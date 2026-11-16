@@ -11,6 +11,7 @@ import { hostPlan } from "@/lib/billing/account";
 import { getPool } from "@/lib/data/pg-store";
 import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
 import { getHostI18n } from "@/lib/i18n/host/server";
+import { formatAmount } from "@/lib/money";
 import { videoGateError } from "@/lib/video/gate";
 import { videoAvailabilityFor } from "@/lib/video/server";
 
@@ -54,7 +55,12 @@ export async function saveEventType(id: string | null, form: EventTypeForm, ques
   if (!details.ok || !checked.ok) {
     // The validators word their errors in English; each code is shown in the host's language instead.
     const { t } = await getHostI18n();
-    const say = (e: CodedError) => t(`eventTypes.err${e.code[0].toUpperCase()}${e.code.slice(1)}` as HostKey, e.vars);
+    // A Stripe host prices in their Stripe account's currency, so the bad-price hint names that currency, not rupees.
+    const badPrice = !details.ok && Object.values(details.codes).some((e) => e?.code === "priceInvalid");
+    const currency = badPrice ? await hostCurrency(user.id) : "INR";
+    const say = (e: CodedError) => e.code === "priceInvalid" && currency !== "INR"
+      ? t("common.errPriceOther", { currency, min: formatAmount(100, currency) })
+      : t(`eventTypes.err${e.code[0].toUpperCase()}${e.code.slice(1)}` as HostKey, e.vars);
     const errors: EventTypeErrors = {};
     if (!details.ok) for (const [field, e] of Object.entries(details.codes)) if (e) errors[field as keyof EventTypeErrors] = say(e);
     const questionErrors: QuestionErrors = checked.ok ? [] : checked.codes.map((c) => Object.fromEntries(
