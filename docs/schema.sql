@@ -26,6 +26,7 @@ create table users (
   slug citext not null unique check (slug ~ '^[a-z0-9][a-z0-9-]{2,39}$'),
   timezone text not null default 'Asia/Kolkata',
   locale text not null default 'en',
+  host_locale text not null default 'en' check (host_locale in ('en','hi','ta')),  -- the host's dashboard and email language
   time_format text not null default '12h' check (time_format in ('12h','24h')),
   whatsapp_number text,                       -- E.164; for sync alerts and host reminders
   deleted_at timestamptz,                     -- soft delete; a nightly job purges personal data after 30 days

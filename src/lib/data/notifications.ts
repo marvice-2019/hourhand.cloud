@@ -81,7 +81,8 @@ export async function queueBookingNotifications(
   // Extra guests get each guest email too, under their own keys (the worker leaves out the manage link for them).
   const extras: string[] = b.extra_guests ?? [];
   const toGuests = (kind: BookingEmailKind, sendAt: Date, key: string) => {
-    queued.push({ kind, channel: "email", to: b.guest_email, sendAt, key });
+    // A phone booking without an email has an address on the reserved .invalid domain (RFC 2606): nothing to send.
+    if (!/\.invalid$/i.test(b.guest_email)) queued.push({ kind, channel: "email", to: b.guest_email, sendAt, key });
     for (const g of extras) queued.push({ kind, channel: "email", to: g, sendAt, key: `${key}:to:${g.toLowerCase()}` });
   };
   // Calendar jobs name the target calendar; a delete finds the event's own calendar from the booking when it runs.

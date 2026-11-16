@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { authEnabled, getAuth } from "./auth";
 import { store } from "@/lib/data";
+import { DELETE_ACCOUNT_MESSAGES } from "./delete-account-messages";
 import { requireUser } from "./session";
 
 export async function signOut(): Promise<void> {
@@ -19,9 +20,9 @@ export type DeleteAccountState = { error?: string };
  */
 export async function deleteMyAccount(_prev: DeleteAccountState, form: FormData): Promise<DeleteAccountState> {
   const user = await requireUser();
-  if (!authEnabled()) return { error: "The demo data can't be deleted." };
+  if (!authEnabled()) return { error: DELETE_ACCOUNT_MESSAGES.demo };
   const typed = String(form.get("confirm-email") ?? "").trim().toLowerCase();
-  if (typed !== user.email.toLowerCase()) return { error: "Type your email exactly as shown to confirm." };
+  if (typed !== user.email.toLowerCase()) return { error: DELETE_ACCOUNT_MESSAGES.email };
   await store.deleteAccount(user.id);
   redirect("/sign-in?closed=1");
 }

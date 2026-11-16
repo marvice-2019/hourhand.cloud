@@ -40,10 +40,11 @@ export function withDuration<T extends Pick<EventType, "durationMinutes">>(et: T
 export const bookedMinutes = (b: { startAt: Date; endAt: Date }) => Math.round((b.endAt.getTime() - b.startAt.getTime()) / 60_000);
 
 /** The booking page's length choices with prices as shown, or undefined when there is only one length. */
-export function guestDurations(et: Priced, formatPrice: (minor: number) => string, opts: { showPrice?: boolean } = {}): { minutes: number; price: string | null }[] | undefined {
+export function guestDurations(et: Priced, formatPrice: (minor: number) => string, opts: { showPrice?: boolean } = {}): { minutes: number; price: string | null; priceMinor: number | null }[] | undefined {
   const choices = durationChoices(et);
   if (choices.length < 2) return undefined;
-  return choices.map((c) => ({ minutes: c.minutes, price: opts.showPrice !== false && c.priceMinor !== null ? formatPrice(c.priceMinor) : null }));
+  const show = opts.showPrice !== false;
+  return choices.map((c) => ({ minutes: c.minutes, price: show && c.priceMinor !== null ? formatPrice(c.priceMinor) : null, priceMinor: show ? c.priceMinor : null }));
 }
 
 /** "30 / 45 / 60 min" style summary: the lengths offered, shortest first. */
