@@ -6,6 +6,7 @@ import { oneOffSlug } from "../data/one-off";
 import { LOCATION_KINDS, NotFoundError, type LocationKind } from "../data/types";
 import { LOCATION_VALUE_LABEL } from "../event-types";
 import { isLocale, type Locale } from "../i18n/guest";
+import { fillTemplate } from "../i18n/host/lib-messages";
 import { kickJobs } from "../jobs/kick";
 import { classKeyOf, isSyncStale } from "../slots";
 
@@ -66,6 +67,31 @@ export interface PollVoter {
 }
 export interface OptionTally extends PollOption { yes: number; ifNeeded: number; no: number; best: boolean }
 
+/**
+ * Every message checkPoll gives the host, as code -> English template. The dashboard shows each in the host's language
+ * (src/app/dashboard/polls/actions.ts); the location lines keep the wording they always had.
+ */
+export const POLL_MESSAGES = {
+  title: "Give the meeting a name (up to 100 characters).",
+  description: "Keep the description under 2000 characters.",
+  duration: "Duration must be 5 to 720 minutes.",
+  location: "Pick where you'll meet.",
+  locationAddress: "Add the address so people know where to go.",
+  locationPhone: "Add your phone number so people know where to go.",
+  locationDetails: "Add the location details so people know where to go.",
+  timesAhead: "Propose times within the next {n} days.",
+  timesCount: "Propose {min} to {max} times.",
+  timesFuture: "Every time must be in the future.",
+  timesOnce: "Each time can be proposed once.",
+  deadlineFuture: "The voting deadline must be in the future.",
+  deadlineFirst: "Voting must close by the first proposed time.",
+  deadlineMax: "Voting can stay open up to {n} days.",
+} as const;
+
+const LOCATION_VALUE_CODE: Partial<Record<LocationKind, keyof typeof POLL_MESSAGES>> = {
+  in_person: "locationAddress", phone_guest_calls: "locationPhone", custom: "locationDetails",
+};
+
 /** A poll the host can't make: `field` names what is wrong. */
 export class InvalidPollError extends Error {
   constructor(readonly field: "title" | "description" | "durationMinutes" | "location" | "times" | "deadline", message: string) {
@@ -96,26 +122,29 @@ export class PollStateError extends Error {
 /** The rules for a new poll. Returns its times earliest first and its deadline. */
 export function checkPoll(input: PollInput, now: Date): { times: Date[]; deadline: Date } {
   const title = input.title.trim();
-  if (title.length < 1 || title.length > 100) throw new InvalidPollError("title", "Give the meeting a name (up to 100 characters).");
-  if ((input.description ?? "").length > 2000) throw new InvalidPollError("description", "Keep the description under 2000 characters.");
+  if (title.length < 1 || title.length > 100) throw new InvalidPollError("title", POLL_MESSAGES.title);
+  if ((input.description ?? "").length > 2000) throw new InvalidPollError("description", POLL_MESSAGES.description);
   if (!Number.isInteger(input.durationMinutes) || input.durationMinutes < 5 || input.durationMinutes > 720) {
-    throw new InvalidPollError("durationMinutes", "Duration must be 5 to 720 minutes.");
+    throw new InvalidPollError("durationMinutes", POLL_MESSAGES.duration);
   }
-  if (!LOCATION_KINDS.includes(input.location.kind)) throw new InvalidPollError("location", "Pick where you'll meet.");
+  if (!LOCATION_KINDS.includes(input.location.kind)) throw new InvalidPollError("location", POLL_MESSAGES.location);
   const valueLabel = LOCATION_VALUE_LABEL[input.location.kind];
-  if (valueLabel && !input.location.value?.trim()) throw new InvalidPollError("location", `Add the ${valueLabel.toLowerCase()} so people know where to go.`);
+  if (valueLabel && !input.location.value?.trim()) {
+    const code = LOCATION_VALUE_CODE[input.location.kind];
+    throw new InvalidPollError("location", code ? POLL_MESSAGES[code] : `Add the ${valueLabel.toLowerCase()} so people know where to go.`);
+  }
   const { minTimes, maxTimes, defaultDeadlineDays, maxDeadlineDays, maxAheadDays } = POLL_LIMITS;
   const times = input.times;
-  if (times.length < minTimes || times.length > maxTimes) throw new InvalidPollError("times", `Propose ${minTimes} to ${maxTimes} times.`);
-  if (times.some((t) => Number.isNaN(t.getTime()) || t.getTime() <= now.getTime())) throw new InvalidPollError("times", "Every time must be in the future.");
-  if (times.some((t) => t.getTime() > now.getTime() + maxAheadDays * DAY)) throw new InvalidPollError("times", `Propose times within the next ${maxAheadDays} days.`);
-  if (new Set(times.map((t) => t.getTime())).size !== times.length) throw new InvalidPollError("times", "Each time can be proposed once.");
+  if (times.length < minTimes || times.length > maxTimes) throw new InvalidPollError("times", fillTemplate(POLL_MESSAGES.timesCount, { min: minTimes, max: maxTimes }));
+  if (times.some((t) => Number.isNaN(t.getTime()) || t.getTime() <= now.getTime())) throw new InvalidPollError("times", POLL_MESSAGES.timesFuture);
+  if (times.some((t) => t.getTime() > now.getTime() + maxAheadDays * DAY)) throw new InvalidPollError("times", fillTemplate(POLL_MESSAGES.timesAhead, { n: maxAheadDays }));
+  if (new Set(times.map((t) => t.getTime())).size !== times.length) throw new InvalidPollError("times", POLL_MESSAGES.timesOnce);
   const sorted = [...times].sort((a, b) => a.getTime() - b.getTime());
   const first = sorted[0];
   const deadline = input.deadline ?? new Date(Math.min(now.getTime() + defaultDeadlineDays * DAY, first.getTime()));
-  if (Number.isNaN(deadline.getTime()) || deadline.getTime() <= now.getTime()) throw new InvalidPollError("deadline", "The voting deadline must be in the future.");
-  if (deadline.getTime() > first.getTime()) throw new InvalidPollError("deadline", "Voting must close by the first proposed time.");
-  if (deadline.getTime() > now.getTime() + maxDeadlineDays * DAY) throw new InvalidPollError("deadline", `Voting can stay open up to ${maxDeadlineDays} days.`);
+  if (Number.isNaN(deadline.getTime()) || deadline.getTime() <= now.getTime()) throw new InvalidPollError("deadline", POLL_MESSAGES.deadlineFuture);
+  if (deadline.getTime() > first.getTime()) throw new InvalidPollError("deadline", POLL_MESSAGES.deadlineFirst);
+  if (deadline.getTime() > now.getTime() + maxDeadlineDays * DAY) throw new InvalidPollError("deadline", fillTemplate(POLL_MESSAGES.deadlineMax, { n: maxDeadlineDays }));
   return { times: sorted, deadline };
 }
 
@@ -520,7 +549,7 @@ export async function clashesAt(db: Db, hostId: string, start: Date, end: Date, 
 // Emails (rendered by the job worker)
 
 export interface PollVoterMailData { kind: "poll_voter_link"; locale: Locale; voterName: string; hostName: string; title: string; deadline: Date; timezone: string; url: string }
-export interface PollHostMailData { kind: "poll_host_closed"; title: string; hostTimezone: string; hostTimeFormat: "12h" | "24h"; voters: number; options: OptionTally[]; url: string }
+export interface PollHostMailData { kind: "poll_host_closed"; title: string; hostTimezone: string; hostTimeFormat: "12h" | "24h"; hostLocale?: string; voters: number; options: OptionTally[]; url: string }
 
 /** What a poll email needs, from its queue row; a skip reason once it no longer applies. */
 export async function pollMailData(db: Db, kind: string, dedupeKey: string, baseUrl: string, now: Date, key: () => Buffer = pollLinkKey):
@@ -540,11 +569,11 @@ export async function pollMailData(db: Db, kind: string, dedupeKey: string, base
   if (kind === "poll_host_closed") {
     const m = /^poll:([0-9a-f-]{36}):closed$/.exec(dedupeKey);
     const { rows: [r] } = m ? await db.query(
-      `select p.id, p.user_id, p.title, p.status, u.timezone, u.time_format from polls p join users u on u.id = p.user_id where p.id = $1 and u.deleted_at is null`, [m[1]]) : { rows: [] };
+      `select p.id, p.user_id, p.title, p.status, u.timezone, u.time_format, u.host_locale from polls p join users u on u.id = p.user_id where p.id = $1 and u.deleted_at is null`, [m[1]]) : { rows: [] };
     if (!r) return { skip: "poll gone" };
     if (r.status !== "closed") return { skip: `poll already ${r.status}` };
     const [options, voters] = await Promise.all([optionsOf(db, r.id), votersOf(db, r.id)]);
-    return { kind, title: r.title, hostTimezone: r.timezone, hostTimeFormat: r.time_format, voters: voters.length,
+    return { kind, title: r.title, hostTimezone: r.timezone, hostTimeFormat: r.time_format, hostLocale: r.host_locale ?? "en", voters: voters.length,
       options: tally(options, voters).filter((o) => o.startAt.getTime() > now.getTime()), url: `${baseUrl}/dashboard/polls/${r.id}` };
   }
   return { skip: "not a poll email" };

@@ -13,13 +13,16 @@ import { monthlyEarnings } from "../earnings";
 import { requestForEmail } from "../privacy/rights";
 import { paymentAccount, priceCurrency } from "../payments/host-payments";
 import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderRenewalReminder, renderPollClosedMail, renderPollVoterMail, renderSeatInviteMail, renderWaitlistMail, renderDataRequestMail, renderZoomAlert, type BookingMailContext, type RenderedMail } from "../mail/templates";
-import { PLAN_NAMES, PRICES, priceLine, type BillingInterval, type PaidPlan } from "../billing/plans";
+import { PLAN_NAMES, PRICES, type BillingInterval, type PaidPlan } from "../billing/plans";
 import { freeSlots } from "../booking";
 import { pollMailData } from "../polls/polls";
 import { createPgStore } from "../data/pg-store";
 import { hostPlan } from "../billing/account";
 import { buildFollowUp, FOLLOW_UP_KIND } from "../follow-ups/follow-ups";
 import { linkKey } from "../follow-ups/tokens";
+import { hostLocaleOf } from "../i18n/host";
+import { hostMonth, makeHostI18n } from "../i18n/host/format";
+import { hostPriceLine } from "../i18n/host/price";
 import { isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
 import { ZoomApiError, type ZoomMeetingInput } from "../zoom/client";
 import { withZoomToken, type ZoomDeps } from "../zoom/connection";
@@ -81,11 +84,14 @@ const CONTEXT = `
       order by p.created_at desc limit 1) as paid_minor,
     (select p.kind from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
       order by p.created_at desc limit 1) as paid_kind,
+    (select json_build_object('kind', a.kind, 'label', a.label, 'code', oc.code, 'listMinor', a.list_minor, 'discountMinor', a.discount_minor)
+      from offer_applications a left join offer_coupons oc on oc.id = a.coupon_id
+      where a.item_kind = 'event_type' and a.host_id = b.host_id and a.idempotency_key = b.idempotency_key) as offer,
     (select p.currency from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
       order by p.created_at desc limit 1) as paid_currency,
     (select p.provider from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
       order by p.created_at desc limit 1) as paid_provider,
-    coalesce(u.name, '') as host_name, u.email as host_email, u.timezone as host_timezone, u.time_format as host_time_format,
+    coalesce(u.name, '') as host_name, u.email as host_email, u.timezone as host_timezone, u.time_format as host_time_format, u.host_locale,
     loc.kind as location_kind, loc.value as location_value, atc.provider as add_to_provider, atc.can_teams as add_to_can_teams,
     -- a calendar write that hasn't been tried yet or is running right now; one waiting to retry doesn't hold emails back
     exists (select 1 from notifications cj where (cj.booking_id = b.id or cj.booking_id in (select m.id from bookings m where b.class_key is not null and m.class_key = b.class_key))
@@ -118,7 +124,7 @@ type ContextRow = Record<string, unknown>;
 function toContext(r: ContextRow, baseUrl: string): BookingMailContext {
   return {
     bookingId: r.id as string, eventName: r.event_name as string,
-    hostName: r.host_name as string, hostEmail: r.host_email as string, hostTimezone: r.host_timezone as string, hostTimeFormat: r.host_time_format as HourCycle,
+    hostName: r.host_name as string, hostEmail: r.host_email as string, hostTimezone: r.host_timezone as string, hostTimeFormat: r.host_time_format as HourCycle, hostLocale: (r.host_locale as string | null) ?? "en",
     guestName: r.guest_name as string, guestEmail: r.guest_email as string, guestTimezone: r.guest_timezone as string, locale: (r.guest_locale as string | null) ?? "en",
     startAt: new Date(r.start_at as Date), endAt: new Date(r.end_at as Date),
     location: r.location_kind ? { kind: r.location_kind as LocationKind, value: (r.location_value as string | null) ?? null } : null,
@@ -126,6 +132,7 @@ function toContext(r: ContextRow, baseUrl: string): BookingMailContext {
     answers: (r.answers as InviteeAnswer[]) ?? [],
     cancelledBy: (r.cancelled_by as BookingMailContext["cancelledBy"]) ?? null, cancelReason: (r.cancel_reason as string | null) ?? null,
     paidMinor: (r.paid_minor as number | null) ?? null, paidIsDeposit: r.paid_kind === "deposit",
+    offer: (r.offer as BookingMailContext["offer"]) ?? null,
     paidCurrency: (r.paid_currency as string | null) ?? null, paidProvider: (r.paid_provider as "razorpay" | "stripe" | null) ?? null,
     previousStartAt: r.previous_start_at ? new Date(r.previous_start_at as Date) : null,
     movedBy: (r.previous_cancelled_by as BookingMailContext["movedBy"]) ?? null,
@@ -428,27 +435,27 @@ async function createOrShare(
 /** The host's one email about a Zoom connection that stopped working; skipped once they've reconnected or removed it. */
 async function renderZoomAlertMail(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
   const id = /^zoom:([0-9a-f-]{36}):alert:/.exec(c.dedupe_key)?.[1];
-  const { rows: [z] } = id ? await pool.query("select account_email, status, last_error from integrations where id = $1", [id]) : { rows: [] };
+  const { rows: [z] } = id ? await pool.query("select i.account_email, i.status, i.last_error, u.host_locale from integrations i join users u on u.id = i.user_id where i.id = $1", [id]) : { rows: [] };
   if (!z) return { skip: "Zoom connection removed" };
   if (z.status === "ok") return { skip: "Zoom reconnected" };
-  return renderZoomAlert({ accountEmail: z.account_email ?? "your Zoom account", lastError: z.last_error, integrationsUrl: `${baseUrl}/dashboard/integrations` });
+  return renderZoomAlert({ accountEmail: z.account_email ?? "your Zoom account", lastError: z.last_error, integrationsUrl: `${baseUrl}/dashboard/integrations`, hostLocale: z.host_locale });
 }
 
 async function renderAlert(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
   const connectionId = /^calendar:([0-9a-f-]{36}):alert:/.exec(c.dedupe_key)?.[1];
   const { rows: [conn] } = connectionId
-    ? await pool.query("select account_email, status, last_error from calendar_connections where id = $1", [connectionId])
+    ? await pool.query("select c.account_email, c.status, c.last_error, u.host_locale from calendar_connections c join users u on u.id = c.user_id where c.id = $1", [connectionId])
     : { rows: [] };
   if (!conn) return { skip: "calendar connection removed" };
   if (conn.status === "ok") return { skip: "calendar connection recovered" };
-  return renderCalendarAlert({ accountEmail: conn.account_email, disconnected: conn.status === "disconnected", lastError: conn.last_error, calendarsUrl: `${baseUrl}/dashboard/calendars` });
+  return renderCalendarAlert({ accountEmail: conn.account_email, disconnected: conn.status === "disconnected", lastError: conn.last_error, calendarsUrl: `${baseUrl}/dashboard/calendars`, hostLocale: conn.host_locale });
 }
 
 /** The renewal reminder goes only if that same period is still about to renew: not after a cancel, pause or renewal. */
 async function renderRenewal(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
   const m = /^renewal:([^:]+):(\d+)$/.exec(c.dedupe_key);
   const { rows: [s] } = await pool.query(
-    `select s.plan, s.interval, s.provider, s.provider_subscription_id, s.status, s.current_period_end, s.cancel_at_period_end, u.timezone
+    `select s.plan, s.interval, s.provider, s.provider_subscription_id, s.status, s.current_period_end, s.cancel_at_period_end, u.timezone, u.host_locale
        from subscriptions s join users u on u.id = s.user_id where s.user_id = $1`,
     [c.user_id]);
   if (!m || !s || s.provider_subscription_id !== m[1]) return { skip: "subscription changed" };
@@ -456,8 +463,8 @@ async function renderRenewal(pool: pg.Pool, c: Claimed, baseUrl: string): Promis
   if (!s.current_period_end || s.current_period_end.getTime() !== Number(m[2])) return { skip: "period already renewed" };
   if (!(s.plan in PRICES)) return { skip: "not a paid plan" };
   return renderRenewalReminder({
-    planName: PLAN_NAMES[s.plan as PaidPlan], price: priceLine(s.plan as PaidPlan, s.interval as BillingInterval, s.provider === "stripe" ? "USD" : "INR"),
-    renewsOn: s.current_period_end, timezone: s.timezone, planUrl: `${baseUrl}/dashboard/plan`,
+    planName: PLAN_NAMES[s.plan as PaidPlan], price: hostPriceLine(s.plan as PaidPlan, s.interval as BillingInterval, s.provider === "stripe" ? "USD" : "INR", makeHostI18n(hostLocaleOf({ hostLocale: s.host_locale }))),
+    renewsOn: s.current_period_end, timezone: s.timezone, planUrl: `${baseUrl}/dashboard/plan`, hostLocale: s.host_locale,
   });
 }
 
@@ -465,8 +472,10 @@ async function renderEarnings(pool: pg.Pool, c: Claimed, baseUrl: string, now: D
   const m = /^earnings:[0-9a-f-]{36}:(\d{4}-\d{2})$/.exec(c.dedupe_key);
   const e = m ? await monthlyEarnings(pool, c.user_id, m[1], now, priceCurrency(await paymentAccount(pool, c.user_id))) : null;
   if (!e) return { skip: "no report" };
-  const monthLabel = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${e.month}-01T00:00:00Z`));
-  return renderEarningsMail({ currency: e.currency, monthLabel, netMinor: e.netMinor, bookingsMinor: e.bookingsMinor, packagesMinor: e.packagesMinor, refundsMinor: e.refundsMinor,
+  const { rows: [u] } = await pool.query("select host_locale from users where id = $1", [c.user_id]);
+  const locale = hostLocaleOf({ hostLocale: u?.host_locale });
+  const monthLabel = hostMonth(new Date(`${e.month}-01T00:00:00Z`), locale);
+  return renderEarningsMail({ currency: e.currency, monthLabel, hostLocale: locale, netMinor: e.netMinor, bookingsMinor: e.bookingsMinor, packagesMinor: e.packagesMinor, refundsMinor: e.refundsMinor,
     sessionsHeld: e.sessions.held, noShows: e.sessions.noShows, url: `${baseUrl}/dashboard/earnings?month=${e.month}` });
 }
 
@@ -484,8 +493,8 @@ async function renderDataRequest(pool: pg.Pool, c: Claimed, baseUrl: string): Pr
   const m = /^data_request:([0-9a-f-]{36})$/.exec(c.dedupe_key);
   const r = m ? await requestForEmail(pool, m[1]) : null;
   if (!r) return { skip: "request already dealt with" };
-  const { rows: [u] } = await pool.query("select timezone from users where id = $1", [c.user_id]);
-  return renderDataRequestMail({ kind: r.kind, dueAt: r.dueAt, timezone: u?.timezone ?? "Asia/Kolkata", url: `${baseUrl}/dashboard/clients/requests` });
+  const { rows: [u] } = await pool.query("select timezone, host_locale from users where id = $1", [c.user_id]);
+  return renderDataRequestMail({ kind: r.kind, dueAt: r.dueAt, timezone: u?.timezone ?? "Asia/Kolkata", url: `${baseUrl}/dashboard/clients/requests`, hostLocale: u?.host_locale });
 }
 
 const isPollKind = (kind: NotificationKind) => kind === "poll_voter_link" || kind === "poll_host_closed";
@@ -526,14 +535,14 @@ async function renderPackage(pool: pg.Pool, c: Claimed, baseUrl: string): Promis
   if (!m) return { skip: "not a package email" };
   const { rows: [p] } = await pool.query(
     `select p.guest_name, p.guest_email, p.sessions, p.price_minor, p.currency, p.provider, p.expires_at, p.token, p.status, k.name as package_name, e.name as event_name,
-       u.name as host_name, u.email as host_email, u.timezone
+       u.name as host_name, u.email as host_email, u.timezone, u.host_locale
      from package_purchases p join packages k on k.id = p.package_id join event_types e on e.id = p.event_type_id join users u on u.id = p.host_id
      where p.id = $1`, [m[1]]);
   if (!p || p.status !== "paid") return { skip: "package not paid" };
   return renderPackageMail(c.kind as "package_guest" | "package_host", {
     hostName: p.host_name, hostEmail: p.host_email, guestName: p.guest_name, guestEmail: p.guest_email, packageName: p.package_name, eventName: p.event_name,
     sessions: p.sessions, priceMinor: p.price_minor, currency: p.currency, provider: p.provider, expiresAt: p.expires_at, timezone: p.timezone,
-    buyerUrl: `${baseUrl}/p/${p.token}`, dashboardUrl: `${baseUrl}/dashboard/packages`,
+    buyerUrl: `${baseUrl}/p/${p.token}`, dashboardUrl: `${baseUrl}/dashboard/packages`, hostLocale: p.host_locale,
   });
 }
 

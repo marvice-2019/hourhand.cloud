@@ -11,11 +11,15 @@ import { formatAmount } from "@/lib/money";
 import { store } from "@/lib/data";
 import { getPool } from "@/lib/data/pg-store";
 import { getProfile, profileJsonLd, type Profile } from "@/lib/profile";
+import { hostMetadata } from "@/lib/share-links";
 import { waLink } from "@/lib/whatsapp";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { resolveLocale, t } from "@/lib/i18n/guest";
 import { countPageView } from "@/lib/analytics/page-view";
 import { carryQuery } from "@/lib/analytics/source";
+import { CampaignBanner } from "@/components/CampaignBanner";
+import { hostPlan } from "@/lib/billing/account";
+import { campaignBanner } from "@/lib/offers/offers";
 
 /** Read once per request; the metadata and the page both need it. */
 const load = cache(async (slug: string) => {
@@ -32,8 +36,8 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   if (!found) return {};
   const { host, profile } = found;
   const locale = resolveLocale((await searchParams).lang, host.locale);
-  const description = profile?.headline ?? profile?.bio?.slice(0, 160) ?? t(locale, "metaDescription", { name: host.name });
-  return { title: `${host.name}${profile?.headline ? ` · ${profile.headline}` : ""}`, description, openGraph: { title: host.name, description } };
+  const description = profile?.headline || profile?.bio ? undefined : t(locale, "metaDescription", { name: host.name });
+  return hostMetadata({ slug: host.slug, name: host.name, profile, description });
 }
 
 export default async function ProfilePage({ params, searchParams }: Props) {
@@ -54,6 +58,8 @@ export default async function ProfilePage({ params, searchParams }: Props) {
     .sort((a, b) => a.position - b.position);
   const p = profile;
   const button = `inline-flex min-h-11 items-center rounded-md border border-border-input bg-card px-4 font-semibold text-text hover:bg-surface ${focusRing}`;
+  const pool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
+  const campaign = pool ? await campaignBanner(pool, host.id, await hostPlan(pool, host.id), new Date()) : null;
   const jsonLd = p && profileJsonLd({ baseUrl: (resolveBaseUrl() ?? "").replace(/\/+$/, ""), slug: host.slug, name: host.name, profile: p, services: eventTypes });
   return (
     <main lang={locale} className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
@@ -69,6 +75,7 @@ export default async function ProfilePage({ params, searchParams }: Props) {
           {p?.area && <p className="mt-1 text-text-muted">{p.area}</p>}
         </div>
       </header>
+      {campaign && <CampaignBanner name={campaign.name} banner={campaign.banner} />}
       {p && (p.whatsapp || p.instagram || p.reviewsUrl) && (
         <ul className="mt-4 flex flex-wrap gap-2">
           {p.whatsapp && <li><a className={button} href={waLink(p.whatsapp.slice(1), t(locale, "waGreeting", { name: host.name }))} rel="noopener noreferrer" target="_blank">{t(locale, "chatWhatsApp")}</a></li>}
