@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { authEnabled } from "@/lib/auth/auth";
 import { requireOwnAccount } from "@/lib/auth/session";
-import { formatMoney } from "@/lib/billing/plans";
+import { formatAmount } from "@/lib/money";
+import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
 import { getPool } from "@/lib/data/pg-store";
 import { monthlyEarnings, monthOf, monthRange } from "@/lib/earnings";
 
@@ -17,8 +18,9 @@ export default async function EarningsPage({ searchParams }: { searchParams: Pro
   const current = monthOf(now);
   const asked = (await searchParams).month;
   const month = asked && monthRange(asked) && asked <= current ? asked : current;
-  const e = authEnabled() ? await monthlyEarnings(getPool(process.env.DATABASE_URL as string), user.id, month, now) : null;
-  const money = (m: number) => formatMoney(m, "INR");
+  const pool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
+  const e = pool ? await monthlyEarnings(pool, user.id, month, now, priceCurrency(await paymentAccount(pool, user.id))) : null;
+  const money = (m: number) => formatAmount(m, e?.currency);
   const tile = (title: string, value: string, hint?: string) => (
     <Card><p className="text-sm text-text-muted">{title}</p><p className="mt-1 text-xl font-semibold text-text">{value}</p>{hint && <p className="mt-1 text-xs text-text-muted">{hint}</p>}</Card>
   );
@@ -38,10 +40,12 @@ export default async function EarningsPage({ searchParams }: { searchParams: Pro
             {tile("Packages", money(e.packagesMinor))}
             {tile("Refunds", money(e.refundsMinor))}
             {tile("Deposits kept", money(e.depositsKeptMinor), "From no-shows")}
-            {tile("GST in that", money(e.gstMinor), "From your invoices; owed to the government")}
+            {e.currency === "INR" && tile("GST in that", money(e.gstMinor), "From your invoices; owed to the government")}
           </div>
           <p className="mt-3 max-w-3xl text-sm text-text-muted">
-            Razorpay&apos;s fee is about {money(e.feeEstimateMinor)} at their standard 2% + GST; your settlement report has the exact figure.
+            {e.currency === "INR"
+              ? <>Razorpay&apos;s fee is about {money(e.feeEstimateMinor)} at their standard 2% + GST; your settlement report has the exact figure.</>
+              : <>Amounts in {e.currency}, before Stripe&apos;s fees; your Stripe Dashboard has the exact payouts.</>}
             {e.depositsHeldMinor > 0 && ` ${money(e.depositsHeldMinor)} in deposits is held until those sessions are done.`}
           </p>
 

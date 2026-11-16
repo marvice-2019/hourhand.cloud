@@ -184,7 +184,8 @@ interface DueRow { booking_id: string; host_id: string; collected_by: string | n
 const RECHECK_MS = 60_000;
 const LATE_PAYMENT_MS = 30 * 60_000;
 
-async function expireHold(pool: pg.Pool, bookingId: string, now: Date): Promise<boolean> {
+/** Releases a held slot whose payment didn't complete. Guarded on the status, so a payment confirmed meanwhile keeps its booking. */
+export async function expireHold(pool: pg.Pool, bookingId: string, now: Date): Promise<boolean> {
   return inTx(pool, async (client) => {
     // Guarded on the status so a payment confirmed meanwhile keeps its booking.
     const { rowCount } = await client.query(
@@ -345,11 +346,11 @@ export async function processRefunds(deps: PaymentCheckDeps & { pool: pg.Pool },
   return result;
 }
 
-export interface BookingPaymentSummary { amountMinor: number; status: "pending" | "paid" | "failed" | "refunded" | "refund_pending"; lastError: string | null; kind: "payment" | "deposit" }
+export interface BookingPaymentSummary { amountMinor: number; currency: string; provider: "razorpay" | "stripe"; status: "pending" | "paid" | "failed" | "refunded" | "refund_pending"; lastError: string | null; kind: "payment" | "deposit" }
 
 /** The latest payment on one of the host's own bookings, for the host's dashboard. Another host's booking reads as null. */
 export async function bookingPayment(db: Pick<pg.Pool, "query">, hostId: string, bookingId: string): Promise<BookingPaymentSummary | null> {
   const { rows: [p] } = await db.query(
-    `select amount_minor, status, last_error, kind from payments where booking_id = $1 and host_id = $2 order by created_at desc limit 1`, [bookingId, hostId]);
-  return p ? { amountMinor: p.amount_minor, status: p.status, lastError: p.last_error, kind: p.kind } : null;
+    `select amount_minor, currency, provider, status, last_error, kind from payments where booking_id = $1 and host_id = $2 order by created_at desc limit 1`, [bookingId, hostId]);
+  return p ? { amountMinor: p.amount_minor, currency: p.currency, provider: p.provider, status: p.status, lastError: p.last_error, kind: p.kind } : null;
 }
