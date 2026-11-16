@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { LOCALES, type Locale } from "../i18n/guest";
-import { refusalLines, splitTemplate, type RefusalReason } from "./messages";
+import { LOCALES, type Locale } from "./guest";
+import { refusalLines, splitTemplate, type RefusalReason } from "./video";
 
 const REASONS: RefusalReason[] = ["not_video", "not_set_up", "plan", "cancelled", "not_confirmed", "too_early", "ended"];
 

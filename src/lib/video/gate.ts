@@ -8,16 +8,12 @@ export function videoAvailability(plan: Plan, configured: boolean): VideoAvailab
   return LIMITS[plan].hourhandVideo ? "ready" : "plan";
 }
 
-export const VIDEO_NOT_SET_UP = "Hourhand video is not set up on this server yet.";
-export const VIDEO_NEEDS_PLAN = "Hourhand video needs the Solo or Duo plan.";
-
 /**
- * Why an event type can't be switched to Hourhand video, checked on the server whatever the editor showed. Keeping it on
- * an event type that already has it is allowed, so a lapsed plan doesn't block other edits (joining is checked again then).
+ * Why an event type can't be switched to Hourhand video, checked on the server whatever the editor showed: "not_set_up"
+ * or "plan", which the caller words in the host's language. Keeping it on an event type that already has it is allowed,
+ * so a lapsed plan doesn't block other edits (joining is checked again then). Null when it can be saved.
  */
-export function videoGateError(input: { chosen: boolean; alreadyChosen: boolean; availability: VideoAvailability }): string | null {
-  if (!input.chosen || input.alreadyChosen) return null;
-  if (input.availability === "not_set_up") return VIDEO_NOT_SET_UP;
-  if (input.availability === "plan") return VIDEO_NEEDS_PLAN;
-  return null;
+export function videoGateError(input: { chosen: boolean; alreadyChosen: boolean; availability: VideoAvailability }): Exclude<VideoAvailability, "ready"> | null {
+  if (!input.chosen || input.alreadyChosen || input.availability === "ready") return null;
+  return input.availability;
 }

@@ -1,5 +1,5 @@
-import type { Locale } from "../i18n/guest";
-import type { JoinRefusal } from "./join";
+import type { Locale } from "./guest";
+import type { JoinRefusal } from "../video/join";
 
 // The video join refusal page in the guest's language. A language without an entry falls back to English, so adding a
 // guest language elsewhere never breaks this page; add its lines here when you can.

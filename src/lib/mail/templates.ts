@@ -8,8 +8,12 @@ import { formatAmount } from "../money";
 import { buildIcs } from "./ics";
 import { LOCATION_KEYS, isLocale, t, type Locale } from "../i18n/guest";
 import { mt, type MailKey } from "../i18n/mail";
+import { offerLabel } from "../offers/labels";
+import type { AdjustmentKind } from "../offers/pricing";
 import { pt } from "../i18n/poll";
 import type { Attachment } from "./mailer";
+import { ht, hostLocaleOf, type HostKey, type HostLocale } from "../i18n/host";
+import { hostINR, hostMoney } from "../i18n/host/format";
 
 /** Where a guest's payment went, for the host's emails. */
 const providerName = (c: { paidProvider?: "razorpay" | "stripe" | null }) => (c.paidProvider === "stripe" ? "Stripe" : "Razorpay");
@@ -39,6 +43,8 @@ export interface BookingMailContext {
   paidProvider?: "razorpay" | "stripe" | null;
   /** The payment was a refundable no-show deposit, not a price. */
   paidIsDeposit?: boolean;
+  /** The one offer the price got (src/lib/offers): explained next to what was paid. */
+  offer?: { kind: AdjustmentKind; label: string; code: string | null; listMinor: number; discountMinor: number } | null;
   /** For reschedules: when the booking used to be. */
   previousStartAt: Date | null;
   /** For a rescheduled booking: who moved it (who cancelled the old one). */
@@ -59,8 +65,10 @@ export interface BookingMailContext {
   alsoCancelled?: Date[];
   /** The recipient is an extra guest the booker added: told about the booking, never given the link that changes it. */
   extraGuest?: boolean;
-  /** The language the guest booked in; guest emails use it, host emails stay English. */
+  /** The language the guest booked in; guest emails use it. */
   locale?: string;
+  /** The host's own language (users.host_locale); the host's emails use it. Missing means English. */
+  hostLocale?: string;
 }
 
 export interface RenderedMail { subject: string; text: string; html: string; attachments?: Attachment[]; replyTo?: string; headers?: Record<string, string> }
@@ -127,27 +135,51 @@ const seriesRow = (c: BookingMailContext, tz: string, cycle: HourCycle, locale: 
   ...(c.alsoCancelled?.length ? [[mt(locale, "rAlsoCancelled", { n: c.alsoCancelled.length }), c.alsoCancelled.map((d) => when(d, tz, cycle, locale)).join("\n")] as Row] : []),
 ];
 
+/** "₹944 (₹1,180 less ₹236, code DIWALI20)" when an offer took something off; otherwise just the amount. */
+function paidWithOffer(c: BookingMailContext, locale: Locale): string {
+  const money = (m: number) => formatAmount(m, c.paidCurrency);
+  const paid = money(c.paidMinor ?? 0);
+  const o = c.offer;
+  if (!o) return paid;
+  if (o.discountMinor <= 0) return `${paid} (${offerLabel(locale, o)})`;
+  return t(locale, "offerPaidLine", { price: paid, list: money(o.listMinor), amount: money(o.discountMinor), label: offerLabel(locale, o) });
+}
+
 function guestRows(c: BookingMailContext): Row[] {
   const l = lang(c);
   const rows: Row[] = [[g(c, "rWhat"), `${c.eventName} (${g(c, "minutes", { n: minutes(c) })})`], [g(c, "rWhen"), when(c.startAt, c.guestTimezone, "12h", l)],
     ...seriesRow(c, c.guestTimezone, "12h", l), [g(c, "rWith"), hostLabel(c)]];
   const w = where(c, l);
   if (w) rows.push([g(c, "rWhere"), w]);
-  if (c.paidMinor) rows.push(c.paidIsDeposit ? [g(c, "rDeposit"), g(c, "rDepositValue", { amount: formatAmount(c.paidMinor, c.paidCurrency) })] : [g(c, "rPaid"), formatAmount(c.paidMinor, c.paidCurrency)]);
+  if (c.paidMinor) rows.push(c.paidIsDeposit ? [g(c, "rDeposit"), g(c, "rDepositValue", { amount: formatAmount(c.paidMinor, c.paidCurrency) })] : [g(c, "rPaid"), paidWithOffer(c, l)]);
   return rows;
 }
 
+/** The host's language for this email, and its lines. */
+const hl = (c: { hostLocale?: string | null }): HostLocale => hostLocaleOf(c);
+const h = (c: { hostLocale?: string | null }, key: HostKey, vars: Record<string, string | number> = {}) => ht(hl(c), key, vars);
+
 function hostRows(c: BookingMailContext): Row[] {
-  const rows: Row[] = [["What", `${c.eventName} (${minutes(c)} min)`], ["When", when(c.startAt, c.hostTimezone, c.hostTimeFormat)], ...seriesRow(c, c.hostTimezone, c.hostTimeFormat),
-    ["Guest", `${c.guestName} <${c.guestEmail}>`], ["Guest's time zone", zoneName(c.guestTimezone)]];
-  const w = where(c);
-  if (w) rows.push(["Where", w]);
+  const l = hl(c);
+  const rows: Row[] = [[h(c, "mail.rWhat"), h(c, "mail.eventLength", { event: c.eventName, n: minutes(c) })], [h(c, "mail.rWhen"), when(c.startAt, c.hostTimezone, c.hostTimeFormat, l)],
+    ...hostSeriesRow(c), [h(c, "mail.rGuest"), `${c.guestName} <${c.guestEmail}>`], [h(c, "mail.rGuestZone"), zoneName(c.guestTimezone)]];
+  const w = where(c, l);
+  if (w) rows.push([h(c, "mail.rWhere"), w]);
   for (const a of c.answers) if (a.answer.trim()) rows.push([a.label, a.answer]);
   if (c.paidMinor) rows.push(c.paidIsDeposit
-    ? ["Deposit", `${formatAmount(c.paidMinor, c.paidCurrency)} in your ${providerName(c)} account. Refunded a day after the session unless you mark a no-show.`]
-    : ["Paid", `${formatAmount(c.paidMinor, c.paidCurrency)} to your ${providerName(c)} account`]);
+    ? [h(c, "mail.rDeposit"), h(c, "mail.rDepositValue", { amount: hostMoney(c.paidMinor, c.paidCurrency, l), provider: providerName(c) })]
+    : [h(c, "mail.rPaid"), h(c, "mail.rPaidValue", { amount: paidWithOffer(c, l), provider: providerName(c) })]);
   return rows;
 }
+
+/** The host's "Every week" and "Also cancelled" rows, in the host's language and time format. */
+const hostSeriesRow = (c: BookingMailContext): Row[] => {
+  const l = hl(c);
+  return [
+    ...(c.series && c.series.length > 1 ? [[h(c, "mail.rEveryWeek", { n: c.series.length }), c.series.map((s) => when(s.startAt, c.hostTimezone, c.hostTimeFormat, l)).join("\n")] as Row] : []),
+    ...(c.alsoCancelled?.length ? [[h(c, "mail.rAlsoCancelled", { n: c.alsoCancelled.length }), c.alsoCancelled.map((d) => when(d, c.hostTimezone, c.hostTimeFormat, l)).join("\n")] as Row] : []),
+  ];
+};
 
 function calendarFile(c: BookingMailContext): Attachment {
   const weeks = c.series && c.series.length > 1 ? c.series : [{ bookingId: c.bookingId, startAt: c.startAt, endAt: c.endAt, manageUrl: c.manageUrl }];
@@ -159,9 +191,9 @@ function calendarFile(c: BookingMailContext): Attachment {
 }
 
 const guestFooter = (c: BookingMailContext) => g(c, "fGuest", { host: hostLabel(c) });
-const hostFooter = "Sent by Hourhand about your booking page.";
+const hostFooter = (c: { hostLocale?: string | null }) => h(c, "mail.footer");
 const manageLink = (c: BookingMailContext) => ({ label: g(c, "lManage"), url: c.manageUrl });
-const dashboardLink = (c: BookingMailContext) => ({ label: "Open in Hourhand", url: c.dashboardUrl });
+const dashboardLink = (c: BookingMailContext) => ({ label: h(c, "mail.openInHourhand"), url: c.dashboardUrl });
 
 function cancelNote(c: BookingMailContext, to: "guest" | "host"): string | undefined {
   if (to === "guest") {
@@ -169,8 +201,8 @@ function cancelNote(c: BookingMailContext, to: "guest" | "host"): string | undef
     return [refund, c.cancelReason ? g(c, "reason", { reason: c.cancelReason }) : ""].filter(Boolean).join(" ") || undefined;
   }
   // A paid booking is refunded in full on cancellation; say so, since that's what each side wants to know first.
-  const reason = c.cancelReason ? `Reason given: ${c.cancelReason}` : "";
-  const refund = !c.paidMinor ? "" : `The guest's ${formatAmount(c.paidMinor, c.paidCurrency)} is being refunded from your ${providerName(c)} account.`;
+  const reason = c.cancelReason ? h(c, "mail.reason", { reason: c.cancelReason }) : "";
+  const refund = !c.paidMinor ? "" : h(c, "mail.refund", { amount: hostMoney(c.paidMinor, c.paidCurrency, hl(c)), provider: providerName(c) });
   return [refund, reason].filter(Boolean).join(" ") || undefined;
 }
 
@@ -222,8 +254,8 @@ export function renderBookingMail(kind: BookingEmailKind, c: BookingMailContext)
         note: g(c, c.series && c.series.length > 1 ? "nBookedSeries" : "nBooked"),
       }, { attachments: [calendarFile(c)], replyTo: c.hostEmail });
     case "booked_host":
-      return render(`New booking: ${c.guestName}, ${c.eventName}, ${formatDate(c.startAt, c.hostTimezone)}`, {
-        heading: "New booking", intro: `${c.guestName} booked ${c.eventName}.`, rows: hostRows(c), link: dashboardLink(c), footer: hostFooter,
+      return render(h(c, "mail.subjNewBooking", { guest: c.guestName, event: c.eventName, date: formatDate(c.startAt, c.hostTimezone, hl(c)) }), {
+        heading: h(c, "mail.hNewBooking"), intro: h(c, "mail.iNewBooking", { guest: c.guestName, event: c.eventName }), rows: hostRows(c), link: dashboardLink(c), footer: hostFooter(c),
       }, { replyTo: c.guestEmail });
     case "reminder_guest":
       return render(g(c, "subjReminder", { event: c.eventName, host, time: `${formatTime(c.startAt, c.guestTimezone, "12h", l)} ${zoneName(c.guestTimezone)}` }), {
@@ -240,10 +272,10 @@ export function renderBookingMail(kind: BookingEmailKind, c: BookingMailContext)
         } : {}),
       }, { replyTo: c.hostEmail });
     case "cancelled_host":
-      return render(`Cancelled: ${c.guestName}, ${c.eventName}, ${formatDate(c.startAt, c.hostTimezone)}`, {
-        heading: "A booking was cancelled",
-        intro: c.cancelledBy === "guest" ? `${c.guestName} cancelled ${c.eventName}.` : `You cancelled ${c.eventName} with ${c.guestName}.`,
-        rows: hostRows(c), note: cancelNote(c, "host"), footer: hostFooter,
+      return render(h(c, "mail.subjCancelled", { guest: c.guestName, event: c.eventName, date: formatDate(c.startAt, c.hostTimezone, hl(c)) }), {
+        heading: h(c, "mail.hCancelled"),
+        intro: h(c, c.cancelledBy === "guest" ? "mail.iCancelledByGuest" : "mail.iCancelledByYou", { guest: c.guestName, event: c.eventName }),
+        rows: hostRows(c), note: cancelNote(c, "host"), footer: hostFooter(c),
       }, { replyTo: c.guestEmail });
     case "rescheduled_guest":
       return render(g(c, "subjMoved", { event: c.eventName, host, date: formatDate(c.startAt, c.guestTimezone, l) }), {
@@ -252,58 +284,59 @@ export function renderBookingMail(kind: BookingEmailKind, c: BookingMailContext)
         link: manageLink(c), note: g(c, "nMoved"), footer: guestFooter(c),
       }, { attachments: [calendarFile(c)], replyTo: c.hostEmail });
     case "late_host":
-      return render(`Running late: ${c.guestName}, ${c.runningLateMinutes ?? "a few"} min, ${c.eventName}`, {
-        heading: `${c.guestName} is running late`,
-        intro: `${c.guestName} says they'll be about ${c.runningLateMinutes ?? "a few"} minutes late for ${c.eventName} at ${formatTime(c.startAt, c.hostTimezone, c.hostTimeFormat)}.`,
-        rows: hostRows(c), link: dashboardLink(c), footer: hostFooter,
+      return render(h(c, "mail.subjLate", { guest: c.guestName, n: c.runningLateMinutes ?? h(c, "mail.aFew"), event: c.eventName }), {
+        heading: h(c, "mail.hLate", { guest: c.guestName }),
+        intro: h(c, "mail.iLate", { guest: c.guestName, n: c.runningLateMinutes ?? h(c, "mail.aFew"), event: c.eventName, time: formatTime(c.startAt, c.hostTimezone, c.hostTimeFormat, hl(c)) }),
+        rows: hostRows(c), link: dashboardLink(c), footer: hostFooter(c),
       }, { replyTo: c.guestEmail });
     case "rescheduled_host":
-      return render(`Moved: ${c.guestName}, ${c.eventName}, now ${formatDate(c.startAt, c.hostTimezone)}`, {
-        heading: "A booking has a new time", intro: c.movedBy === "host" ? `You moved ${c.eventName} with ${c.guestName}.` : `${c.guestName} moved ${c.eventName}.`,
-        rows: [...hostRows(c), ...(c.previousStartAt ? [["Was", when(c.previousStartAt, c.hostTimezone, c.hostTimeFormat)] as Row] : [])],
-        link: dashboardLink(c), footer: hostFooter,
+      return render(h(c, "mail.subjMoved", { guest: c.guestName, event: c.eventName, date: formatDate(c.startAt, c.hostTimezone, hl(c)) }), {
+        heading: h(c, "mail.hMoved"), intro: h(c, c.movedBy === "host" ? "mail.iMovedByYou" : "mail.iMovedByGuest", { guest: c.guestName, event: c.eventName }),
+        rows: [...hostRows(c), ...(c.previousStartAt ? [[h(c, "mail.rWas"), when(c.previousStartAt, c.hostTimezone, c.hostTimeFormat, hl(c))] as Row] : [])],
+        link: dashboardLink(c), footer: hostFooter(c),
       }, { replyTo: c.guestEmail });
   }
 }
 
 /** Tells a host their calendar connection is failing, so Hourhand has stopped offering times. Sent once per outage. */
-export function renderCalendarAlert(a: { accountEmail: string; disconnected: boolean; lastError: string | null; calendarsUrl: string }): RenderedMail {
-  return render(a.disconnected ? "Reconnect your Google Calendar" : "Hourhand can't read your Google Calendar", {
-    heading: a.disconnected ? "Your calendar is disconnected" : "Your calendar isn't syncing",
-    intro: a.disconnected
-      ? `Google no longer lets Hourhand use ${a.accountEmail}. Until you reconnect it, your booking pages show no times, so nobody can book over your meetings.`
-      : `Hourhand hasn't been able to read ${a.accountEmail} for a few minutes. Until it can, your booking pages show no times, so nobody can book over your meetings. It keeps retrying.`,
-    rows: a.lastError ? [["Last error", a.lastError.slice(0, 200)]] : [],
-    link: { label: a.disconnected ? "Reconnect your calendar" : "Check your calendars", url: a.calendarsUrl },
-    footer: "Sent by Hourhand about your booking page.",
+export function renderCalendarAlert(a: { accountEmail: string; disconnected: boolean; lastError: string | null; calendarsUrl: string; hostLocale?: string | null }): RenderedMail {
+  return render(h(a, a.disconnected ? "mail.subjCalDisconnected" : "mail.subjCalFailing"), {
+    heading: h(a, a.disconnected ? "mail.hCalDisconnected" : "mail.hCalFailing"),
+    intro: h(a, a.disconnected ? "mail.iCalDisconnected" : "mail.iCalFailing", { account: a.accountEmail }),
+    rows: a.lastError ? [[h(a, "mail.rLastError"), a.lastError.slice(0, 200)]] : [],
+    link: { label: h(a, a.disconnected ? "mail.lReconnect" : "mail.lCheckCalendars"), url: a.calendarsUrl },
+    footer: hostFooter(a),
   });
 }
 
 /** Zoom stopped letting Hourhand make meetings: the grant was revoked, expired, or the app was removed in Zoom. */
-export function renderZoomAlert(a: { accountEmail: string; lastError: string | null; integrationsUrl: string }): RenderedMail {
-  return render("Reconnect Zoom to keep sending meeting links", {
-    heading: "Your Zoom is disconnected",
-    intro: `Zoom no longer lets Hourhand create meetings for ${a.accountEmail}. Bookings you already have keep their Zoom links. New Zoom bookings are still taken, but get no link until you reconnect.`,
-    rows: a.lastError ? [["Last error", a.lastError.slice(0, 200)]] : [],
-    link: { label: "Reconnect Zoom", url: a.integrationsUrl },
-    footer: "Sent by Hourhand about your booking page.",
+export function renderZoomAlert(a: { accountEmail: string; lastError: string | null; integrationsUrl: string; hostLocale?: string | null }): RenderedMail {
+  return render(h(a, "mail.subjZoom"), {
+    heading: h(a, "mail.hZoom"),
+    intro: h(a, "mail.iZoom", { account: a.accountEmail }),
+    rows: a.lastError ? [[h(a, "mail.rLastError"), a.lastError.slice(0, 200)]] : [],
+    link: { label: h(a, "mail.lReconnectZoom"), url: a.integrationsUrl },
+    footer: hostFooter(a),
   });
 }
 
-export function renderRenewalReminder(a: { planName: string; price: string; renewsOn: Date; timezone: string; planUrl: string }): RenderedMail {
-  const on = formatDate(a.renewsOn, a.timezone);
-  return render(`Your Hourhand ${a.planName} plan renews on ${on}`, {
-    heading: `${a.planName} renews in 7 days`,
-    intro: `Your ${a.planName} plan renews automatically on ${on}. Nothing to do if you want to keep it. To stop it, cancel or pause from your plan page before then.`,
-    rows: [["Plan", a.planName], ["Price", a.price], ["Renews", on]],
-    link: { label: "Manage your plan", url: a.planUrl },
-    footer: "Sent by Hourhand about your subscription.",
+export function renderRenewalReminder(a: { planName: string; price: string; renewsOn: Date; timezone: string; planUrl: string; hostLocale?: string | null }): RenderedMail {
+  const on = formatDate(a.renewsOn, a.timezone, hl(a));
+  const v = { plan: a.planName, date: on };
+  return render(h(a, "mail.subjRenewal", v), {
+    heading: h(a, "mail.hRenewal", v),
+    intro: h(a, "mail.iRenewal", v),
+    rows: [[h(a, "mail.rPlan"), a.planName], [h(a, "mail.rPrice"), a.price], [h(a, "mail.rRenews"), on]],
+    link: { label: h(a, "mail.lManagePlan"), url: a.planUrl },
+    footer: h(a, "mail.footerSubscription"),
   });
 }
 
 export interface PackageMailContext {
   hostName: string; hostEmail: string; guestName: string; guestEmail: string; packageName: string; eventName: string;
   sessions: number; priceMinor: number; currency?: string; provider?: "razorpay" | "stripe"; expiresAt: Date; timezone: string; buyerUrl: string; dashboardUrl: string;
+  /** The host's language, for package_host. */
+  hostLocale?: string | null;
 }
 
 /** A paid session package: the buyer's private link to book their sessions, or the host's note of the sale. */
@@ -318,9 +351,12 @@ export function renderPackageMail(kind: "package_guest" | "package_host", c: Pac
       footer: `Sent by Hourhand for ${c.hostName}. Reply to this email to reach them.`,
     }, { replyTo: c.hostEmail });
   }
-  return render(`Package sold: ${c.guestName}, ${c.packageName}`, {
-    heading: "You sold a package", intro: `${c.guestName} <${c.guestEmail}> bought ${c.packageName}. The money went to your ${c.provider === "stripe" ? "Stripe" : "Razorpay"} account.`,
-    rows, link: { label: "Open in Hourhand", url: c.dashboardUrl }, footer: "Sent by Hourhand about your booking page.",
+  const l = hl(c);
+  const hostRowsForPackage: Row[] = [[h(c, "mail.rPackage"), c.packageName], [h(c, "mail.rSessions"), h(c, "mail.sessionsValue", { n: c.sessions, event: c.eventName })],
+    [h(c, "mail.rPaid"), hostMoney(c.priceMinor, c.currency, l)], [h(c, "mail.rBookBy"), formatDate(c.expiresAt, c.timezone, l)]];
+  return render(h(c, "mail.subjPackageSold", { guest: c.guestName, package: c.packageName }), {
+    heading: h(c, "mail.hPackageSold"), intro: h(c, "mail.iPackageSold", { guest: c.guestName, email: c.guestEmail, package: c.packageName, provider: c.provider === "stripe" ? "Stripe" : "Razorpay" }),
+    rows: hostRowsForPackage, link: { label: h(c, "mail.openInHourhand"), url: c.dashboardUrl }, footer: hostFooter(c),
   }, { replyTo: c.guestEmail });
 }
 
@@ -337,13 +373,16 @@ export function renderInvoiceMail(v: { kind: "invoice" | "credit_note"; number: 
   }, { replyTo: v.supplierEmail });
 }
 
-/** Last month in a few figures, with a link to the full report. */
-export function renderEarningsMail(e: { currency?: string; monthLabel: string; netMinor: number; bookingsMinor: number; packagesMinor: number; refundsMinor: number; sessionsHeld: number; noShows: number; url: string }): RenderedMail {
-  return render(`Your ${e.monthLabel} on Hourhand: ${formatAmount(e.netMinor, e.currency)}`, {
-    heading: `${e.monthLabel} at a glance`, intro: `Here's how ${e.monthLabel} went.`,
-    rows: [["Net received", formatAmount(e.netMinor, e.currency)], ["Bookings", formatAmount(e.bookingsMinor, e.currency)], ["Packages", formatAmount(e.packagesMinor, e.currency)],
-      ["Refunds", formatAmount(e.refundsMinor, e.currency)], ["Sessions held", String(e.sessionsHeld)], ["No-shows", String(e.noShows)]],
-    link: { label: "See the full report", url: e.url }, footer: "Sent by Hourhand once a month.",
+/** Last month in a few figures, with a link to the full report. `monthLabel` is already in the host's language. */
+export function renderEarningsMail(e: { currency?: string; monthLabel: string; netMinor: number; bookingsMinor: number; packagesMinor: number; refundsMinor: number; sessionsHeld: number; noShows: number; url: string; hostLocale?: string | null }): RenderedMail {
+  const l = hl(e);
+  const inr = (m: number) => hostMoney(m, e.currency, l);
+  const month = e.monthLabel;
+  return render(h(e, "mail.subjEarnings", { month, amount: inr(e.netMinor) }), {
+    heading: h(e, "mail.hEarnings", { month }), intro: h(e, "mail.iEarnings", { month }),
+    rows: [[h(e, "mail.rNet"), inr(e.netMinor)], [h(e, "mail.rBookings"), inr(e.bookingsMinor)], [h(e, "mail.rPackages"), inr(e.packagesMinor)],
+      [h(e, "mail.rRefunds"), inr(e.refundsMinor)], [h(e, "mail.rHeld"), String(e.sessionsHeld)], [h(e, "mail.rNoShows"), String(e.noShows)]],
+    link: { label: h(e, "mail.lFullReport"), url: e.url }, footer: h(e, "mail.footerMonthly"),
   });
 }
 
@@ -360,15 +399,13 @@ export function renderSeatInviteMail(c: { ownerName: string; ownerEmail: string;
  * To the host: one of their clients asked, from their booking's manage link, for a copy or deletion of their data. It
  * carries no details of the client; the host opens the dashboard to see who and act.
  */
-export function renderDataRequestMail(c: { kind: "access" | "erasure"; dueAt: Date; timezone: string; url: string }): RenderedMail {
-  const what = c.kind === "access" ? "a copy of the data you hold about them" : "deletion of the data you hold about them";
-  return render(c.kind === "access" ? "A client asked for a copy of their data" : "A client asked you to delete their data", {
-    heading: "A client made a data request", intro: `One of your clients asked, from their booking link, for ${what}.`,
-    rows: [["Respond by", when(c.dueAt, c.timezone, "12h")]], link: { label: "Open the request", url: c.url },
-    note: c.kind === "access"
-      ? "Download their export from the client's page and send it to them, then mark the request done. Leave out your private notes unless you mean to share them."
-      : "Erase the client from their page once nothing is upcoming or still being paid. Bookings and invoices stay as the law requires, without their details.",
-    footer: "Sent by Hourhand. You are responsible for answering your clients' data requests; Hourhand gives you the tools.",
+export function renderDataRequestMail(c: { kind: "access" | "erasure"; dueAt: Date; timezone: string; url: string; hostLocale?: string | null }): RenderedMail {
+  const access = c.kind === "access";
+  return render(h(c, access ? "mail.subjDataAccess" : "mail.subjDataErasure"), {
+    heading: h(c, "mail.hDataRequest"), intro: h(c, access ? "mail.iDataAccess" : "mail.iDataErasure"),
+    rows: [[h(c, "mail.rRespondBy"), when(c.dueAt, c.timezone, "12h", hl(c))]], link: { label: h(c, "mail.lOpenRequest"), url: c.url },
+    note: h(c, access ? "mail.nDataAccess" : "mail.nDataErasure"),
+    footer: h(c, "mail.footerDataRequest"),
   });
 }
 
@@ -400,15 +437,17 @@ export function renderPollVoterMail(c: { locale: Locale; voterName: string; host
 }
 
 /** A poll reached its deadline undecided: the host picks a time. The tally per remaining time, best first marked. */
-export function renderPollClosedMail(c: { title: string; hostTimezone: string; hostTimeFormat: HourCycle; voters: number;
+export function renderPollClosedMail(c: { title: string; hostTimezone: string; hostTimeFormat: HourCycle; hostLocale?: string | null; voters: number;
   options: { startAt: Date; yes: number; ifNeeded: number; no: number; best: boolean }[]; url: string }): RenderedMail {
-  const rows: Row[] = c.options.map((o) => [when(o.startAt, c.hostTimezone, c.hostTimeFormat), `${o.yes} yes, ${o.ifNeeded} if needed, ${o.no} no${o.best ? " (best)" : ""}`]);
-  return render(`Voting closed: pick a time for ${c.title}`, {
-    heading: "Voting has closed",
-    intro: c.voters === 0 ? `Nobody answered your poll for ${c.title}.` : `${c.voters} ${c.voters === 1 ? "person" : "people"} answered your poll for ${c.title}. Pick the time to book it for everyone who can make it.`,
-    rows, link: { label: "Pick a time", url: c.url },
-    note: c.options.length === 0 ? "All the proposed times have passed. Make a new poll to find another time." : "The times are no longer held. Confirming checks your calendar again first.",
-    footer: "Sent by Hourhand.",
+  const l = hl(c);
+  const rows: Row[] = c.options.map((o) => [when(o.startAt, c.hostTimezone, c.hostTimeFormat, l),
+    h(c, o.best ? "mail.pollTallyBest" : "mail.pollTally", { yes: o.yes, ifNeeded: o.ifNeeded, no: o.no })]);
+  return render(h(c, "mail.subjPollClosed", { title: c.title }), {
+    heading: h(c, "mail.hPollClosed"),
+    intro: c.voters === 0 ? h(c, "mail.iPollNobody", { title: c.title }) : h(c, c.voters === 1 ? "mail.iPollOne" : "mail.iPollMany", { n: c.voters, title: c.title }),
+    rows, link: { label: h(c, "mail.lPickTime"), url: c.url },
+    note: h(c, c.options.length === 0 ? "mail.nPollAllPassed" : "mail.nPollNotHeld"),
+    footer: h(c, "mail.footerPlain"),
   });
 }
 
@@ -416,6 +455,8 @@ export interface MembershipMailContext {
   what: "joined" | "renewed" | "payment_failed" | "halted" | "cancel_requested" | "ended";
   hostName: string; hostEmail: string; guestName: string; guestEmail: string; planName: string; sessions: number; priceMinor: number;
   creditsLeft: number; paidThrough: Date | null; timezone: string; memberUrl: string; dashboardUrl: string;
+  /** The host's language, for the host's copy. */
+  hostLocale?: string | null;
 }
 
 /** A membership's life to its client (sessions added, a payment failed, cancelled) and to the host (new member, failures, ends). */
@@ -447,14 +488,21 @@ export function renderMembershipMail(to: "guest" | "host", c: MembershipMailCont
         `Hi ${c.guestName}, your ${c.planName} membership with ${c.hostName} has ended and won't be charged again. Thanks for being a member.`);
     }
   }
-  const host = (subject: string, heading: string, intro: string) =>
-    render(subject, { heading, intro, rows: [...rows, ["Member", `${c.guestName} <${c.guestEmail}>`]], link: { label: "Open in Hourhand", url: c.dashboardUrl }, footer: "Sent by Hourhand about your memberships." }, { replyTo: c.guestEmail });
+  const l = hl(c);
+  const v = { guest: c.guestName, plan: c.planName, n: c.sessions };
+  const hostRowsForMember: Row[] = [[h(c, "mail.rMembership"), c.planName],
+    [h(c, "mail.rEachMonth"), h(c, "mail.memberEachMonth", { n: c.sessions, price: h(c, "mail.memberPrice", { amount: hostINR(c.priceMinor, l) }) })],
+    ...(c.paidThrough ? [[h(c, "mail.rPaidUntil"), formatDate(c.paidThrough, c.timezone, l)] as Row] : []),
+    [h(c, "mail.rMember"), `${c.guestName} <${c.guestEmail}>`]];
+  const host = (what: "Joined" | "Failed" | "Halted" | "Cancelled" | "Renewed" | "Ended") =>
+    render(h(c, `mail.subjMember${what}`, v), { heading: h(c, `mail.hMember${what}`), intro: h(c, `mail.iMember${what}`, v), rows: hostRowsForMember,
+      link: { label: h(c, "mail.openInHourhand"), url: c.dashboardUrl }, footer: h(c, "mail.footerMemberships") }, { replyTo: c.guestEmail });
   switch (c.what) {
-    case "joined": return host(`New member: ${c.guestName}, ${c.planName}`, "You have a new member", `${c.guestName} joined ${c.planName}. The first month's payment went to your Razorpay account.`);
-    case "payment_failed": return host(`Payment failed: ${c.guestName}, ${c.planName}`, "A member's payment failed", `${c.guestName}'s renewal for ${c.planName} failed. Razorpay retries automatically; no new sessions are added until it goes through.`);
-    case "halted": return host(`Membership on hold: ${c.guestName}`, "A membership is on hold", `Razorpay stopped retrying ${c.guestName}'s payment for ${c.planName}. They've been told; sessions they have left stay bookable until the paid month ends.`);
-    case "cancel_requested": return host(`${c.guestName} cancelled ${c.planName}`, "A member cancelled", `${c.guestName} cancelled ${c.planName}. It won't renew; they keep their sessions until the paid month ends.`);
-    case "renewed": return host(`Membership renewed: ${c.guestName}`, "A membership renewed", `${c.guestName}'s ${c.planName} payment went through and ${c.sessions} sessions were added.`);
-    case "ended": return host(`Membership ended: ${c.guestName}`, "A membership ended", `${c.guestName}'s ${c.planName} membership has ended.`);
+    case "joined": return host("Joined");
+    case "payment_failed": return host("Failed");
+    case "halted": return host("Halted");
+    case "cancel_requested": return host("Cancelled");
+    case "renewed": return host("Renewed");
+    case "ended": return host("Ended");
   }
 }

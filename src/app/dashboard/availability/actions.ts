@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { todayIn, validateDateOverride, validateDateRange, validateWeeklyHours, type FieldErrors, type WeeklyHours } from "@/lib/availability";
+import { AVAILABILITY_MESSAGES, todayIn, validateDateOverride, validateDateRange, validateWeeklyHours, type FieldErrors, type WeeklyHours } from "@/lib/availability";
 import { NotFoundError, store, type Interval } from "@/lib/data";
 import { isNamedError, type ScheduleInUseError, type ScheduleLimitError } from "@/lib/data/types";
 import { requireHost } from "@/lib/auth/session";
@@ -12,7 +12,9 @@ import { LIMITS } from "@/lib/billing/plans";
 import { getPool } from "@/lib/data/pg-store";
 import { isIanaTimeZone } from "@/lib/booking";
 import { pickHolidayDates } from "@/lib/holidays";
-import { blockTargets, copyName, validateSchedule } from "@/lib/schedules";
+import { blockTargets, copyName, SCHEDULE_MESSAGES, validateSchedule } from "@/lib/schedules";
+import { translator } from "@/lib/i18n/host/lib-messages";
+import { getHostI18n } from "@/lib/i18n/host/server";
 
 export type FormState = { status: "idle" | "saved" | "error"; errors: FieldErrors; savedAt?: number };
 
@@ -47,7 +49,35 @@ function readRanges(form: FormData, prefix: string): Interval[] {
   return out;
 }
 
-const fail = (errors: FieldErrors): FormState => ({ status: "error", errors });
+// src/lib/availability and src/lib/schedules word their errors in English; each one is shown as the same line in the host's language.
+const say = translator({ ...AVAILABILITY_MESSAGES, ...SCHEDULE_MESSAGES }, {
+  timeFrom: "availability.errTimeFrom",
+  timeTo: "availability.errTimeTo",
+  endBeforeStart: "availability.errEndBeforeStart",
+  overlap: "availability.errOverlap",
+  unknownDay: "availability.errUnknownDay",
+  pickDate: "availability.errPickDate",
+  datePassed: "availability.errDatePassed",
+  lastBeforeFirst: "availability.errLastBeforeFirst",
+  tooManyDays: "availability.errTooManyDays",
+  nameMissing: "availability.errScheduleNameMissing",
+  nameTooLong: "availability.errScheduleNameTooLong",
+  pickZone: "availability.errPickZone",
+});
+
+async function fail(errors: FieldErrors): Promise<FormState> {
+  const { t } = await getHostI18n();
+  return { status: "error", errors: Object.fromEntries(Object.entries(errors).map(([field, english]) => [field, say(t, english)])) };
+}
+/** The store's schedule errors, worded from the catalogue (same English as the error's own message). */
+async function failStore(e: unknown): Promise<FormState | null> {
+  const { t } = await getHostI18n();
+  if (isNamedError(e, "ScheduleNameTakenError")) return { status: "error", errors: { "schedule-name": t("availability.errScheduleNameTaken") } };
+  if (isNamedError<ScheduleLimitError>(e, "ScheduleLimitError")) {
+    return { status: "error", errors: { schedule: e.limit === 1 ? t("availability.errScheduleLimitOne") : t("availability.errScheduleLimitN", { n: e.limit }) } };
+  }
+  return null;
+}
 const saved = (): FormState => ({ status: "saved", errors: {}, savedAt: Date.now() });
 
 export async function saveWeeklyHoursAction(_prev: FormState, form: FormData): Promise<FormState> {
@@ -64,7 +94,7 @@ export async function saveWeeklyHoursAction(_prev: FormState, form: FormData): P
 export async function saveDateOverrideAction(_prev: FormState, form: FormData): Promise<FormState> {
   const { user, schedule } = await mySchedule(form);
   const intervals = form.get("ov-kind") === "hours" ? readRanges(form, "ov") : [];
-  if (form.get("ov-kind") === "hours" && intervals.length === 0) return fail({ "ov-0-from": "Add at least one range." });
+  if (form.get("ov-kind") === "hours" && intervals.length === 0) return { status: "error", errors: { "ov-0-from": (await getHostI18n()).t("availability.errAddRange") } };
   const checked = validateDateOverride(String(form.get("ov-date") ?? ""), intervals, todayIn(schedule.timezone, new Date()));
   if (!checked.ok) return fail(checked.errors);
   await store.saveDateOverride(user.id, schedule.id, checked.value.date, checked.value.intervals);
@@ -106,8 +136,8 @@ export async function createScheduleAction(_prev: FormState, form: FormData): Pr
   try {
     id = (await store.createSchedule(user.id, checked.value, await myScheduleLimit(user.id))).id;
   } catch (e) {
-    if (isNamedError(e, "ScheduleNameTakenError")) return fail({ "schedule-name": e.message });
-    if (isNamedError<ScheduleLimitError>(e, "ScheduleLimitError")) return fail({ schedule: e.message });
+    const failed = await failStore(e);
+    if (failed) return failed;
     throw e;
   }
   revalidatePath(PATH);
@@ -121,7 +151,7 @@ export async function updateScheduleAction(_prev: FormState, form: FormData): Pr
   try {
     await store.updateSchedule(user.id, schedule.id, checked.value);
   } catch (e) {
-    if (isNamedError(e, "ScheduleNameTakenError")) return fail({ "schedule-name": e.message });
+    if (isNamedError(e, "ScheduleNameTakenError")) return (await failStore(e)) as FormState;
     throw e;
   }
   revalidatePath(PATH);

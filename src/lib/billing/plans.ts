@@ -36,14 +36,16 @@ export interface PlanLimits {
   memberships: boolean;
   /** Named availability schedules a host can keep, the default included. */
   schedules: number;
+  /** Coupons, first-session discounts, sliding-scale prices and campaigns on paid event types and packages. */
+  offers: boolean;
   /** Private video rooms on the owner's own Jitsi server (the "Hourhand video" location). */
   hourhandVideo: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, memberships: false, schedules: 1, hourhandVideo: false },
-  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, memberships: true, schedules: Infinity, hourhandVideo: true },
-  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, memberships: true, schedules: Infinity, hourhandVideo: true },
+  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, memberships: false, schedules: 1, offers: false, hourhandVideo: false },
+  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true },
+  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {
@@ -91,6 +93,12 @@ export function formatMoney(minor: number, currency: Currency): string {
   const major = minor / 100;
   const digits = Number.isInteger(major) ? 0 : 2;
   return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", { style: "currency", currency, minimumFractionDigits: digits, maximumFractionDigits: 2 }).format(major);
+}
+
+/** The amounts behind a price line, in minor units: the GST-inclusive total only for INR. */
+export function priceParts(plan: PaidPlan, interval: BillingInterval, currency: Currency): { base: number; total: number | null } {
+  const base = PRICES[plan][interval][currency];
+  return { base, total: currency === "USD" ? null : Math.round(base * (1 + GST_RATE)) };
 }
 
 /** The price line shown for a plan: "₹399 + 18% GST = ₹470.82 a month" or "$7 a month". */

@@ -5,12 +5,12 @@ import { LocalTime } from "@/components/LocalTime";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { formatDate, zoneName } from "@/lib/format";
 import type { Locale } from "@/lib/i18n/guest";
-import { refusalLines, splitTemplate, type RefusalReason } from "@/lib/video/messages";
+import { refusalLines, splitTemplate, type RefusalReason } from "@/lib/i18n/video";
 
 // What someone sees when a join link can't open the call right now: the guest in their language, the host in English
 // (like the dashboard).
 
-export const JOIN_METADATA = { title: "Hourhand video", robots: { index: false, follow: false }, referrer: "no-referrer" as const };
+export const JOIN_METADATA = { title: "Hourhand", robots: { index: false, follow: false }, referrer: "no-referrer" as const };
 
 export function JoinRefused({ reason, opensAt, tz, locale, back, switcherPath }: {
   reason: RefusalReason; opensAt?: Date; tz: string; locale: Locale; back?: { href: string; label?: string }; switcherPath?: string;

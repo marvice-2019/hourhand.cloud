@@ -6,42 +6,51 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
 import { deleteEventType, saveEventType } from "@/app/dashboard/event-types/actions";
 import type { CustomQuestion, LocationKind, QuestionDraft } from "@/lib/data/types";
-import { VIDEO_NEEDS_PLAN, VIDEO_NOT_SET_UP, type VideoAvailability } from "@/lib/video/gate";
+import type { VideoAvailability } from "@/lib/video/gate";
 import type { ZoomSetup } from "@/lib/zoom/connection";
 import { ZoomHint } from "./ZoomHint";
-import { LOCATION_VALUE_LABEL, START_INCREMENTS, slugify, type EventTypeErrors, type EventTypeForm, type QuestionErrors } from "@/lib/event-types";
+import { START_INCREMENTS, slugify, type EventTypeErrors, type EventTypeForm, type QuestionErrors } from "@/lib/event-types";
 import { Button } from "./ui/Button";
 import { Card } from "./ui/Card";
 import { focusRing } from "./ui/focus";
 import { Input, Label } from "./ui/Input";
+import { useHostI18n } from "./HostI18nProvider";
+import type { HostKey } from "@/lib/i18n/host";
 
 const TABS = [
-  { id: "details", label: "Details" },
-  { id: "rules", label: "Scheduling rules" },
-  { id: "form", label: "Booking form" },
-] as const;
+  { id: "details", label: "eventTypes.tabDetails" },
+  { id: "rules", label: "eventTypes.tabRules" },
+  { id: "form", label: "eventTypes.tabForm" },
+] as const satisfies readonly { id: string; label: HostKey }[];
 type TabId = (typeof TABS)[number]["id"];
 
 const DETAIL_FIELDS: (keyof EventTypeForm)[] = ["name", "slug", "durationMinutes", "price", "deposit", "description", "locationKind", "locationValue"];
 const PRESET_DURATIONS = [15, 30, 45, 60];
 
-const LOCATIONS: { kind: LocationKind | ""; label: string }[] = [
-  { kind: "google_meet", label: "Google Meet" },
-  { kind: "zoom", label: "Zoom" },
-  { kind: "teams", label: "Microsoft Teams" },
-  { kind: "hourhand_video", label: "Hourhand video (no Zoom or Meet account needed)" },
-  { kind: "phone_host_calls", label: "Phone call (you call them)" },
-  { kind: "phone_guest_calls", label: "Phone call (they call you)" },
-  { kind: "in_person", label: "In person" },
-  { kind: "custom", label: "Somewhere else" },
-  { kind: "ask_guest", label: "Guest picks the place" },
-  { kind: "", label: "Decide later" },
+const LOCATIONS: { kind: LocationKind | ""; label: HostKey }[] = [
+  { kind: "google_meet", label: "eventTypes.locGoogleMeet" },
+  { kind: "zoom", label: "eventTypes.locZoom" },
+  { kind: "teams", label: "eventTypes.locTeams" },
+  { kind: "hourhand_video", label: "eventTypes.locHourhandVideo" },
+  { kind: "phone_host_calls", label: "eventTypes.locPhoneHostCalls" },
+  { kind: "phone_guest_calls", label: "eventTypes.locPhoneGuestCalls" },
+  { kind: "in_person", label: "eventTypes.locInPerson" },
+  { kind: "custom", label: "eventTypes.locCustom" },
+  { kind: "ask_guest", label: "eventTypes.locAskGuest" },
+  { kind: "", label: "eventTypes.locLater" },
 ];
 
-const QUESTION_KINDS: { kind: CustomQuestion["kind"]; label: string }[] = [
-  { kind: "short_text", label: "Short answer" },
-  { kind: "long_text", label: "Long answer" },
-  { kind: "single_select", label: "Pick one from a list" },
+/** The label for the value a location needs (an address, a phone number); same kinds as LOCATION_VALUE_LABEL. */
+const LOCATION_VALUE_KEY: Partial<Record<LocationKind, HostKey>> = {
+  in_person: "eventTypes.valueAddress",
+  phone_guest_calls: "eventTypes.valuePhone",
+  custom: "eventTypes.valueDetails",
+};
+
+const QUESTION_KINDS: { kind: CustomQuestion["kind"]; label: HostKey }[] = [
+  { kind: "short_text", label: "eventTypes.kindShort" },
+  { kind: "long_text", label: "eventTypes.kindLong" },
+  { kind: "single_select", label: "eventTypes.kindSelect" },
 ];
 
 const fieldClasses = (invalid: boolean) =>
@@ -67,6 +76,7 @@ export interface EventTypeEditorProps {
 
 export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justSaved = false, currency = "INR", provider = null, zoomSetup = "not_configured", video = "not_set_up" }: EventTypeEditorProps) {
   const router = useRouter();
+  const { t, tNodes } = useHostI18n();
   const [tab, setTab] = useState<TabId>("details");
   const [form, setForm] = useState(initial);
   const [customDuration, setCustomDuration] = useState(!PRESET_DURATIONS.includes(Number(initial.durationMinutes)));
@@ -86,13 +96,13 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
   };
   const previewSlug = form.slug.trim().toLowerCase() || slugify(form.name) || "your-link";
 
-  const tabHasErrors = (t: TabId) =>
-    t === "form"
+  const tabHasErrors = (tabId: TabId) =>
+    tabId === "form"
       ? questionErrors.some((e) => e.label || e.choices)
-      : Object.keys(errors).some((k) => DETAIL_FIELDS.includes(k as keyof EventTypeForm) === (t === "details"));
+      : Object.keys(errors).some((k) => DETAIL_FIELDS.includes(k as keyof EventTypeForm) === (tabId === "details"));
 
   function onTabKey(e: KeyboardEvent<HTMLButtonElement>) {
-    const i = TABS.findIndex((t) => t.id === tab);
+    const i = TABS.findIndex((x) => x.id === tab);
     const next = { ArrowRight: (i + 1) % TABS.length, ArrowLeft: (i - 1 + TABS.length) % TABS.length, Home: 0, End: TABS.length - 1 }[e.key];
     if (next === undefined) return;
     e.preventDefault();
@@ -171,74 +181,78 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
     </div>
   );
 
-  const valueLabel = form.locationKind ? LOCATION_VALUE_LABEL[form.locationKind] : undefined;
+  const valueKey = form.locationKind ? LOCATION_VALUE_KEY[form.locationKind] : undefined;
+  const valueLabel = valueKey ? t(valueKey) : undefined;
 
   return (
     <div className="mt-6">
-      <div role="tablist" aria-label="Event type settings" className="flex gap-1 overflow-x-auto border-b border-border">
-        {TABS.map((t) => (
+      <div role="tablist" aria-label={t("eventTypes.tabsLabel")} className="flex gap-1 overflow-x-auto border-b border-border">
+        {TABS.map((x) => (
           <button
-            key={t.id} ref={(el) => { tabRefs.current[t.id] = el; }} type="button" role="tab" id={`tab-${t.id}`}
-            aria-selected={tab === t.id} aria-controls={`panel-${t.id}`} tabIndex={tab === t.id ? 0 : -1}
-            onClick={() => setTab(t.id)} onKeyDown={onTabKey}
-            className={`min-h-11 shrink-0 rounded-t-md px-3 text-sm ${focusRing} ${tab === t.id ? "border-b-2 border-accent font-semibold text-text" : "text-text-muted hover:text-text"}`}
+            key={x.id} ref={(el) => { tabRefs.current[x.id] = el; }} type="button" role="tab" id={`tab-${x.id}`}
+            aria-selected={tab === x.id} aria-controls={`panel-${x.id}`} tabIndex={tab === x.id ? 0 : -1}
+            onClick={() => setTab(x.id)} onKeyDown={onTabKey}
+            className={`min-h-11 shrink-0 rounded-t-md px-3 text-sm ${focusRing} ${tab === x.id ? "border-b-2 border-accent font-semibold text-text" : "text-text-muted hover:text-text"}`}
           >
-            {t.label}
-            {tabHasErrors(t.id) && <span className="ml-1 text-danger">(check)</span>}
+            {t(x.label)}
+            {tabHasErrors(x.id) && <span className="ml-1 text-danger">{t("eventTypes.tabCheck")}</span>}
           </button>
         ))}
       </div>
 
       <Panel id="details" active={tab}>
         <div>
-          <Label htmlFor="f-name">Name</Label>
-          <Input id="f-name" value={form.name} onChange={(e) => set("name")(e.target.value)} error={errors.name} placeholder="30-min intro call" />
+          <Label htmlFor="f-name">{t("eventTypes.name")}</Label>
+          <Input id="f-name" value={form.name} onChange={(e) => set("name")(e.target.value)} error={errors.name} placeholder={t("eventTypes.namePlaceholder")} />
         </div>
         <div>
-          <Label htmlFor="f-slug">Link</Label>
+          <Label htmlFor="f-slug">{t("eventTypes.slug")}</Label>
           <Input
             id="f-slug" value={form.slug} onChange={(e) => set("slug")(e.target.value)} error={errors.slug}
             aria-describedby="f-slug-hint" autoCapitalize="none" spellCheck={false} placeholder={slugify(form.name) || "intro-call"}
           />
           <p id="f-slug-hint" className="mt-1 break-all text-sm text-text-muted">
-            People book at <span className="font-mono text-text">hourhand.app/{userSlug}/{previewSlug}</span>. Leave it blank to use the name.
+            {tNodes("eventTypes.slugHint", {
+              // i18n-ignore: the booking address, not words
+              url: <span className="font-mono text-text">{`hourhand.app/${userSlug}/${previewSlug}`}</span>,
+            })}
           </p>
         </div>
         <fieldset>
-          <legend className="text-sm font-semibold text-text">Length</legend>
+          <legend className="text-sm font-semibold text-text">{t("eventTypes.length")}</legend>
           <div className="mt-2 flex flex-wrap gap-2">
             {PRESET_DURATIONS.map((m) => (
               <Choice key={m} name="duration" checked={!customDuration && form.durationMinutes === String(m)}
-                onChange={() => { setCustomDuration(false); set("durationMinutes")(String(m)); }}>{m} min</Choice>
+                onChange={() => { setCustomDuration(false); set("durationMinutes")(String(m)); }}>{t("common.minutes", { n: m })}</Choice>
             ))}
-            <Choice name="duration" checked={customDuration} onChange={() => setCustomDuration(true)}>Custom</Choice>
+            <Choice name="duration" checked={customDuration} onChange={() => setCustomDuration(true)}>{t("eventTypes.custom")}</Choice>
           </div>
           {customDuration ? (
-            <div className="mt-3">{numberField("durationMinutes", "Custom length", "minutes", "Between 5 minutes and 12 hours.")}</div>
+            <div className="mt-3">{numberField("durationMinutes", t("eventTypes.customLength"), t("eventTypes.unitMinutes"), t("eventTypes.customLengthHint"))}</div>
           ) : errors.durationMinutes && <p className="mt-1 text-sm text-danger">{errors.durationMinutes}</p>}
         </fieldset>
         <div>
-          <Label htmlFor="f-price">Price ({currencyLabel(currency)})</Label>
+          <Label htmlFor="f-price">{t("eventTypes.price", { currency: currencyLabel(currency) })}</Label>
           <Input
             id="f-price" inputMode="decimal" value={form.price} onChange={(e) => set("price")(e.target.value)} error={errors.price}
-            aria-describedby="f-price-hint" className="max-w-32" placeholder="Free"
+            aria-describedby="f-price-hint" className="max-w-32" placeholder={t("eventTypes.pricePlaceholder")}
           />
-          <p id="f-price-hint" className="mt-1 text-sm text-text-muted">Leave empty for a free event. {provider === "stripe" ? "Stripe" : "Razorpay"}&apos;s fee comes out of what you receive.</p>
+          <p id="f-price-hint" className="mt-1 text-sm text-text-muted">{t("eventTypes.priceHint", { provider: provider === "stripe" ? "Stripe" : "Razorpay" })}</p>
           {errors.price && (
             <div className="flex flex-wrap gap-x-4">
-              <Link href="/dashboard/plan" className="inline-flex min-h-11 items-center font-semibold text-accent underline">See plans</Link>
-              <Link href="/dashboard/integrations" className="inline-flex min-h-11 items-center font-semibold text-accent underline">Connect payments</Link>
+              <Link href="/dashboard/plan" className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("eventTypes.seePlans")}</Link>
+              <Link href="/dashboard/integrations" className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("eventTypes.connectPayments")}</Link>
             </div>
           )}
         </div>
         <div>
-          <Label htmlFor="f-deposit">No-show deposit ({currencyLabel(currency)})</Label>
+          <Label htmlFor="f-deposit">{t("eventTypes.deposit", { currency: currencyLabel(currency) })}</Label>
           <Input
             id="f-deposit" inputMode="decimal" value={form.deposit} onChange={(e) => set("deposit")(e.target.value)} error={errors.deposit}
-            aria-describedby="f-deposit-hint" className="max-w-32" placeholder="None"
+            aria-describedby="f-deposit-hint" className="max-w-32" placeholder={t("eventTypes.depositPlaceholder")}
           />
           <p id="f-deposit-hint" className="mt-1 text-sm text-text-muted">
-            For a free event. Guests pay it to book; it&apos;s refunded a day after the session, unless you mark them a no-show by then. Cancelling in time refunds it too.
+            {t("eventTypes.depositHint")}
           </p>
         </div>
         <div>
@@ -247,23 +261,22 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
               type="checkbox" checked={form.hidden} aria-describedby="f-hidden-hint" className="mt-1 size-5 accent-accent"
               onChange={(e) => { const hidden = e.target.checked; setForm((f) => ({ ...f, hidden })); setStatus("idle"); }}
             />
-            <span className="font-semibold text-text">Only people with the link can book</span>
+            <span className="font-semibold text-text">{t("eventTypes.hidden")}</span>
           </label>
-          <p id="f-hidden-hint" className="mt-1 text-sm text-text-muted">It won&apos;t show on your booking page. Anyone you send its link to can still book.</p>
+          <p id="f-hidden-hint" className="mt-1 text-sm text-text-muted">{t("eventTypes.hiddenHint")}</p>
         </div>
         <div>
-          <Label htmlFor="f-location">Where you meet</Label>
+          <Label htmlFor="f-location">{t("eventTypes.location")}</Label>
           <select id="f-location" aria-describedby={form.locationKind === "teams" || form.locationKind === "zoom" || form.locationKind === "hourhand_video" ? "f-location-hint" : undefined} value={form.locationKind} onChange={(e) => set("locationKind")(e.target.value)} className={`h-11 ${fieldClasses(false)}`}>
-            {LOCATIONS.map((l) => <option key={l.kind} value={l.kind}>{l.label}</option>)}
+            {LOCATIONS.map((l) => <option key={l.kind} value={l.kind}>{t(l.label)}</option>)}
           </select>
           {form.locationKind === "teams" && (
-            <p id="f-location-hint" className="mt-1 text-sm text-text-muted">Teams links are created when bookings go to a work or school Outlook calendar.</p>
+            <p id="f-location-hint" className="mt-1 text-sm text-text-muted">{t("eventTypes.teamsHint")}</p>
           )}
           {errors.locationKind && <p role="alert" className="mt-1 text-sm text-danger">{errors.locationKind}</p>}
           {form.locationKind === "hourhand_video" && !errors.locationKind && (
             <p id="f-location-hint" className={`mt-1 text-sm ${video === "ready" ? "text-text-muted" : "text-danger"}`}>
-              {video === "ready" ? "Each booking gets a private video room. You join as host and let guests in from the lobby. Calls aren't recorded."
-                : video === "plan" ? VIDEO_NEEDS_PLAN : VIDEO_NOT_SET_UP}
+              {t(video === "ready" ? "eventTypes.videoReady" : video === "plan" ? "eventTypes.videoNeedsPlan" : "eventTypes.videoNotSetUp")}
             </p>
           )}
           {form.locationKind === "zoom" && <ZoomHint setup={zoomSetup} id="f-location-hint" />}
@@ -275,83 +288,84 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
           </div>
         )}
         <div>
-          <Label htmlFor="f-description">Description</Label>
+          <Label htmlFor="f-description">{t("eventTypes.description")}</Label>
           <textarea
             id="f-description" rows={4} value={form.description} onChange={(e) => set("description")(e.target.value)}
             aria-describedby="f-description-hint" className={`py-2 ${fieldClasses(false)}`}
           />
-          <p id="f-description-hint" className="mt-1 text-sm text-text-muted">Shown on your booking page. Optional.</p>
+          <p id="f-description-hint" className="mt-1 text-sm text-text-muted">{t("eventTypes.descriptionHint")}</p>
         </div>
         <div>
-          <Label htmlFor="f-redirectUrl">After booking, send guests to</Label>
+          <Label htmlFor="f-redirectUrl">{t("eventTypes.redirect")}</Label>
           <Input
             id="f-redirectUrl" inputMode="url" value={form.redirectUrl ?? ""} onChange={(e) => set("redirectUrl")(e.target.value)} error={errors.redirectUrl}
+            // i18n-ignore
             placeholder="https://yoursite.com/thank-you" aria-describedby="f-redirectUrl-hint"
           />
-          <p id="f-redirectUrl-hint" className="mt-1 text-sm text-text-muted">Optional. Guests see their confirmation first, then go to this page a few seconds later.</p>
+          <p id="f-redirectUrl-hint" className="mt-1 text-sm text-text-muted">{t("eventTypes.redirectHint")}</p>
         </div>
       </Panel>
 
       <Panel id="rules" active={tab}>
-        {numberField("minNoticeMinutes", "Minimum notice", "minutes", "How soon before the start people can still book. 240 minutes is 4 hours.")}
-        {numberField("bookingWindowDays", "Booking window", "days", "How far ahead people can book, up to 730 days.")}
+        {numberField("minNoticeMinutes", t("eventTypes.minNotice"), t("eventTypes.unitMinutes"), t("eventTypes.minNoticeHint"))}
+        {numberField("bookingWindowDays", t("eventTypes.bookingWindow"), t("eventTypes.unitDays"), t("eventTypes.bookingWindowHint"))}
         <div>
-          <Label htmlFor="f-startIncrementMinutes">Start times every</Label>
+          <Label htmlFor="f-startIncrementMinutes">{t("eventTypes.startIncrement")}</Label>
           <select
             id="f-startIncrementMinutes" value={form.startIncrementMinutes} onChange={(e) => set("startIncrementMinutes")(e.target.value)}
             aria-invalid={errors.startIncrementMinutes ? true : undefined}
             aria-describedby={errors.startIncrementMinutes ? "f-startIncrementMinutes-error" : undefined}
             className={`h-11 max-w-48 ${fieldClasses(Boolean(errors.startIncrementMinutes))}`}
           >
-            {START_INCREMENTS.map((m) => <option key={m} value={String(m)}>{m} minutes</option>)}
+            {START_INCREMENTS.map((m) => <option key={m} value={String(m)}>{t("eventTypes.minutesOption", { n: m })}</option>)}
           </select>
           {errors.startIncrementMinutes && <p id="f-startIncrementMinutes-error" className="mt-1 text-sm text-danger">{errors.startIncrementMinutes}</p>}
         </div>
-        {numberField("bufferBeforeMinutes", "Free time before", "minutes", "Kept clear before each meeting, up to 240 minutes.")}
-        {numberField("bufferAfterMinutes", "Free time after", "minutes", "Kept clear after each meeting, up to 240 minutes.")}
-        {numberField("dailyLimit", "Most bookings per day", "bookings", "Leave blank for no limit.")}
-        {numberField("weeklyLimit", "Most bookings per week", "bookings", "Monday to Sunday. Leave blank for no limit.")}
-        {numberField("cancelCutoffMinutes", "Online cancelling closes", "minutes before", "Guests can't cancel or reschedule online after this. 0 means any time before the start.")}
+        {numberField("bufferBeforeMinutes", t("eventTypes.bufferBefore"), t("eventTypes.unitMinutes"), t("eventTypes.bufferBeforeHint"))}
+        {numberField("bufferAfterMinutes", t("eventTypes.bufferAfter"), t("eventTypes.unitMinutes"), t("eventTypes.bufferAfterHint"))}
+        {numberField("dailyLimit", t("eventTypes.dailyLimit"), t("eventTypes.unitBookings"), t("eventTypes.dailyLimitHint"))}
+        {numberField("weeklyLimit", t("eventTypes.weeklyLimit"), t("eventTypes.unitBookings"), t("eventTypes.weeklyLimitHint"))}
+        {numberField("cancelCutoffMinutes", t("eventTypes.cancelCutoff"), t("eventTypes.unitMinutesBefore"), t("eventTypes.cancelCutoffHint"))}
         <div>
-          <Label htmlFor="f-cancelPolicy">Cancellation policy</Label>
+          <Label htmlFor="f-cancelPolicy">{t("eventTypes.cancelPolicy")}</Label>
           <textarea
             id="f-cancelPolicy" rows={3} maxLength={1000} value={form.cancelPolicy ?? ""} onChange={(e) => set("cancelPolicy")(e.target.value)}
             aria-describedby="f-cancelPolicy-hint" aria-invalid={errors.cancelPolicy ? true : undefined} className={`py-2 ${fieldClasses(Boolean(errors.cancelPolicy))}`}
-            placeholder="Free to cancel up to 24 hours before. Later cancellations aren't refunded."
+            placeholder={t("eventTypes.cancelPolicyPlaceholder")}
           />
-          <p id="f-cancelPolicy-hint" className="mt-1 text-sm text-text-muted">{errors.cancelPolicy ?? "Optional. Guests see it before they book and next to Cancel."}</p>
+          <p id="f-cancelPolicy-hint" className="mt-1 text-sm text-text-muted">{errors.cancelPolicy ?? t("eventTypes.cancelPolicyHint")}</p>
         </div>
-        {numberField("maxRepeats", "Weekly repeats", "weeks at most", "Let guests book the same time every week, up to this many weeks in one go. 1 means no repeats. Free event types only.")}
-        {numberField("seats", "Guests per session", "guests", "For a group class (yoga, dance, batch tuition): 2 to 500 guests share each time. Leave blank for one-on-one. Free, single-week sessions for now.")}
+        {numberField("maxRepeats", t("eventTypes.maxRepeats"), t("eventTypes.unitWeeksAtMost"), t("eventTypes.maxRepeatsHint"))}
+        {numberField("seats", t("eventTypes.seats"), t("eventTypes.unitGuests"), t("eventTypes.seatsHint"))}
       </Panel>
 
       <Panel id="form" active={tab}>
-        <p className="text-sm text-text-muted">Everyone gives their name and email. Add anything else you want to know before you meet.</p>
-        {questions.length === 0 && <p className="text-text-muted">No extra questions yet.</p>}
+        <p className="text-sm text-text-muted">{t("eventTypes.formIntro")}</p>
+        {questions.length === 0 && <p className="text-text-muted">{t("eventTypes.noQuestions")}</p>}
         <ol className="grid gap-4">
           {questions.map((q, i) => {
             const e = questionErrors[i] ?? {};
-            const name = q.label.trim() || `Question ${i + 1}`;
+            const name = q.label.trim() || t("eventTypes.questionN", { n: i + 1 });
             return (
               <li key={q.key}>
                 <Card className="grid gap-3">
                   <div>
-                    <Label htmlFor={`q-${q.key}-label`}>Question {i + 1}</Label>
+                    <Label htmlFor={`q-${q.key}-label`}>{t("eventTypes.questionN", { n: i + 1 })}</Label>
                     <Input id={`q-${q.key}-label`} value={q.label} onChange={(ev) => updateQuestion(i, { label: ev.target.value })} error={e.label} />
                   </div>
                   <div>
-                    <Label htmlFor={`q-${q.key}-kind`}>Answer type</Label>
+                    <Label htmlFor={`q-${q.key}-kind`}>{t("eventTypes.answerType")}</Label>
                     <select
                       id={`q-${q.key}-kind`} value={q.kind} onChange={(ev) => updateQuestion(i, { kind: ev.target.value as CustomQuestion["kind"] })}
                       className={`h-11 ${fieldClasses(false)}`}
                     >
-                      {QUESTION_KINDS.map((k) => <option key={k.kind} value={k.kind}>{k.label}</option>)}
+                      {QUESTION_KINDS.map((k) => <option key={k.kind} value={k.kind}>{t(k.label)}</option>)}
                       {!QUESTION_KINDS.some((k) => k.kind === q.kind) && <option value={q.kind}>{q.kind.replace("_", " ")}</option>}
                     </select>
                   </div>
                   {q.kind === "single_select" && (
                     <div>
-                      <Label htmlFor={`q-${q.key}-choices`}>Choices, one per line</Label>
+                      <Label htmlFor={`q-${q.key}-choices`}>{t("eventTypes.choices")}</Label>
                       <textarea
                         id={`q-${q.key}-choices`} rows={3} value={q.choices.join("\n")}
                         onChange={(ev) => updateQuestion(i, { choices: ev.target.value.split("\n") })}
@@ -363,38 +377,38 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
                   )}
                   <label className="inline-flex min-h-11 items-center gap-2 text-sm text-text">
                     <input type="checkbox" checked={q.required} onChange={(ev) => updateQuestion(i, { required: ev.target.checked })} className={`size-5 accent-accent ${focusRing}`} />
-                    Guests must answer
+                    {t("eventTypes.required")}
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    <Button variant="secondary" size="sm" disabled={i === 0} onClick={() => moveQuestion(i, -1)} aria-label={`Move "${name}" up`}>Move up</Button>
-                    <Button variant="secondary" size="sm" disabled={i === questions.length - 1} onClick={() => moveQuestion(i, 1)} aria-label={`Move "${name}" down`}>Move down</Button>
-                    <Button variant="ghost" size="sm" onClick={() => removeQuestion(i)} aria-label={`Remove "${name}"`}>Remove</Button>
+                    <Button variant="secondary" size="sm" disabled={i === 0} onClick={() => moveQuestion(i, -1)} aria-label={t("eventTypes.moveUpLabel", { name })}>{t("eventTypes.moveUp")}</Button>
+                    <Button variant="secondary" size="sm" disabled={i === questions.length - 1} onClick={() => moveQuestion(i, 1)} aria-label={t("eventTypes.moveDownLabel", { name })}>{t("eventTypes.moveDown")}</Button>
+                    <Button variant="ghost" size="sm" onClick={() => removeQuestion(i)} aria-label={t("eventTypes.removeLabel", { name })}>{t("common.remove")}</Button>
                   </div>
                 </Card>
               </li>
             );
           })}
         </ol>
-        <div><Button variant="secondary" onClick={addQuestion}>Add a question</Button></div>
+        <div><Button variant="secondary" onClick={addQuestion}>{t("eventTypes.addQuestion")}</Button></div>
       </Panel>
 
       <div className="mt-8 flex flex-wrap items-center gap-4 border-t border-border pt-4">
-        <Button onClick={save} loading={saving}>{id ? "Save changes" : "Create event type"}</Button>
+        <Button onClick={save} loading={saving}>{id ? t("eventTypes.saveChanges") : t("eventTypes.create")}</Button>
         <p role="status" className={`text-sm ${status === "invalid" ? "text-danger" : "text-text-muted"}`}>
-          {status === "saved" ? "Saved" : status === "invalid" ? "Some fields need a fix. They're marked above." : ""}
+          {status === "saved" ? t("eventTypes.saved") : status === "invalid" ? t("eventTypes.invalid") : ""}
         </p>
       </div>
 
       {id && (
         <div className="mt-8 border-t border-border pt-4">
           {!confirmDelete ? (
-            <Button variant="ghost" onClick={() => { setConfirmDelete(true); setDeleteError(null); }}>Delete event type</Button>
+            <Button variant="ghost" onClick={() => { setConfirmDelete(true); setDeleteError(null); }}>{t("eventTypes.delete")}</Button>
           ) : (
             <div className="grid gap-3">
-              <p className="text-text">Delete this event type? Its link stops working. This can&apos;t be undone.</p>
+              <p className="text-text">{t("eventTypes.deleteConfirm")}</p>
               <div className="flex flex-wrap gap-2">
-                <Button variant="danger" onClick={remove} loading={deleting}>Yes, delete it</Button>
-                <Button variant="secondary" onClick={() => { setConfirmDelete(false); setDeleteError(null); }}>Keep it</Button>
+                <Button variant="danger" onClick={remove} loading={deleting}>{t("eventTypes.deleteYes")}</Button>
+                <Button variant="secondary" onClick={() => { setConfirmDelete(false); setDeleteError(null); }}>{t("eventTypes.deleteKeep")}</Button>
               </div>
             </div>
           )}
