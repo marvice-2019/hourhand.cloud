@@ -67,7 +67,7 @@ export interface BookingMailContext {
   locale?: string;
 }
 
-export interface RenderedMail { subject: string; text: string; html: string; attachments?: Attachment[]; replyTo?: string }
+export interface RenderedMail { subject: string; text: string; html: string; attachments?: Attachment[]; replyTo?: string; headers?: Record<string, string> }
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");

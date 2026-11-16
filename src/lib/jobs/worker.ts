@@ -17,6 +17,8 @@ import { freeSlots } from "../booking";
 import { pollMailData } from "../polls/polls";
 import { createPgStore } from "../data/pg-store";
 import { hostPlan } from "../billing/account";
+import { buildFollowUp, FOLLOW_UP_KIND } from "../follow-ups/follow-ups";
+import { linkKey } from "../follow-ups/tokens";
 import { isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
 import type { SmsConfig } from "../sms/config";
 import { queueSmsFallback, sendBookingSms, smsSkipReason } from "../sms/outbox";
@@ -193,6 +195,8 @@ export function skipReason(kind: NotificationKind, r: ContextRow, now: Date): st
   const forCancelled = kind === "cancelled_guest" || kind === "cancelled_host" || kind === "calendar_delete";
   if (!forCancelled && r.status !== "confirmed") return "booking cancelled";
   if (kind === "calendar_delete") return null;
+  // Sent after the session by design; buildFollowUp checks everything else when it renders.
+  if (kind === FOLLOW_UP_KIND) return null;
   if (kind === "reminder_guest") {
     if (r.reminders_opt_out) return "guest opted out of reminders";
     if (start <= now) return "booking already started";
@@ -394,6 +398,11 @@ async function renderPackage(pool: pg.Pool, c: Claimed, baseUrl: string): Promis
   });
 }
 
+/** The follow-up links' signing key, or null when TOKEN_ENCRYPTION_KEY isn't set (follow-ups are then skipped, saying why). */
+function followUpLinkKey(): Buffer | null {
+  try { return linkKey(); } catch { return null; }
+}
+
 export async function processDueNotifications(
   pool: pg.Pool, mailer: Mailer, opts: { baseUrl: string; now?: Date; limit?: number; calendar?: CalendarDeps | null; whatsapp?: WhatsAppConfig | null; sms?: SmsConfig | null; fetch?: typeof fetch },
 ): Promise<WorkerResult> {
@@ -503,6 +512,7 @@ export async function processDueNotifications(
           : c.kind === "earnings_host" ? await renderEarnings(pool, c, opts.baseUrl, now)
           : c.kind === "waitlist_guest" ? await renderWaitlist(pool, c, opts.baseUrl, now)
           : c.kind === "seat_invite" ? await renderSeatInvite(pool, c, opts.baseUrl)
+          : c.kind === FOLLOW_UP_KIND ? await buildFollowUp(pool, c, opts.baseUrl, now, followUpLinkKey())
           : isPollKind(c.kind) ? await renderPoll(pool, c, opts.baseUrl, now)
           : renderBookingMail(c.kind as BookingEmailKind, {
             ...toContext(r, opts.baseUrl),
