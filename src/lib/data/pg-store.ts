@@ -246,7 +246,7 @@ export function createPgStore(pool: pg.Pool): DataStore {
   }
 
   const draftValues = (d: EventTypeDraft) => [d.name, d.slug, d.description, d.durationMinutes, d.minNoticeMinutes, d.bookingWindowDays, d.startIncrementMinutes,
-    d.bufferBeforeMinutes, d.bufferAfterMinutes, d.dailyLimit, d.cancelCutoffMinutes, d.priceMinor, d.priceMinor === null ? null : d.currency, d.hidden, d.maxRepeats, d.priceMinor === null ? d.depositMinor : null, d.redirectUrl, d.weeklyLimit, d.cancelPolicy, d.seatLimit === null ? "one_on_one" : "group", d.seatLimit];
+    d.bufferBeforeMinutes, d.bufferAfterMinutes, d.dailyLimit, d.cancelCutoffMinutes, d.priceMinor, d.priceMinor === null && d.depositMinor === null ? null : (d.currency ?? "INR"), d.hidden, d.maxRepeats, d.priceMinor === null ? d.depositMinor : null, d.redirectUrl, d.weeklyLimit, d.cancelPolicy, d.seatLimit === null ? "one_on_one" : "group", d.seatLimit];
 
   async function slugSafe<T>(work: () => Promise<T>): Promise<T> {
     try {

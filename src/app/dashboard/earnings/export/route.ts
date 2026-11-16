@@ -4,6 +4,7 @@ import { getSignedInUser } from "@/lib/auth/session";
 import { hostPlan } from "@/lib/billing/account";
 import { getPool } from "@/lib/data/pg-store";
 import { earningsCsv, monthlyEarnings } from "@/lib/earnings";
+import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
 import { reportAccess } from "@/lib/reports/access";
 import { gstCsv, pnlCsv } from "@/lib/reports/csv";
 import { gstDocuments } from "@/lib/reports/ledger";
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
   }
   if (type) return NextResponse.json({ error: "invalid_request", fields: { type: "Use gst or pnl." } }, { status: 400 });
   const month = q.get("month") ?? "";
-  const e = await monthlyEarnings(pool, user.id, month, now);
+  const e = await monthlyEarnings(pool, user.id, month, now, priceCurrency(await paymentAccount(pool, user.id)));
   if (!e) return NextResponse.json({ error: "invalid_request", fields: { month: "Use YYYY-MM." } }, { status: 400 });
   return csv(earningsCsv(e), `earnings-${month}.csv`);
 }

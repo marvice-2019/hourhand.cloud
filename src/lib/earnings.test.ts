@@ -109,7 +109,7 @@ describe.skipIf(!BASE)("monthly earnings (Postgres)", () => {
     expect(e.otherCurrencies).toEqual([{ currency: "USD", netMinor: 9_900 }]);
     expect(e.bookingsMinor).toBe(220_000);
     expect(e.feeEstimateMinor).toBe(Math.round((640_000 * 200 * 1.18) / 10_000));
-    expect(earningsCsv(e)).toContain("Net received in USD (not in the rupee figures),99.00");
+    expect(earningsCsv(e)).toContain("Net received in USD (not in the figures above),99.00");
   });
 
   it("keeps a refund in the month it was made, whatever touches the row later", async () => {

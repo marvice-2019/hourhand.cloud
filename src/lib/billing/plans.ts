@@ -32,12 +32,14 @@ export interface PlanLimits {
   reportExport: boolean;
   /** Meeting polls open (taking votes) at once. */
   openPolls: number;
+  /** Clients can find the host's times by messaging Hourhand's WhatsApp number (after the host turns it on). */
+  whatsappBooking: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true, reportDays: 30, reportExport: false, openPolls: 1 },
-  solo: { checkedCalendars: Infinity, footer: false, reportDays: Infinity, reportExport: true, openPolls: Infinity },
-  duo: { checkedCalendars: Infinity, footer: false, reportDays: Infinity, reportExport: true, openPolls: Infinity },
+  free: { checkedCalendars: 2, footer: true, reportDays: 30, reportExport: false, openPolls: 1, whatsappBooking: false },
+  solo: { checkedCalendars: Infinity, footer: false, reportDays: Infinity, reportExport: true, openPolls: Infinity, whatsappBooking: true },
+  duo: { checkedCalendars: Infinity, footer: false, reportDays: Infinity, reportExport: true, openPolls: Infinity, whatsappBooking: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {

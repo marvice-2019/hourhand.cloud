@@ -13,4 +13,4 @@ alter table package_purchases add column fee_checked_at timestamptz;
 create index payments_fee_due_idx on payments (fee_checked_at nulls first)
   where fee_minor is null and provider = 'razorpay' and provider_payment_id is not null and status in ('paid', 'refund_pending', 'refunded');
 create index package_purchases_fee_due_idx on package_purchases (fee_checked_at nulls first)
-  where fee_minor is null and status = 'paid';
+  where fee_minor is null and provider = 'razorpay' and provider_payment_id is not null and status = 'paid';

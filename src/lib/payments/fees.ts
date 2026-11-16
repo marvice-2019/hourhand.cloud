@@ -16,7 +16,7 @@ type Table = "payments" | "package_purchases";
 async function claim(pool: pg.Pool, table: Table, now: Date, limit: number) {
   const due = table === "payments"
     ? "fee_minor is null and provider = 'razorpay' and provider_payment_id is not null and status in ('paid', 'refund_pending', 'refunded')"
-    : "fee_minor is null and status = 'paid'";
+    : "fee_minor is null and provider = 'razorpay' and provider_payment_id is not null and status = 'paid'";
   const { rows } = await pool.query<{ id: string; host_id: string; provider_payment_id: string }>(
     `with due as (
        select id from ${table}
