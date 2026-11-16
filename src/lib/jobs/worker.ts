@@ -446,7 +446,7 @@ async function renderZoomAlertMail(pool: pg.Pool, c: Claimed, baseUrl: string): 
   const { rows: [z] } = id ? await pool.query("select i.account_email, i.status, i.last_error, u.host_locale from integrations i join users u on u.id = i.user_id where i.id = $1", [id]) : { rows: [] };
   if (!z) return { skip: "Zoom connection removed" };
   if (z.status === "ok") return { skip: "Zoom reconnected" };
-  return renderZoomAlert({ accountEmail: z.account_email ?? "your Zoom account", lastError: z.last_error, integrationsUrl: `${baseUrl}/dashboard/integrations`, hostLocale: z.host_locale });
+  return renderZoomAlert({ accountEmail: z.account_email ?? null, lastError: z.last_error, integrationsUrl: `${baseUrl}/dashboard/integrations`, hostLocale: z.host_locale });
 }
 
 async function renderAlert(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
