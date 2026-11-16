@@ -107,4 +107,6 @@ export const bookings = {
   "bookings.videoHintGuest": "Opens 15 minutes before the start. You join as the host and let your guest in from the lobby.",
   "bookings.videoHintClass": "Opens 15 minutes before the start. You join as the host and let your class in from the lobby.",
   "bookings.videoBack": "Back to the booking",
+  "bookings.prepTitle": "Session prep",
+  "bookings.prepNote": "Written by AI from {name}'s booking answers and session history. Check anything that matters.",
 } as const;

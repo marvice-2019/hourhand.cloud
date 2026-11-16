@@ -60,6 +60,7 @@ export const integrations = {
   "integrations.zoomBody": "Event types set to Zoom get a new meeting in your own Zoom account for each booking. The link goes in the confirmation, the calendar invite and the booking page, moves when the booking moves, and is deleted when it's cancelled.",
   "integrations.zoomConnectedBadge": "Connected",
   "integrations.zoomStopped": "Zoom stopped letting Hourhand create meetings for {email}. Bookings you already have keep their links; reconnect so new ones get a link too.",
+  "integrations.zoomStoppedNoEmail": "Zoom stopped letting Hourhand create meetings for you. Bookings you already have keep their links; reconnect so new ones get a link too.",
   "integrations.zoomReconnect": "Reconnect Zoom",
   "integrations.zoomConnect": "Connect Zoom",
 

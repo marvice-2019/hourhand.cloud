@@ -19,6 +19,7 @@ export const nav: Record<keyof typeof en, string> = {
   "nav.calendars": "कैलेंडर",
   "nav.integrations": "इंटीग्रेशन",
   "nav.domain": "कस्टम डोमेन",
+  "nav.voice": "फ़ोन रिसेप्शनिस्ट",
   "nav.plan": "प्लान",
   "nav.settings": "सेटिंग्स",
   "nav.main": "मुख्य मेन्यू",
