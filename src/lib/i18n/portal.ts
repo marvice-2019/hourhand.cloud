@@ -276,7 +276,8 @@ const kn: Catalog = {
   mailFooter: "{host} ಗಾಗಿ Hourhand ಕಳುಹಿಸಿದೆ.",
 };
 
-export const PORTAL_CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn };
+// mr, bn, ml and gu show English here until translated (follow-up); the type keeps every guest language covered.
+export const PORTAL_CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn, mr: en, bn: en, ml: en, gu: en };
 
 /** A portal line in `locale`, with {placeholders} filled; unknown ones stay as written. */
 export function pt(locale: Locale, key: PortalKey, vars: Record<string, string | number> = {}): string {

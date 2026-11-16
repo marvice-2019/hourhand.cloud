@@ -272,7 +272,8 @@ const kn: Catalog = {
   mFooter: "{host} ಅವರಿಗಾಗಿ Hourhand ಕಳುಹಿಸಿದೆ.",
 };
 
-export const POLL_CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn };
+// mr, bn, ml and gu show English here until translated (follow-up); the type keeps every guest language covered.
+export const POLL_CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn, mr: en, bn: en, ml: en, gu: en };
 
 /** The line for `key` in `locale`, with each `{name}` replaced from `vars`; unknown placeholders are left as written. */
 export function pt(locale: Locale, key: PollKey, vars: Record<string, string | number> = {}): string {
