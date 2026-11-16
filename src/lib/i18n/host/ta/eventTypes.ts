@@ -289,4 +289,10 @@ export const eventTypes: Record<keyof typeof en, string> = {
   "eventTypes.connectPayments": "பேமெண்ட்களை இணையுங்கள்",
   "eventTypes.pricePayments": "பேமெண்ட்கள் உங்கள் கணக்கிற்கு வர, முதலில் இணைப்புகள் பகுதியில் Razorpay (இந்தியா) அல்லது Stripe-ஐ இணையுங்கள்.",
   "eventTypes.errSlugReserved": "இந்த லிங்கை உங்கள் புக்கிங் பக்கமே பயன்படுத்துகிறது. வேறொன்றைத் தேர்ந்தெடுங்கள்.",
+  // Hourhand video (3.11)
+  "eventTypes.locHourhandVideo": "Hourhand video (Zoom அல்லது Meet கணக்கு தேவையில்லை)",
+  "eventTypes.locHourhandVideoShort": "Hourhand video",
+  "eventTypes.videoReady": "ஒவ்வொரு புக்கிங்குக்கும் தனி வீடியோ அறை கிடைக்கும். நீங்கள் ஹோஸ்ட்டாகச் சேர்ந்து, விருந்தினர்களை லாபியிலிருந்து உள்ளே அனுமதிப்பீர்கள். கால்கள் பதிவு செய்யப்படாது.",
+  "eventTypes.videoNeedsPlan": "Hourhand video-க்கு Solo அல்லது Duo பிளான் தேவை.",
+  "eventTypes.videoNotSetUp": "இந்த சர்வரில் Hourhand video இன்னும் அமைக்கப்படவில்லை.",
 };

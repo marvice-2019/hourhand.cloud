@@ -104,7 +104,11 @@ check(linked.booking_link_id !== null, "booking records the link it came through
 res = await submit(pj, "/dashboard/links", "Make a single-use link", { eventTypeId: coaching.id });
 const raceToken = linkPath(await res.text());
 const rs = (await slotsBy({ link: raceToken })).body.slots;
-const race = await Promise.all([bookBy({ linkToken: raceToken }, rs[2], "race-a"), bookBy({ linkToken: raceToken }, rs[3], "race-b")]);
+// Two times a day apart: neighbouring times overlap (length plus buffers), so the loser could be refused for the time
+// (slot_taken) instead of the link, depending on which request reaches the free-time check first. Apart, only the link
+// is shared, which is what this checks.
+const raceB = rs.find((s) => new Date(s) - new Date(rs[2]) >= 864e5);
+const race = await Promise.all([bookBy({ linkToken: raceToken }, rs[2], "race-a"), bookBy({ linkToken: raceToken }, raceB, "race-b")]);
 check(race.filter((r) => r.status === 201).length === 1 && race.some((r) => r.body.error === "link_used"), `two guests at once: exactly one books (${race.map((r) => r.status).join(", ")})`);
 
 // Revoke

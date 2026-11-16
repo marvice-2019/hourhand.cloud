@@ -37,6 +37,7 @@ export const polls: Record<keyof typeof en, string> = {
   "polls.locInPerson": "நேரில்",
   "polls.locCustomGuest": "ஹோஸ்ட் தந்த விவரங்கள்",
   "polls.locAskGuest": "நீங்கள் தேர்ந்தெடுத்த இடம்",
+  "polls.locHourhandVideo": "Hourhand video",
   "polls.doneCreated": "உங்கள் வாக்கெடுப்பு தயார். கீழே உள்ள லிங்கைப் பகிருங்கள்.",
   "polls.doneConfirmed": "புக் ஆனது. ஆம் அல்லது தேவைப்பட்டால் என்று சொன்ன அனைவருக்கும் இப்போது உறுதிப்படுத்தல் போகிறது.",
   "polls.doneCancelled": "வாக்கெடுப்பு கேன்சல் ஆனது. அதன் நேரங்கள் விடுவிக்கப்பட்டன, எதுவும் புக் ஆகவில்லை.",
