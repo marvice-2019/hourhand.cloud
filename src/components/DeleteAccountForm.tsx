@@ -9,17 +9,18 @@ import { translator } from "@/lib/i18n/host/lib-messages";
 import { useHostI18n } from "./HostI18nProvider";
 
 // deleteMyAccount words its errors in English; each is shown as the same line in the host's language.
-const say = translator(DELETE_ACCOUNT_MESSAGES, { demo: "settings.errDeleteDemo", email: "settings.errDeleteEmail" });
+const say = translator(DELETE_ACCOUNT_MESSAGES, { demo: "settings.errDeleteDemo", email: "settings.errDeleteEmail", phone: "settings.errDeletePhone" });
 
-export function DeleteAccountForm({ email }: { email: string }) {
+/** `phone` is set for a phone sign-up: they confirm with their number, since their email is only a placeholder. */
+export function DeleteAccountForm({ email, phone }: { email: string; phone?: string }) {
   const { t } = useHostI18n();
   const [state, action, pending] = useActionState<DeleteAccountState, FormData>(deleteMyAccount, {});
   const error = state.error ? say(t, state.error) : undefined;
   return (
     <form action={action} className="mt-4 grid gap-4">
       <div>
-        <Label htmlFor="confirm-email">{t("settings.deleteConfirm", { email })}</Label>
-        <Input id="confirm-email" name="confirm-email" type="email" autoComplete="off" required error={error} />
+        <Label htmlFor="confirm-email">{phone ? t("settings.deleteConfirmPhone", { phone }) : t("settings.deleteConfirm", { email })}</Label>
+        <Input id="confirm-email" name="confirm-email" type={phone ? "tel" : "email"} autoComplete="off" required error={error} />
       </div>
       <Button type="submit" variant="danger" loading={pending} className="justify-self-start">
         {t("settings.deleteButton")}

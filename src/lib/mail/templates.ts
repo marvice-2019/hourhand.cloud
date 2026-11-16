@@ -426,6 +426,15 @@ export function renderMagicLink(url: string): RenderedMail {
   });
 }
 
+/** Confirms a new email address on an account. The address is saved only when this link is opened. */
+export function renderEmailConfirmation(url: string): RenderedMail {
+  return render("Confirm your email for Hourhand", {
+    heading: "Confirm your email", intro: "Use the button below to add this address to your Hourhand account. The link works once and expires in an hour.",
+    rows: [], link: { label: "Confirm email", url }, note: "If you didn't ask for this, ignore this email. Nothing changes without the link.",
+    footer: "Sent by Hourhand.",
+  });
+}
+
 /** An invitee's answers to a meeting poll are in: their link to change them, in the language they answered in. */
 export function renderPollVoterMail(c: { locale: Locale; voterName: string; hostName: string; title: string; deadline: Date; timezone: string; url: string }): RenderedMail {
   const l = c.locale;

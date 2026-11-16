@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AddEmailForm } from "@/components/AddEmailForm";
 import { DeleteAccountForm } from "@/components/DeleteAccountForm";
 import { ThemeSwitch } from "@/components/ThemeSwitch";
 import { Button } from "@/components/ui/Button";
@@ -18,6 +19,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const user = await requireOwnAccount();
   const { t } = await getHostI18n();
   const { saved } = await searchParams;
+  const phone = isPhonePlaceholderEmail(user.email) ? formatPhone(`+${user.email.split("@")[0]}`) : undefined;
   return (
     <div>
       <h1 className="font-display text-xl text-text">{t("settings.title")}</h1>
@@ -25,6 +27,15 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <ul className="flex flex-wrap gap-x-6">
         <li><Link href="/dashboard/event-types" className="mt-4 inline-flex min-h-11 items-center font-semibold text-accent underline">{t("settings.eventTypes")}</Link></li>
       </ul>
+
+      {saved === "email" && <p role="status" className="mt-6 max-w-xl rounded-md bg-surface p-3 text-success">{t("settings.emailSaved")}</p>}
+      {phone && authEnabled() && (
+        <Card className="mt-8 max-w-xl" id="add-email">
+          <h2 className="font-semibold text-text">{t("settings.addEmailTitle")}</h2>
+          <p className="mt-1 text-text-muted">{t("settings.addEmailIntro")}</p>
+          <AddEmailForm />
+        </Card>
+      )}
 
       <Card className="mt-8 max-w-xl">
         <h2 className="font-semibold text-text">{t("settings.appearance")}</h2>
@@ -54,7 +65,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <Card className="mt-6 max-w-xl">
         <h2 className="font-semibold text-text">
           {/* A phone sign-up's email is a placeholder made from the number: show the number. */}
-          {t("settings.signedInAs", { email: isPhonePlaceholderEmail(user.email) ? formatPhone(`+${user.email.split("@")[0]}`) : user.email })}
+          {t("settings.signedInAs", { email: phone ?? user.email })}
         </h2>
         {authEnabled() ? (
           <>
@@ -76,7 +87,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <p className="mt-1 text-text-muted">
             {t("settings.deleteIntro")}
           </p>
-          <DeleteAccountForm email={user.email} />
+          <DeleteAccountForm email={user.email} phone={phone} />
         </Card>
       )}
     </div>

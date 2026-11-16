@@ -1,6 +1,8 @@
 // Host dashboard words: the frame around every page (sidebar, top bar, banners). English is the source; see docs/i18n-host.md.
 export const nav = {
   "nav.bookings": "Bookings",
+  "nav.addEmail": "Add your email so booking confirmations and reminders reach you.",
+  "nav.addEmailLink": "Add email",
   "nav.clients": "Clients",
   "nav.feedback": "Feedback",
   "nav.profile": "Your page",

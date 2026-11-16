@@ -10,6 +10,15 @@ export const settings = {
   "settings.language": "Language",
   "settings.languageSaved": "Saved. New guests see your booking pages in this language.",
   "settings.signedInAs": "Signed in as {email}",
+  "settings.addEmailTitle": "Add your email",
+  "settings.addEmailIntro": "You signed up with your phone. Add an email so booking confirmations, reminders and receipts reach you.",
+  "settings.addEmailLabel": "Email",
+  "settings.addEmailButton": "Send confirmation link",
+  "settings.addEmailSent": "If {email} isn't used by another Hourhand account, we've sent it a link. Open it within an hour to add it.",
+  "settings.errAddEmailInvalid": "Enter a valid email address.",
+  "settings.errAddEmailFailed": "We couldn't send the link just now. Try again in a few minutes.",
+  "settings.emailSaved": "Your email is confirmed. Booking updates will reach you there.",
+  "settings.deleteConfirmPhone": "Type your phone number {phone} to confirm",
   "settings.signOutIntro": "Lost a phone or used a shared computer? Sign out everywhere, including this browser.",
   "settings.signOutAll": "Sign out of all devices",
   "settings.demoSessions": "This copy runs on demo data, so there are no sessions to end.",
@@ -21,4 +30,5 @@ export const settings = {
   // deleteMyAccount (src/lib/auth/actions.ts) words its errors in English; the form swaps each for these.
   "settings.errDeleteDemo": "The demo data can't be deleted.",
   "settings.errDeleteEmail": "Type your email exactly as shown to confirm.",
+  "settings.errDeletePhone": "Type your phone number as shown to confirm.",
 } as const;

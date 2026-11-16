@@ -430,7 +430,7 @@ Register this text word for word (MSG91 shows the slot as `##VAR1##`, the DLT po
 | --- | --- | --- |
 | `MSG91_TEMPLATE_OTP` | MSG91's template id for the OTP template above | yes |
 
-Limits (both channels together): 3 codes per number and 10 per client address every 10 minutes, and 3 tries per code. Each code is a paid message. A host who signs up by phone has a placeholder email (`<digits>@phone.invalid`) until they add one. No email is sent to that address, so booking and reminder emails for that host stay unsent until a real address is on the account. Migration `0053_phone_sign_in` (adds `users.phone_number`) runs by itself when the container starts.
+Limits (both channels together): 3 codes per number and 10 per client address every 10 minutes, and 3 tries per code. Each code is a paid message. A host who signs up by phone has a placeholder email (`<digits>@phone.invalid`) until they add one. No email is sent to that address. A banner on every dashboard page sends them to Settings → "Add your email", which emails a confirmation link; the address is saved only when that link is opened (an address another account already uses gets no link). Until then, booking and reminder emails for that host stay unsent. They close their account by typing their phone number instead of the placeholder. Migration `0053_phone_sign_in` (adds `users.phone_number`) runs by itself when the container starts.
 
 Steps (you; Claude never signs in to a DLT portal or MSG91):
 

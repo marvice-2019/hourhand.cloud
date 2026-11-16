@@ -8,7 +8,7 @@ import { getPool } from "@/lib/data/pg-store";
 import { rateLimiter, SIGN_IN_LIMITS, trustedProxies } from "@/lib/rate-limit";
 
 export { trustedProxies };
-import { deliverMagicLink } from "./outbox";
+import { deliverEmailConfirmation, deliverMagicLink } from "./outbox";
 import {
   isCanonicalPhone, isPhonePlaceholderEmail, OTP_CHANNEL_HEADER, otpChannels, otpSmsConfig, phoneEmail, pickOtpChannel, sendOtpSms,
   sendOtpWhatsApp, whatsappOtpConfig,
@@ -121,6 +121,7 @@ function createAuth() {
       customRules: {
         "/sign-in/magic-link": { window: 600, max: 5 }, "/sign-in/social": { window: 60, max: 10 },
         "/phone-number/send-otp": { window: 600, max: 5 }, "/phone-number/verify": { window: 600, max: 10 },
+        "/change-email": { window: 600, max: 5 }, "/send-verification-email": { window: 600, max: 3 },
       },
     },
     advanced: {
@@ -133,6 +134,18 @@ function createAuth() {
       modelName: "users",
       fields: { emailVerified: "email_verified", ...at },
       additionalFields: { slug: { type: "string", required: false, input: false } },
+      // A host who signed up by phone adds an email from Settings. The address changes only when its owner clicks the
+      // link sent to it (updateEmailWithoutVerification stays off), so nobody can claim an inbox that isn't theirs.
+      changeEmail: { enabled: true },
+    },
+    emailVerification: {
+      expiresIn: 60 * 60,
+      sendVerificationEmail: async ({ user, url }) => {
+        if (!rateLimiter.take(`email:${user.email.toLowerCase()}`, SIGN_IN_LIMITS.perEmail)) {
+          throw new APIError("TOO_MANY_REQUESTS", { message: "Too many emails to this address" });
+        }
+        await deliverEmailConfirmation(user.email, url);
+      },
     },
     session: {
       modelName: "auth_sessions",
