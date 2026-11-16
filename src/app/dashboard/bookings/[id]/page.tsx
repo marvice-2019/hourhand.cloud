@@ -8,7 +8,7 @@ import { store } from "@/lib/data";
 import { clientKey, sessionNumber } from "@/lib/clients";
 import { authEnabled } from "@/lib/auth/auth";
 import { requireHost } from "@/lib/auth/session";
-import { formatMoney } from "@/lib/billing/plans";
+import { formatAmount } from "@/lib/money";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
 import { getPool } from "@/lib/data/pg-store";
 import { bookingPayment, DEPOSIT_HOLD_MS, type BookingPaymentSummary } from "@/lib/payments/booking-payments";
@@ -18,7 +18,7 @@ import { waLink, waNumber, whatsappMessage, type WhatsAppKind } from "@/lib/what
 import { cancelAsHost, rescheduleAsHost, setNoShow } from "./actions";
 
 const PAYMENT_WORDS: Record<BookingPaymentSummary["status"], string> = {
-  pending: "waiting for the guest to pay", paid: "paid to your Razorpay account", failed: "not completed",
+  pending: "waiting for the guest to pay", paid: "paid to your account", failed: "not completed",
   refund_pending: "being refunded", refunded: "refunded to the guest",
 };
 
@@ -123,12 +123,12 @@ export default async function BookingDetailPage({ params, searchParams }: { para
           <div>
             <dt className="text-sm text-text-muted">Payment</dt>
             <dd className="text-text">
-              {payment.kind === "deposit" && "Deposit: "}{formatMoney(payment.amountMinor, "INR")}, {payment.kind === "deposit" && payment.status === "paid" && booking.invitee.noShowAt ? "kept for the no-show" : PAYMENT_WORDS[payment.status]}
+              {payment.kind === "deposit" && "Deposit: "}{formatAmount(payment.amountMinor, payment.currency)}, {payment.kind === "deposit" && payment.status === "paid" && booking.invitee.noShowAt ? "kept for the no-show" : PAYMENT_WORDS[payment.status]}
               {payment.kind === "deposit" && payment.status === "paid" && !booking.invitee.noShowAt && confirmed && (
                 <span className="block text-sm text-text-muted">Refunded on {formatDate(new Date(booking.endAt.getTime() + DEPOSIT_HOLD_MS), tz)}, {formatTime(new Date(booking.endAt.getTime() + DEPOSIT_HOLD_MS), tz)} unless you mark a no-show before then.</span>
               )}
               {payment.status === "refund_pending" && payment.lastError && (
-                <span className="block text-sm text-danger">Razorpay hasn&apos;t accepted the refund yet ({payment.lastError.slice(0, 120)}). Hourhand keeps retrying; check your Razorpay balance.</span>
+                <span className="block text-sm text-danger">{payment.provider === "stripe" ? "Stripe" : "Razorpay"} hasn&apos;t accepted the refund yet ({payment.lastError.slice(0, 120)}). Hourhand keeps retrying; check your {payment.provider === "stripe" ? "Stripe" : "Razorpay"} balance.</span>
               )}
             </dd>
           </div>

@@ -4,7 +4,7 @@ import { CopyLinkButton } from "@/components/CopyLinkButton";
 import { buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { focusRing } from "@/components/ui/focus";
-import { formatMoney } from "@/lib/billing/plans";
+import { formatAmount } from "@/lib/money";
 import { store, type LocationKind } from "@/lib/data";
 import { getHostContext, requireHost } from "@/lib/auth/session";
 
@@ -62,7 +62,7 @@ export default async function EventTypesPage() {
                     </h2>
                     <ActiveSwitch id={et.id} name={et.name} active={et.active} />
                   </div>
-                  <p className="text-sm text-text-muted">{et.durationMinutes} min{et.priceMinor !== null && ` · ${formatMoney(et.priceMinor, "INR")}`} · {first ? locationLabel[first.kind] : "No location set"}</p>
+                  <p className="text-sm text-text-muted">{et.durationMinutes} min{et.priceMinor !== null && ` · ${formatAmount(et.priceMinor, et.currency)}`} · {first ? locationLabel[first.kind] : "No location set"}</p>
                   <div className="mt-auto flex items-center justify-between gap-3">
                     <span className="truncate font-mono text-xs text-text-muted">{path}</span>
                     <CopyLinkButton path={path} />

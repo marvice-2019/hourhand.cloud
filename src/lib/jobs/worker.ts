@@ -10,9 +10,11 @@ import { GUEST_LOCATION_LABELS } from "../location-labels";
 import { MailError, type Mailer } from "../mail/mailer";
 import { invoiceById } from "../gst/invoices";
 import { monthlyEarnings } from "../earnings";
-import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderRenewalReminder, renderSeatInviteMail, renderWaitlistMail, type BookingMailContext, type RenderedMail } from "../mail/templates";
+import { paymentAccount, priceCurrency } from "../payments/host-payments";
+import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderRenewalReminder, renderPollClosedMail, renderPollVoterMail, renderSeatInviteMail, renderWaitlistMail, type BookingMailContext, type RenderedMail } from "../mail/templates";
 import { PLAN_NAMES, PRICES, priceLine, type BillingInterval, type PaidPlan } from "../billing/plans";
 import { freeSlots } from "../booking";
+import { pollMailData } from "../polls/polls";
 import { createPgStore } from "../data/pg-store";
 import { hostPlan } from "../billing/account";
 import { isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
@@ -56,7 +58,9 @@ export async function claimDue(pool: pg.Pool, now: Date, limit: number): Promise
 
 const CONTEXT = `
   select n.id as notification_id, n.created_at as queued_at, n.dedupe_key, b.id, b.host_id, b.series_id, b.status, b.start_at, b.end_at, b.cancelled_by, b.cancel_reason,
-    b.location_kind as booking_location_kind, b.join_url, b.external_event_id, b.external_calendar_id,
+    b.location_kind as booking_location_kind, b.external_event_id, b.external_calendar_id,
+    -- seats of one group class or confirmed poll share one calendar event, so its video link is on whichever seat holds it
+    coalesce(b.join_url, (select m.join_url from bookings m where b.class_key is not null and m.class_key = b.class_key and m.join_url is not null limit 1)) as join_url,
     prev.start_at as previous_start_at, prev.external_event_id as previous_event_id, prev.external_calendar_id as previous_calendar_id,
     prev.join_url as previous_join_url, prev.cancelled_by as previous_cancelled_by,
     i.name as guest_name, i.email as guest_email, i.timezone as guest_timezone, i.locale as guest_locale, i.answers, i.manage_token, i.reminders_opt_out, i.running_late_minutes,
@@ -65,10 +69,15 @@ const CONTEXT = `
       order by p.created_at desc limit 1) as paid_minor,
     (select p.kind from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
       order by p.created_at desc limit 1) as paid_kind,
+    (select p.currency from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
+      order by p.created_at desc limit 1) as paid_currency,
+    (select p.provider from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
+      order by p.created_at desc limit 1) as paid_provider,
     coalesce(u.name, '') as host_name, u.email as host_email, u.timezone as host_timezone, u.time_format as host_time_format,
     loc.kind as location_kind, loc.value as location_value, atc.provider as add_to_provider, atc.can_teams as add_to_can_teams,
     -- a calendar write that hasn't been tried yet or is running right now; one waiting to retry doesn't hold emails back
-    exists (select 1 from notifications cj where cj.booking_id = b.id and cj.channel = 'calendar' and cj.kind <> 'calendar_delete'
+    exists (select 1 from notifications cj where (cj.booking_id = b.id or cj.booking_id in (select m.id from bookings m where b.class_key is not null and m.class_key = b.class_key))
+            and cj.channel = 'calendar' and cj.kind <> 'calendar_delete'
             and cj.status = 'queued' and (cj.attempts = 0 or cj.locked_until > $2)) as calendar_write_pending,
     exists (select 1 from notifications cj where cj.booking_id in (b.id, b.rescheduled_from_id) and cj.id <> n.id and cj.channel = 'calendar'
             and cj.status = 'queued' and cj.locked_until > $2) as calendar_write_in_flight
@@ -100,6 +109,7 @@ function toContext(r: ContextRow, baseUrl: string): BookingMailContext {
     answers: (r.answers as InviteeAnswer[]) ?? [],
     cancelledBy: (r.cancelled_by as BookingMailContext["cancelledBy"]) ?? null, cancelReason: (r.cancel_reason as string | null) ?? null,
     paidMinor: (r.paid_minor as number | null) ?? null, paidIsDeposit: r.paid_kind === "deposit",
+    paidCurrency: (r.paid_currency as string | null) ?? null, paidProvider: (r.paid_provider as "razorpay" | "stripe" | null) ?? null,
     previousStartAt: r.previous_start_at ? new Date(r.previous_start_at as Date) : null,
     movedBy: (r.previous_cancelled_by as BookingMailContext["movedBy"]) ?? null,
     issuedAt: new Date(r.queued_at as Date),
@@ -312,10 +322,10 @@ async function renderRenewal(pool: pg.Pool, c: Claimed, baseUrl: string): Promis
 
 async function renderEarnings(pool: pg.Pool, c: Claimed, baseUrl: string, now: Date): Promise<RenderedMail | { skip: string }> {
   const m = /^earnings:[0-9a-f-]{36}:(\d{4}-\d{2})$/.exec(c.dedupe_key);
-  const e = m ? await monthlyEarnings(pool, c.user_id, m[1], now) : null;
+  const e = m ? await monthlyEarnings(pool, c.user_id, m[1], now, priceCurrency(await paymentAccount(pool, c.user_id))) : null;
   if (!e) return { skip: "no report" };
   const monthLabel = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${e.month}-01T00:00:00Z`));
-  return renderEarningsMail({ monthLabel, netMinor: e.netMinor, bookingsMinor: e.bookingsMinor, packagesMinor: e.packagesMinor, refundsMinor: e.refundsMinor,
+  return renderEarningsMail({ currency: e.currency, monthLabel, netMinor: e.netMinor, bookingsMinor: e.bookingsMinor, packagesMinor: e.packagesMinor, refundsMinor: e.refundsMinor,
     sessionsHeld: e.sessions.held, noShows: e.sessions.noShows, url: `${baseUrl}/dashboard/earnings?month=${e.month}` });
 }
 
@@ -326,6 +336,15 @@ async function renderSeatInvite(pool: pg.Pool, c: Claimed, baseUrl: string): Pro
      where s.owner_id = $1 and s.member_email = $2 and s.accepted_at is null and u.deleted_at is null`, [c.user_id, c.recipient]);
   if (!s) return { skip: "invitation withdrawn or already accepted" };
   return renderSeatInviteMail({ ownerName: s.name, ownerEmail: s.email, url: `${baseUrl}/sign-in` });
+}
+
+const isPollKind = (kind: NotificationKind) => kind === "poll_voter_link" || kind === "poll_host_closed";
+
+/** A meeting poll email: an invitee's change link (signed when it is sent), or the host's nudge to pick a time. */
+async function renderPoll(pool: pg.Pool, c: Claimed, baseUrl: string, now: Date): Promise<RenderedMail | { skip: string }> {
+  const d = await pollMailData(pool, c.kind, c.dedupe_key, baseUrl, now);
+  if ("skip" in d) return d;
+  return d.kind === "poll_voter_link" ? renderPollVoterMail(d) : renderPollClosedMail(d);
 }
 
 /** A time opened on a day the guest waited for. The booking is the cancelled one; its start is the freed time. */
@@ -356,14 +375,14 @@ async function renderPackage(pool: pg.Pool, c: Claimed, baseUrl: string): Promis
   const m = /^purchase:([0-9a-f-]{36}):package_(guest|host)$/.exec(c.dedupe_key);
   if (!m) return { skip: "not a package email" };
   const { rows: [p] } = await pool.query(
-    `select p.guest_name, p.guest_email, p.sessions, p.price_minor, p.expires_at, p.token, p.status, k.name as package_name, e.name as event_name,
+    `select p.guest_name, p.guest_email, p.sessions, p.price_minor, p.currency, p.provider, p.expires_at, p.token, p.status, k.name as package_name, e.name as event_name,
        u.name as host_name, u.email as host_email, u.timezone
      from package_purchases p join packages k on k.id = p.package_id join event_types e on e.id = p.event_type_id join users u on u.id = p.host_id
      where p.id = $1`, [m[1]]);
   if (!p || p.status !== "paid") return { skip: "package not paid" };
   return renderPackageMail(c.kind as "package_guest" | "package_host", {
     hostName: p.host_name, hostEmail: p.host_email, guestName: p.guest_name, guestEmail: p.guest_email, packageName: p.package_name, eventName: p.event_name,
-    sessions: p.sessions, priceMinor: p.price_minor, expiresAt: p.expires_at, timezone: p.timezone,
+    sessions: p.sessions, priceMinor: p.price_minor, currency: p.currency, provider: p.provider, expiresAt: p.expires_at, timezone: p.timezone,
     buyerUrl: `${baseUrl}/p/${p.token}`, dashboardUrl: `${baseUrl}/dashboard/packages`,
   });
 }
@@ -395,7 +414,8 @@ export async function processDueNotifications(
   const release = async (c: Claimed) => {
     if (c.kind !== "calendar_create" && c.kind !== "calendar_move") return;
     const woken = await pool.query(
-      "update notifications set send_at = $2, last_error = null where booking_id = $1 and status = 'queued' and kind in ('booked_guest', 'rescheduled_guest') and send_at > $2",
+      `update notifications set send_at = $2, last_error = null where status = 'queued' and kind in ('booked_guest', 'rescheduled_guest') and send_at > $2
+         and (booking_id = $1 or booking_id in (select m.id from bookings m join bookings s on s.id = $1 where s.class_key is not null and m.class_key = s.class_key))`,
       [c.booking_id, now]);
     result.released += woken.rowCount ?? 0;
   };
@@ -408,7 +428,7 @@ export async function processDueNotifications(
       continue;
     }
     // Host emails about their account rather than a booking.
-    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite";
+    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind);
     if (!isAccountMail) {
       if (!r?.id) { await skip(c, "booking no longer exists"); continue; }
       const why = skipReason(c.kind, r, now);
@@ -418,8 +438,9 @@ export async function processDueNotifications(
       if (wait === VIDEO_LINK_WAIT) {
         // The calendar write may have finished earlier in this same batch: look again before waiting.
         const { rows: [fresh] } = await pool.query(
-          `select b.join_url, exists (select 1 from notifications cj where cj.booking_id = b.id and cj.channel = 'calendar'
-             and cj.kind <> 'calendar_delete' and cj.status = 'queued' and (cj.attempts = 0 or cj.locked_until > $2)) as pending
+          `select coalesce(b.join_url, (select m.join_url from bookings m where b.class_key is not null and m.class_key = b.class_key and m.join_url is not null limit 1)) as join_url,
+             exists (select 1 from notifications cj where (cj.booking_id = b.id or cj.booking_id in (select m.id from bookings m where b.class_key is not null and m.class_key = b.class_key))
+               and cj.channel = 'calendar' and cj.kind <> 'calendar_delete' and cj.status = 'queued' and (cj.attempts = 0 or cj.locked_until > $2)) as pending
            from bookings b where b.id = $1`, [r.id, now]);
         r.join_url = fresh.join_url;
         r.calendar_write_pending = fresh.pending;
@@ -466,6 +487,7 @@ export async function processDueNotifications(
           : c.kind === "earnings_host" ? await renderEarnings(pool, c, opts.baseUrl, now)
           : c.kind === "waitlist_guest" ? await renderWaitlist(pool, c, opts.baseUrl, now)
           : c.kind === "seat_invite" ? await renderSeatInvite(pool, c, opts.baseUrl)
+          : isPollKind(c.kind) ? await renderPoll(pool, c, opts.baseUrl, now)
           : renderBookingMail(c.kind as BookingEmailKind, {
             ...toContext(r, opts.baseUrl),
             extraGuest: c.recipient.toLowerCase() !== String(r.guest_email).toLowerCase() && c.kind.endsWith("_guest"),
