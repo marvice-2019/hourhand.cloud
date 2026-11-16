@@ -10,6 +10,8 @@ import type { HostKey } from "@/lib/i18n/host";
 import { translator } from "@/lib/i18n/host/lib-messages";
 import { getHostI18n } from "@/lib/i18n/host/server";
 import { LINK_MESSAGES, parseLocalTimes } from "@/lib/links-form";
+import { videoGateError } from "@/lib/video/gate";
+import { videoAvailabilityFor } from "@/lib/video/server";
 
 // Each action checks the session itself; every store call takes the signed-in host's id, so another host's link or
 // event type is simply not found. The raw link is returned once, here, and never stored.
@@ -72,6 +74,11 @@ export async function createOneOff(_prev: LinkFormState, form: FormData): Promis
   const missing = MISSING_VALUE[kind];
   if (missing && !value) return { status: "error", message: t(missing) };
   if (description.length > 2000) return { status: "error", message: t("links.errDescriptionTooLong") };
+  // Hourhand video needs the Jitsi settings on this server and a Solo or Duo plan (a one-off is always a new choice).
+  if (kind === "hourhand_video") {
+    const gate = videoGateError({ chosen: true, alreadyChosen: false, availability: await videoAvailabilityFor(user.id) });
+    if (gate) return { status: "error", message: t(gate === "plan" ? "links.videoNeedsPlan" : "links.videoNotSetUp") };
+  }
   const rawTimes = form.getAll("times").map(String);
   const parsed = parseLocalTimes(rawTimes, user.timezone);
   if (!parsed.ok) return { status: "error", message: sayTimes(t, parsed.error) };

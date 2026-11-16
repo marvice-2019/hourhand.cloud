@@ -7,6 +7,10 @@ the language guests see first on the host's booking pages.
 
 English is the source of truth. Hindi and Tamil follow the English keys.
 
+**Hindi (`hi/`) and Tamil (`ta/`) are drafts that need native-speaker review.** They were written for a working
+coach or tutor: plain everyday wording, common English loanwords where Indians use them in apps (बुकिंग, सेशन,
+புக்கிங், லிங்க்), product and brand names in Latin script. When a reviewer changes a line, keep its `{placeholders}`.
+
 ## Where strings live
 
 `src/lib/i18n/host/en/<namespace>.ts`, one file per dashboard area (`bookings`, `eventTypes`, `plan`, `mail`, ...).
@@ -50,8 +54,10 @@ file names. `src/lib/i18n/host/index.ts` merges the files.
    - Brand and product names stay as written (Hourhand, Google Calendar, WhatsApp, Razorpay, GST, UPI).
    - Server action error messages are host-visible too: build them with `t(...)` inside the action.
 
-4. Hindi and Tamil: you may leave them out. A missing key shows English, and the parity test lists what to translate.
-   If you can, add the keys to `hi/<yourPage>.ts` and `ta/<yourPage>.ts` and mark them for native-speaker review.
+4. Hindi and Tamil: add the same keys to `hi/<yourPage>.ts` and `ta/<yourPage>.ts` (typed
+   `Record<keyof typeof en, string>`, so the compiler lists what is missing) and add the file to `hi/index.ts` and
+   `ta/index.ts`. Mark new lines for native-speaker review in your PR. If you can't translate yet, copy the English:
+   the parity test passes and a translator can find the English lines later. Never leave a key out.
 
 ## The test that checks this
 

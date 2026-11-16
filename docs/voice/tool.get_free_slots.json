@@ -1,0 +1,55 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "get_free_slots",
+    "description": "The next free start times for one service. Offer at most three at a time, using each slot's `spoken` text.",
+    "response_timeout_secs": 15,
+    "api_schema": {
+      "url": "https://hourhand.cloud/api/voice/tools/get_free_slots",
+      "method": "POST",
+      "request_headers": {
+        "Authorization": {
+          "secret_id": "<SECRET_ID: Hourhand tool key for this host>"
+        }
+      },
+      "request_body_schema": {
+        "type": "object",
+        "description": "Arguments for get_free_slots.",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "dynamic_variable": "system__conversation_id"
+          },
+          "caller_phone": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en",
+              "hi"
+            ],
+            "description": "The language the caller is speaking: en or hi."
+          },
+          "service": {
+            "type": "string",
+            "description": "The service's `service` value from get_services."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "First day to look at, YYYY-MM-DD, in the practice's time zone. Leave empty for today."
+          },
+          "days": {
+            "type": "integer",
+            "description": "How many days to look at, 1 to 14. Default 7."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "service"
+        ]
+      }
+    }
+  }
+}

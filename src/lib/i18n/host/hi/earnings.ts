@@ -1,0 +1,28 @@
+// Host dashboard words: earnings, Hindi. Draft: needs native-speaker review (see docs/i18n-host.md).
+import type { earnings as en } from "../en/earnings";
+export const earnings: Record<keyof typeof en, string> = {
+  "earnings.title": "कमाई",
+  "earnings.monthNav": "महीना",
+  "earnings.demo": "कमाई देखने के लिए पेमेंट चाहिए, जो इस डेमो कॉपी में नहीं हैं।",
+  "earnings.net": "नेट मिली रकम",
+  "earnings.netHint": "बुकिंग + पैकेज + रखी गई डिपॉज़िट − रिफ़ंड",
+  "earnings.bookings": "बुकिंग",
+  "earnings.packages": "पैकेज",
+  "earnings.refunds": "रिफ़ंड",
+  "earnings.depositsKept": "रखी गई डिपॉज़िट",
+  "earnings.depositsKeptHint": "जो मेहमान नहीं आए, उनसे",
+  "earnings.gst": "इसमें GST",
+  "earnings.gstHint": "आपके इनवॉइस से; यह सरकार को देना है",
+  "earnings.feeNote": "Razorpay के स्टैंडर्ड 2% + GST रेट पर उनकी फ़ीस लगभग {fee} है; सही रकम आपकी सेटलमेंट रिपोर्ट में है।",
+  "earnings.depositsHeld": "{amount} की डिपॉज़िट उन सेशन के पूरे होने तक रोकी गई है।",
+  "earnings.sessions": "सेशन",
+  "earnings.held": "हो चुके",
+  "earnings.upcoming": "आने वाले",
+  "earnings.noShows": "नो-शो",
+  "earnings.cancelledByGuests": "मेहमानों ने कैंसल किए",
+  "earnings.cancelledByYou": "आपने कैंसल किए",
+  "earnings.byEventType": "इवेंट टाइप के हिसाब से",
+  "earnings.eventType": "इवेंट टाइप",
+  "earnings.download": "{month} की CSV डाउनलोड करें",
+  "earnings.stripeNote": "रकम {currency} में है, Stripe की फ़ीस कटने से पहले; सही पेआउट आपके Stripe Dashboard में हैं।",
+};

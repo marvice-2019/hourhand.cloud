@@ -11,7 +11,8 @@ import { requireOwnAccount } from "@/lib/auth/session";
 import { focusRing } from "@/components/ui/focus";
 import { LOCALES, LOCALE_NAMES, isLocale } from "@/lib/i18n/guest";
 import { getHostI18n } from "@/lib/i18n/host/server";
-import { setBookingLanguage } from "./actions";
+import { HOST_LOCALES, HOST_LOCALE_NAMES, hostLocaleOf } from "@/lib/i18n/host";
+import { setBookingLanguage, setDashboardLanguage } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,22 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           className="mt-4"
           labels={{ legend: t("common.themeLegend"), system: t("common.themeDevice"), light: t("common.themeLight"), dark: t("common.themeDark") }}
         />
+      </Card>
+
+      <Card className="mt-6 max-w-xl">
+        <h2 className="font-semibold text-text">{t("settings.dashboardLanguage")}</h2>
+        <p className="mt-1 text-text-muted">{t("settings.dashboardLanguageIntro")}</p>
+        <form action={setDashboardLanguage} className="mt-4 flex flex-wrap items-end gap-3">
+          <div>
+            <label htmlFor="host-locale" className="block text-sm font-semibold text-text">{t("settings.language")}</label>
+            <select id="host-locale" name="hostLocale" defaultValue={hostLocaleOf(user)}
+              className={`mt-1 block h-11 rounded-md border border-border-input bg-card px-3 text-base text-text ${focusRing}`}>
+              {HOST_LOCALES.map((l) => <option key={l} value={l} lang={l}>{HOST_LOCALE_NAMES[l]}</option>)}
+            </select>
+          </div>
+          <Button type="submit">{t("common.save")}</Button>
+        </form>
+        {saved === "dashboard-language" && <p role="status" className="mt-2 text-success">{t("settings.dashboardLanguageSaved")}</p>}
       </Card>
 
       <Card className="mt-6 max-w-xl">

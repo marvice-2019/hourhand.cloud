@@ -288,4 +288,10 @@ export const eventTypes = {
   "eventTypes.scheduleOptionDefault": "{name} ({zone}), default",
   "eventTypes.scheduleUse": "Use this schedule",
   "eventTypes.scheduleSaved": "Schedule saved",
+  // Hourhand video (3.11)
+  "eventTypes.locHourhandVideo": "Hourhand video (no Zoom or Meet account needed)",
+  "eventTypes.locHourhandVideoShort": "Hourhand video",
+  "eventTypes.videoReady": "Each booking gets a private video room. You join as host and let guests in from the lobby. Calls aren't recorded.",
+  "eventTypes.videoNeedsPlan": "Hourhand video needs the Solo or Duo plan.",
+  "eventTypes.videoNotSetUp": "Hourhand video isn't set up on this server yet.",
 } as const;

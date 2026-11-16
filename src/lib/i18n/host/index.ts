@@ -2,6 +2,7 @@
 // (../guest.ts). English is the source of truth. Each page (namespace) has its own file in ./en, so features add
 // strings without touching each other's files; keys carry the namespace: "bookings.title". See docs/i18n-host.md.
 import { Fragment, createElement, type ReactNode } from "react";
+import { analytics } from "./en/analytics";
 import { availability } from "./en/availability";
 import { bookings } from "./en/bookings";
 import { calendars } from "./en/calendars";
@@ -25,23 +26,26 @@ import { polls } from "./en/polls";
 import { profile } from "./en/profile";
 import { seat } from "./en/seat";
 import { settings } from "./en/settings";
+import { voice } from "./en/voice";
+import { hi } from "./hi";
+import { ta } from "./ta";
 
 const en = {
   ...common, ...nav, ...bookings, ...clients, ...profile, ...eventTypes, ...links, ...packages, ...earnings, ...invoices,
-  ...availability, ...calendars, ...integrations, ...domain, ...plan, ...seat, ...settings, ...mail, ...polls, ...getBooked, ...memberships, ...feedback, ...offers,
+  ...availability, ...calendars, ...integrations, ...domain, ...plan, ...seat, ...settings, ...mail, ...polls, ...getBooked, ...memberships, ...feedback, ...offers, ...analytics, ...voice,
 };
 
 export type HostKey = keyof typeof en;
 export type HostCatalog = Record<HostKey, string>;
 
 /** The languages a host can run their dashboard in. */
-export const HOST_LOCALES = ["en"] as const;
+export const HOST_LOCALES = ["en", "hi", "ta"] as const;
 export type HostLocale = (typeof HOST_LOCALES)[number];
 
 /** Each language in its own script, for the settings picker. */
-export const HOST_LOCALE_NAMES: Record<HostLocale, string> = { en: "English" };
+export const HOST_LOCALE_NAMES: Record<HostLocale, string> = { en: "English", hi: "हिन्दी", ta: "தமிழ்" };
 
-export const HOST_CATALOGS: Record<HostLocale, HostCatalog> = { en };
+export const HOST_CATALOGS: Record<HostLocale, HostCatalog> = { en, hi, ta };
 
 export const isHostLocale = (v: unknown): v is HostLocale => typeof v === "string" && (HOST_LOCALES as readonly string[]).includes(v);
 
