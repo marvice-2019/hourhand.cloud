@@ -9,6 +9,8 @@ import { whatsappMessage } from "../whatsapp";
 import { templateMessage } from "../whatsapp-cloud";
 import { CATALOGS, LOCALES, LOCALE_NAMES, LOCATION_KEYS, intlTag, isLocale, resolveLocale, t, type Locale } from "./guest";
 import { MAIL_CATALOGS } from "./mail";
+import { POLL_CATALOGS } from "./poll";
+import { PORTAL_CATALOGS } from "./portal";
 
 const NEW = ["mr", "bn", "ml", "gu"] as const;
 const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
@@ -19,7 +21,7 @@ const SCRIPT: Record<(typeof NEW)[number], RegExp> = { mr: /[ऀ-ॿ]/, bn: /[�
 const SAME_EVERYWHERE = new Set(["locGoogleMeet", "locZoom", "locTeams"]);
 
 describe("every language has every line", () => {
-  for (const [name, catalogs] of [["guest", CATALOGS], ["mail", MAIL_CATALOGS]] as const) {
+  for (const [name, catalogs] of [["guest", CATALOGS], ["mail", MAIL_CATALOGS], ["poll", POLL_CATALOGS], ["portal", PORTAL_CATALOGS]] as const) {
     const en = catalogs.en as Record<string, string>;
     for (const locale of LOCALES) {
       it(`${name} catalog: ${locale} has exactly the English keys`, () => {
@@ -38,7 +40,8 @@ describe("every language has every line", () => {
 
   it("writes the new languages in their own script, and keeps brand names in Latin", () => {
     for (const locale of NEW) {
-      for (const [key, line] of Object.entries({ ...CATALOGS[locale], ...MAIL_CATALOGS[locale] })) {
+      // Every catalog, so a surface added later (polls, the client portal) can't fall back to English unnoticed.
+      for (const [key, line] of [CATALOGS, MAIL_CATALOGS, POLL_CATALOGS, PORTAL_CATALOGS].flatMap((c) => Object.entries(c[locale]))) {
         if (SAME_EVERYWHERE.has(key)) expect(line, `${locale}.${key}`).toBe((CATALOGS.en as Record<string, string>)[key]);
         else expect(line, `${locale}.${key}`).toMatch(SCRIPT[locale]);
       }
