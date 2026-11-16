@@ -74,6 +74,7 @@ Generate the two random values on your own machine with `openssl rand -hex 32` (
 | `TOKEN_ENCRYPTION_KEY` | random (openssl), never changes | yes |
 | `RESEND_API_KEY` | from Resend | yes |
 | `EMAIL_FROM` | `Hourhand <booking@hourhand.cloud>` | yes |
+| `SUPER_ADMIN_EMAILS` | comma-separated emails of Hourhand's owners, e.g. `you@marvice.in` | for the staff area at /admin. These accounts are super admins and can't be removed from the app; they add other staff at /admin/staff |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | from Google Cloud | for Google sign-in and calendars |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | from Razorpay (test first) | for paid plans |
 | `RAZORPAY_PLAN_SOLO_MONTH`, `_SOLO_YEAR`, `_DUO_MONTH`, `_DUO_YEAR` | the 4 Plan ids | for paid plans |
