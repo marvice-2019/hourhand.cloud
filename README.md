@@ -101,6 +101,10 @@ Add these as authorized redirect URIs on the OAuth client: `https://<your-domain
 | `TOKEN_ENCRYPTION_KEY` | encrypting calendar tokens: 64 hex characters (`openssl rand -hex 32`). **Required when Google is configured**; keep it safe, changing it means every host reconnects |
 | `GOOGLE_API_BASE_URL`, `HOURHAND_E2E` | end-to-end tests against a fake Google only. A production server ignores the first unless the second is `1`; never set either on a real deployment |
 
+## Zoom
+
+Set `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET` and `ZOOM_WEBHOOK_SECRET` (a Zoom General app; steps in `docs/deploy.md`, section 6b). Needs `TOKEN_ENCRYPTION_KEY`. A host connects their own Zoom from Dashboard → Integrations; every booking on an event type set to Zoom then gets its own meeting, made by the job queue, sent in the confirmation and calendar invite, moved on reschedule and deleted on cancel. Without the variables, Zoom event types still work but get no link, and the editor says so.
+
 ## Outlook and Microsoft
 
 Set `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` (an Entra app; steps in `docs/deploy.md`, section 6). Either Google or Microsoft can be configured without the other; both need `TOKEN_ENCRYPTION_KEY`.
