@@ -63,7 +63,7 @@ export interface BookingMailContext {
   locale?: string;
 }
 
-export interface RenderedMail { subject: string; text: string; html: string; attachments?: Attachment[]; replyTo?: string }
+export interface RenderedMail { subject: string; text: string; html: string; attachments?: Attachment[]; replyTo?: string; headers?: Record<string, string> }
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -275,6 +275,17 @@ export function renderCalendarAlert(a: { accountEmail: string; disconnected: boo
       : `Hourhand hasn't been able to read ${a.accountEmail} for a few minutes. Until it can, your booking pages show no times, so nobody can book over your meetings. It keeps retrying.`,
     rows: a.lastError ? [["Last error", a.lastError.slice(0, 200)]] : [],
     link: { label: a.disconnected ? "Reconnect your calendar" : "Check your calendars", url: a.calendarsUrl },
+    footer: "Sent by Hourhand about your booking page.",
+  });
+}
+
+/** Zoom stopped letting Hourhand make meetings: the grant was revoked, expired, or the app was removed in Zoom. */
+export function renderZoomAlert(a: { accountEmail: string; lastError: string | null; integrationsUrl: string }): RenderedMail {
+  return render("Reconnect Zoom to keep sending meeting links", {
+    heading: "Your Zoom is disconnected",
+    intro: `Zoom no longer lets Hourhand create meetings for ${a.accountEmail}. Bookings you already have keep their Zoom links. New Zoom bookings are still taken, but get no link until you reconnect.`,
+    rows: a.lastError ? [["Last error", a.lastError.slice(0, 200)]] : [],
+    link: { label: "Reconnect Zoom", url: a.integrationsUrl },
     footer: "Sent by Hourhand about your booking page.",
   });
 }
