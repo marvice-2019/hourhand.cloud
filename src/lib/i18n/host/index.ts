@@ -25,6 +25,8 @@ import { polls } from "./en/polls";
 import { profile } from "./en/profile";
 import { seat } from "./en/seat";
 import { settings } from "./en/settings";
+import { hi } from "./hi";
+import { ta } from "./ta";
 
 const en = {
   ...common, ...nav, ...bookings, ...clients, ...profile, ...eventTypes, ...links, ...packages, ...earnings, ...invoices,
@@ -35,13 +37,13 @@ export type HostKey = keyof typeof en;
 export type HostCatalog = Record<HostKey, string>;
 
 /** The languages a host can run their dashboard in. */
-export const HOST_LOCALES = ["en"] as const;
+export const HOST_LOCALES = ["en", "hi", "ta"] as const;
 export type HostLocale = (typeof HOST_LOCALES)[number];
 
 /** Each language in its own script, for the settings picker. */
-export const HOST_LOCALE_NAMES: Record<HostLocale, string> = { en: "English" };
+export const HOST_LOCALE_NAMES: Record<HostLocale, string> = { en: "English", hi: "हिन्दी", ta: "தமிழ்" };
 
-export const HOST_CATALOGS: Record<HostLocale, HostCatalog> = { en };
+export const HOST_CATALOGS: Record<HostLocale, HostCatalog> = { en, hi, ta };
 
 export const isHostLocale = (v: unknown): v is HostLocale => typeof v === "string" && (HOST_LOCALES as readonly string[]).includes(v);
 
