@@ -25,7 +25,7 @@ export const STARTERS: readonly StarterTemplate[] = [
       q("Are you taking any medication you'd like me to know about?", "long_text", { firstBookingOnly: true }),
       q("How would you prefer to be addressed?", "short_text", { firstBookingOnly: true }),
       q("Someone we can contact in an emergency (name and phone)", "short_text", { firstBookingOnly: true }),
-      q("I understand these sessions aren't an emergency service. If I'm in crisis, I'll call Tele-MANAS on 14416 or emergency services on 112.", "consent", { required: true, firstBookingOnly: true }),
+      q("I understand these sessions aren't an emergency service. If I'm in crisis, I'll call Tele-MANAS on 14416 (or 1-800-891-4416) or emergency services on 112.", "consent", { required: true, firstBookingOnly: true }),
     ],
   },
   {
