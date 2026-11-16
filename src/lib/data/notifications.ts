@@ -2,6 +2,8 @@ import type pg from "pg";
 import { waNumber } from "../whatsapp";
 import { whatsappConfig } from "../whatsapp-cloud";
 import { queueFollowUp } from "../follow-ups/follow-ups";
+import { smsConfig } from "../sms/config";
+import { smsRecipient } from "../sms/outbox";
 
 // Queueing booking emails. These run inside the same transaction as the booking change, so a booking and its emails
 // commit together or not at all (the outbox pattern). The job runner (src/lib/jobs) sends the due rows.
@@ -38,14 +40,16 @@ const MIN = 60_000;
  * calendar write but not its confirmations. Each row has a dedupe key, so queueing twice sends once. The guest's
  * confirmation, day-ahead reminder and change notices also go on WhatsApp when they ticked it for their phone, haven't
  * replied STOP, and WhatsApp is set up here (`whatsapp`); whether the host's plan covers it is checked when it sends.
+ * The same messages go by SMS instead when the guest ticked "text me" for an Indian mobile and SMS is set up (`sms`),
+ * but never on both channels: WhatsApp wins, and src/lib/sms falls back to a text if the WhatsApp message can't go.
  */
 export async function queueBookingNotifications(
   db: Db, bookingId: string, event: Event, now: Date,
-  { notifyHost = true, confirm = true, whatsapp = whatsappConfig() !== null } = {},
+  { notifyHost = true, confirm = true, whatsapp = whatsappConfig() !== null, sms = smsConfig() !== null } = {},
 ): Promise<void> {
   const { rows } = await db.query(
     `select b.host_id, b.start_at, i.email as guest_email, i.guests::text[] as extra_guests, u.email as host_email,
-       i.phone as guest_phone, i.whatsapp_opt_in_at is not null as whatsapp_opt_in,
+       i.phone as guest_phone, i.whatsapp_opt_in_at is not null as whatsapp_opt_in, i.sms_opt_in_at is not null as sms_opt_in,
        (select c.id from calendars c join calendar_connections cc on cc.id = c.connection_id
         where c.user_id = b.host_id and c.is_add_to and cc.status <> 'disconnected' and octet_length(cc.credentials_encrypted) > 0) as add_to_calendar,
        exists (select 1 from calendar_connections cc where cc.user_id = b.host_id) as has_calendar,
@@ -58,11 +62,13 @@ export async function queueBookingNotifications(
   const b = rows[0];
   if (!b) return;
   const start = new Date(b.start_at);
-  const queued: { kind: NotificationKind; channel: "email" | "calendar" | "whatsapp"; to: string; sendAt: Date; key: string }[] = [];
+  const queued: { kind: NotificationKind; channel: "email" | "calendar" | "whatsapp" | "sms"; to: string; sendAt: Date; key: string }[] = [];
   const phone = whatsapp && b.whatsapp_opt_in ? waNumber(b.guest_phone) : null;
   const optedOut = phone !== null && (await db.query("select 1 from whatsapp_opt_outs where phone = $1", [phone])).rowCount! > 0;
+  const textTo = phone && !optedOut ? null : await smsRecipient(db, b.guest_phone, b.sms_opt_in, sms);
   const toWhatsApp = (kind: BookingEmailKind, sendAt: Date, suffix = "") => {
     if (phone && !optedOut) queued.push({ kind, channel: "whatsapp", to: phone, sendAt, key: `booking:${bookingId}:wa:${kind}${suffix}` });
+    else if (textTo) queued.push({ kind, channel: "sms", to: textTo, sendAt, key: `booking:${bookingId}:sms:${kind}${suffix}` });
   };
   const now_ = (kind: BookingEmailKind, to: string) => queued.push({ kind, channel: "email", to, sendAt: now, key: `booking:${bookingId}:${kind}` });
   // Extra guests get each guest email too, under their own keys (the worker leaves out the manage link for them).
