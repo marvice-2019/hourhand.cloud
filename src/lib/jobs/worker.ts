@@ -684,7 +684,7 @@ export async function processDueNotifications(
           : c.kind === FOLLOW_UP_KIND ? await buildFollowUp(pool, c, opts.baseUrl, now, followUpLinkKey())
           : isPollKind(c.kind) ? await renderPoll(pool, c, opts.baseUrl, now)
           : c.kind === "membership_guest" || c.kind === "membership_host" ? await renderMembership(pool, c, opts.baseUrl, now)
-          : isClinicMail(c.kind) ? await renderClinicMail(pool, c, opts.baseUrl)
+          : isClinicMail(c.kind) ? await renderClinicMail(pool, c, opts.baseUrl, now)
           : renderBookingMail(c.kind as BookingEmailKind, {
             ...toContext(r, opts.baseUrl, c.kind.endsWith("_host") ? "host" : extraGuestMail(c, r) ? "extra_guest" : "guest"),
             extraGuest: extraGuestMail(c, r),
