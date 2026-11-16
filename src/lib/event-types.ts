@@ -65,6 +65,58 @@ export const MAX_WEEKS = 12;
 export type EventTypeErrors = Partial<Record<keyof EventTypeForm, string>>;
 export type QuestionErrors = { label?: string; choices?: string }[];
 
+/**
+ * Every message the validators below can give, by code, in English. The English goes in `errors` as before; the code
+ * and its values go in `codes`, so the dashboard can show the same message in the host's language
+ * (host catalogue key "eventTypes.err" + the code with a capital first letter).
+ */
+export const EVENT_TYPE_MESSAGES = {
+  notBoolean: "Choose whether it shows on your booking page.",
+  notText: "Enter text for this field.",
+  locationUnknown: "Pick a location from the list.",
+  nameMissing: "Give this event type a name.",
+  slugEmpty: "Add a link using letters or numbers.",
+  slugPattern: "Use lowercase letters, numbers and hyphens, starting with a letter or number (60 characters at most).",
+  slugReserved: "That link is used by your booking page itself. Pick another.",
+  slugTaken: SLUG_TAKEN,
+  durationRange: "Pick a length between {min} and {max} minutes.",
+  minutesZeroOrMore: "Enter 0 or more minutes.",
+  windowRange: "Enter between {min} and {max} days.",
+  startIncrement: "Pick one of the listed start times.",
+  bufferRange: "Enter between {min} and {max} minutes.",
+  limitOneOrMore: "Enter 1 or more, or leave it blank for no limit.",
+  priceInvalid: PRICE_INVALID,
+  repeatsRange: "Enter 1 (no repeats) up to {max} weeks.",
+  repeatsPaid: "Weekly repeats work on free event types for now. Sell a package for paid sessions.",
+  depositWithPrice: "A priced event doesn't need a deposit: the price already commits the guest. Leave one of them empty.",
+  repeatsDeposit: "Weekly repeats can't take a deposit. Set repeats to 1, or remove the deposit.",
+  locationValueAddress: "Add the address so guests know where to go.",
+  locationValuePhone: "Add your phone number so guests know where to go.",
+  locationValueDetails: "Add the location details so guests know where to go.",
+  weeklyBelowDaily: "Make the weekly limit at least the daily one.",
+  policyTooLong: "Keep the policy to 1,000 characters.",
+  seatsRange: "Enter 2 to {max} guests for a group class, or leave it blank for one-on-one.",
+  seatsPaid: "Group classes are free for now. Remove the price, or make it one-on-one.",
+  seatsDeposit: "Group classes can't take a deposit yet. Remove the deposit, or make it one-on-one.",
+  seatsRepeats: "Group classes are booked one week at a time for now. Set repeats to 1.",
+  redirectUrl: "Enter a full https:// address, or leave it blank.",
+  questionLabel: "Write the question guests will see.",
+  questionKind: "Pick a kind of answer.",
+  questionChoices: "Add at least two choices, one per line.",
+} as const;
+export type EventTypeErrorCode = keyof typeof EVENT_TYPE_MESSAGES;
+export interface CodedError { code: EventTypeErrorCode; vars?: Record<string, number> }
+export type EventTypeErrorCodes = Partial<Record<keyof EventTypeForm, CodedError>>;
+export type QuestionErrorCodes = { label?: CodedError; choices?: CodedError }[];
+
+/** The English line for a code, with its values filled in. */
+export const eventTypeMessage = ({ code, vars = {} }: CodedError): string =>
+  EVENT_TYPE_MESSAGES[code].replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m));
+
+const LOCATION_VALUE_CODE: Partial<Record<LocationKind, EventTypeErrorCode>> = {
+  in_person: "locationValueAddress", phone_guest_calls: "locationValuePhone", custom: "locationValueDetails",
+};
+
 /** "45-min Coaching Session!" -> "45-min-coaching-session". */
 export function slugify(name: string): string {
   return name
@@ -117,85 +169,98 @@ const INT_MAX = 2147483647;
 
 export function validateEventType(form: EventTypeForm, takenSlugs: readonly string[]):
   { ok: true; value: EventTypeDraft } | { ok: false; errors: EventTypeErrors } {
+  const r = checkEventType(form, takenSlugs);
+  return r.ok ? r : { ok: false, errors: r.errors };
+}
+
+/** validateEventType plus each message's code, for showing the errors in the host's language. */
+export function checkEventType(form: EventTypeForm, takenSlugs: readonly string[]):
+  { ok: true; value: EventTypeDraft } | { ok: false; errors: EventTypeErrors; codes: EventTypeErrorCodes } {
   const errors: EventTypeErrors = {};
+  const codes: EventTypeErrorCodes = {};
+  const fail = (field: keyof EventTypeForm, code: EventTypeErrorCode, vars?: Record<string, number>) => {
+    codes[field] = vars ? { code, vars } : { code };
+    errors[field] = eventTypeMessage(codes[field]);
+  };
 
   // The form arrives from the client, so check every field is text before using string methods on it.
   for (const key of Object.keys(NEW_EVENT_TYPE_FORM) as (keyof EventTypeForm)[]) {
     if (key === "hidden") {
       // A checkbox: true or false (an older client may leave it out, which means shown).
-      if (form.hidden !== undefined && typeof form.hidden !== "boolean") errors.hidden = "Choose whether it shows on your booking page.";
+      if (form.hidden !== undefined && typeof form.hidden !== "boolean") fail("hidden", "notBoolean");
     } else if (key === "redirectUrl" || key === "weeklyLimit" || key === "cancelPolicy" || key === "seats") {
       // Optional, so an older client may leave them out.
-      if (form[key] !== undefined && typeof form[key] !== "string") errors[key] = "Enter text for this field.";
-    } else if (typeof form[key] !== "string") errors[key] = "Enter text for this field.";
+      if (form[key] !== undefined && typeof form[key] !== "string") fail(key, "notText");
+    } else if (typeof form[key] !== "string") fail(key, "notText");
   }
-  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  if (Object.keys(errors).length > 0) return { ok: false, errors, codes };
 
-  if (form.locationKind && !LOCATION_KINDS.includes(form.locationKind)) errors.locationKind = "Pick a location from the list.";
+  if (form.locationKind && !LOCATION_KINDS.includes(form.locationKind)) fail("locationKind", "locationUnknown");
 
   const name = form.name.trim();
-  if (!name) errors.name = "Give this event type a name.";
+  if (!name) fail("name", "nameMissing");
 
   const slug = form.slug.trim() ? form.slug.trim().toLowerCase() : slugify(name);
   if (!slug) {
-    if (name) errors.slug = "Add a link using letters or numbers.";
+    if (name) fail("slug", "slugEmpty");
   } else if (!SLUG_PATTERN.test(slug)) {
-    errors.slug = "Use lowercase letters, numbers and hyphens, starting with a letter or number (60 characters at most).";
+    fail("slug", "slugPattern");
   } else if (RESERVED_EVENT_SLUGS.has(slug)) {
-    errors.slug = "That link is used by your booking page itself. Pick another.";
+    fail("slug", "slugReserved");
   } else if (takenSlugs.includes(slug)) {
-    errors.slug = SLUG_TAKEN;
+    fail("slug", "slugTaken");
   }
 
-  const number = (key: Exclude<keyof EventTypeForm, "hidden" | "redirectUrl" | "cancelPolicy">, min: number, max: number, message: string): number => {
+  const number = (key: Exclude<keyof EventTypeForm, "hidden" | "redirectUrl" | "cancelPolicy">, min: number, max: number, code: EventTypeErrorCode, vars?: Record<string, number>): number => {
     const n = whole(form[key] ?? "");
-    if (n === null || n < min || n > max) errors[key] = message;
+    if (n === null || n < min || n > max) fail(key, code, vars);
     return n ?? 0;
   };
 
-  const durationMinutes = number("durationMinutes", DURATION.min, DURATION.max, `Pick a length between ${DURATION.min} and ${DURATION.max} minutes.`);
-  const minNoticeMinutes = number("minNoticeMinutes", 0, INT_MAX, "Enter 0 or more minutes.");
-  const bookingWindowDays = number("bookingWindowDays", BOOKING_WINDOW.min, BOOKING_WINDOW.max, `Enter between ${BOOKING_WINDOW.min} and ${BOOKING_WINDOW.max} days.`);
-  const startIncrementMinutes = number("startIncrementMinutes", 0, 60, "Pick one of the listed start times.");
+  const durationMinutes = number("durationMinutes", DURATION.min, DURATION.max, "durationRange", { min: DURATION.min, max: DURATION.max });
+  const minNoticeMinutes = number("minNoticeMinutes", 0, INT_MAX, "minutesZeroOrMore");
+  const bookingWindowDays = number("bookingWindowDays", BOOKING_WINDOW.min, BOOKING_WINDOW.max, "windowRange", { min: BOOKING_WINDOW.min, max: BOOKING_WINDOW.max });
+  const startIncrementMinutes = number("startIncrementMinutes", 0, 60, "startIncrement");
   if (!errors.startIncrementMinutes && !(START_INCREMENTS as readonly number[]).includes(startIncrementMinutes)) {
-    errors.startIncrementMinutes = "Pick one of the listed start times.";
+    fail("startIncrementMinutes", "startIncrement");
   }
-  const bufferBeforeMinutes = number("bufferBeforeMinutes", BUFFER.min, BUFFER.max, `Enter between ${BUFFER.min} and ${BUFFER.max} minutes.`);
-  const bufferAfterMinutes = number("bufferAfterMinutes", BUFFER.min, BUFFER.max, `Enter between ${BUFFER.min} and ${BUFFER.max} minutes.`);
-  const cancelCutoffMinutes = number("cancelCutoffMinutes", 0, INT_MAX, "Enter 0 or more minutes.");
-  const dailyLimit = form.dailyLimit.trim() ? number("dailyLimit", 1, INT_MAX, "Enter 1 or more, or leave it blank for no limit.") : null;
+  const bufferBeforeMinutes = number("bufferBeforeMinutes", BUFFER.min, BUFFER.max, "bufferRange", { min: BUFFER.min, max: BUFFER.max });
+  const bufferAfterMinutes = number("bufferAfterMinutes", BUFFER.min, BUFFER.max, "bufferRange", { min: BUFFER.min, max: BUFFER.max });
+  const cancelCutoffMinutes = number("cancelCutoffMinutes", 0, INT_MAX, "minutesZeroOrMore");
+  const dailyLimit = form.dailyLimit.trim() ? number("dailyLimit", 1, INT_MAX, "limitOneOrMore") : null;
 
   const price = parsePrice(form.price);
-  if (price === "invalid") errors.price = PRICE_INVALID;
+  if (price === "invalid") fail("price", "priceInvalid");
   const priceMinor = price === "invalid" ? null : price;
-  const maxRepeats = number("maxRepeats", 1, MAX_WEEKS, `Enter 1 (no repeats) up to ${MAX_WEEKS} weeks.`);
-  if (!errors.maxRepeats && maxRepeats > 1 && priceMinor !== null) errors.maxRepeats = "Weekly repeats work on free event types for now. Sell a package for paid sessions.";
+  const maxRepeats = number("maxRepeats", 1, MAX_WEEKS, "repeatsRange", { max: MAX_WEEKS });
+  if (!errors.maxRepeats && maxRepeats > 1 && priceMinor !== null) fail("maxRepeats", "repeatsPaid");
   const deposit = parsePrice(form.deposit);
-  if (deposit === "invalid") errors.deposit = PRICE_INVALID;
+  if (deposit === "invalid") fail("deposit", "priceInvalid");
   const depositMinor = deposit === "invalid" ? null : deposit;
-  if (!errors.deposit && depositMinor !== null && priceMinor !== null) errors.deposit = "A priced event doesn't need a deposit: the price already commits the guest. Leave one of them empty.";
-  if (!errors.maxRepeats && !errors.deposit && depositMinor !== null && maxRepeats > 1) errors.maxRepeats = "Weekly repeats can't take a deposit. Set repeats to 1, or remove the deposit.";
+  if (!errors.deposit && depositMinor !== null && priceMinor !== null) fail("deposit", "depositWithPrice");
+  if (!errors.maxRepeats && !errors.deposit && depositMinor !== null && maxRepeats > 1) fail("maxRepeats", "repeatsDeposit");
 
   const valueLabel = form.locationKind ? LOCATION_VALUE_LABEL[form.locationKind] : undefined;
   const locationValue = form.locationValue.trim();
-  if (valueLabel && !locationValue) errors.locationValue = `Add the ${valueLabel.toLowerCase()} so guests know where to go.`;
+  const valueCode = form.locationKind ? LOCATION_VALUE_CODE[form.locationKind] : undefined;
+  if (valueLabel && valueCode && !locationValue) fail("locationValue", valueCode);
 
-  const weeklyLimit = (form.weeklyLimit ?? "").trim() ? number("weeklyLimit", 1, INT_MAX, "Enter 1 or more, or leave it blank for no limit.") : null;
-  if (!errors.weeklyLimit && !errors.dailyLimit && weeklyLimit !== null && dailyLimit !== null && weeklyLimit < dailyLimit) errors.weeklyLimit = "Make the weekly limit at least the daily one.";
+  const weeklyLimit = (form.weeklyLimit ?? "").trim() ? number("weeklyLimit", 1, INT_MAX, "limitOneOrMore") : null;
+  if (!errors.weeklyLimit && !errors.dailyLimit && weeklyLimit !== null && dailyLimit !== null && weeklyLimit < dailyLimit) fail("weeklyLimit", "weeklyBelowDaily");
   const cancelPolicy = (form.cancelPolicy ?? "").trim().replace(/\r\n/g, "\n");
-  if (cancelPolicy.length > 1000) errors.cancelPolicy = "Keep the policy to 1,000 characters.";
+  if (cancelPolicy.length > 1000) fail("cancelPolicy", "policyTooLong");
   const seatsRaw = (form.seats ?? "").trim();
-  const seats = seatsRaw && seatsRaw !== "1" ? number("seats", 2, MAX_SEATS, `Enter 2 to ${MAX_SEATS} guests for a group class, or leave it blank for one-on-one.`) : null;
+  const seats = seatsRaw && seatsRaw !== "1" ? number("seats", 2, MAX_SEATS, "seatsRange", { max: MAX_SEATS }) : null;
   if (seats !== null && !errors.seats) {
     // Group classes start free and single-week; paid seats, deposits and repeats come later.
-    if (priceMinor !== null) errors.seats = "Group classes are free for now. Remove the price, or make it one-on-one.";
-    else if (depositMinor !== null) errors.seats = "Group classes can't take a deposit yet. Remove the deposit, or make it one-on-one.";
-    else if (maxRepeats > 1) errors.seats = "Group classes are booked one week at a time for now. Set repeats to 1.";
+    if (priceMinor !== null) fail("seats", "seatsPaid");
+    else if (depositMinor !== null) fail("seats", "seatsDeposit");
+    else if (maxRepeats > 1) fail("seats", "seatsRepeats");
   }
   const redirectUrl = cleanRedirectUrl(form.redirectUrl ?? "");
-  if (redirectUrl === undefined) errors.redirectUrl = "Enter a full https:// address, or leave it blank.";
+  if (redirectUrl === undefined) fail("redirectUrl", "redirectUrl");
 
-  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  if (Object.keys(errors).length > 0) return { ok: false, errors, codes };
   return {
     ok: true,
     value: {
@@ -234,19 +299,31 @@ const QUESTION_KINDS: readonly CustomQuestion["kind"][] = ["short_text", "long_t
 /** Checks each question; the error list lines up with the input list. */
 export function validateQuestions(questions: readonly QuestionDraft[]):
   { ok: true; value: QuestionDraft[] } | { ok: false; errors: QuestionErrors } {
+  const r = checkQuestions(questions);
+  return r.ok ? r : { ok: false, errors: r.errors };
+}
+
+/** validateQuestions plus each message's code. */
+export function checkQuestions(questions: readonly QuestionDraft[]):
+  { ok: true; value: QuestionDraft[] } | { ok: false; errors: QuestionErrors; codes: QuestionErrorCodes } {
   let ok = true;
   const value: QuestionDraft[] = [];
+  const codes: QuestionErrorCodes = [];
   const errors: QuestionErrors = questions.map((q) => {
     const e: QuestionErrors[number] = {};
+    const c: QuestionErrorCodes[number] = {};
+    codes.push(c);
     const label = q.label.trim();
-    if (!label) e.label = "Write the question guests will see.";
-    if (!QUESTION_KINDS.includes(q.kind)) e.label = "Pick a kind of answer.";
+    if (!label) c.label = { code: "questionLabel" };
+    if (!QUESTION_KINDS.includes(q.kind)) c.label = { code: "questionKind" };
     const isSelect = q.kind === "single_select" || q.kind === "multi_select";
     const choices = isSelect ? q.choices.map((c) => c.trim()).filter(Boolean) : [];
-    if (isSelect && choices.length < 2) e.choices = "Add at least two choices, one per line.";
+    if (isSelect && choices.length < 2) c.choices = { code: "questionChoices" };
+    if (c.label) e.label = eventTypeMessage(c.label);
+    if (c.choices) e.choices = eventTypeMessage(c.choices);
     if (e.label || e.choices) ok = false;
     value.push({ id: q.id, label, kind: q.kind, required: q.required, choices });
     return e;
   });
-  return ok ? { ok: true, value } : { ok: false, errors };
+  return ok ? { ok: true, value } : { ok: false, errors, codes };
 }

@@ -93,6 +93,12 @@ export function formatMoney(minor: number, currency: Currency): string {
   return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", { style: "currency", currency, minimumFractionDigits: digits, maximumFractionDigits: 2 }).format(major);
 }
 
+/** The amounts behind a price line, in minor units: the GST-inclusive total only for INR. */
+export function priceParts(plan: PaidPlan, interval: BillingInterval, currency: Currency): { base: number; total: number | null } {
+  const base = PRICES[plan][interval][currency];
+  return { base, total: currency === "USD" ? null : Math.round(base * (1 + GST_RATE)) };
+}
+
 /** The price line shown for a plan: "₹399 + 18% GST = ₹470.82 a month" or "$7 a month". */
 export function priceLine(plan: PaidPlan, interval: BillingInterval, currency: Currency): string {
   const base = PRICES[plan][interval][currency];
