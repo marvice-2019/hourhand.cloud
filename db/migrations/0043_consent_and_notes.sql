@@ -13,7 +13,7 @@ create table consent_records (
   granted boolean not null,
   statement text not null check (length(statement) between 1 and 2000),  -- the words on the page, in their language
   notice_version text not null check (length(notice_version) between 1 and 40),
-  channel text not null check (channel in ('booking_page', 'single_use_link', 'package_link')),
+  channel text not null check (channel in ('booking_page', 'single_use_link', 'package_link', 'host_on_behalf')),  -- host_on_behalf: the host booked for the client
   locale text not null,
   recorded_at timestamptz not null default now()
 );
