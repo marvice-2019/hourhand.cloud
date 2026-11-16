@@ -8,9 +8,11 @@ import { BillingActionError } from "@/lib/billing/account";
 import { cancelAddon, startAddonCheckout } from "@/lib/billing/addons";
 import { getPool } from "@/lib/data/pg-store";
 import { systemResolver } from "@/lib/domains/dns";
-import { addDomain, checkHostDomain, deleteDomain } from "@/lib/domains/service";
+import { addDomain, checkHostDomain, deleteDomain, DOMAIN_SERVICE_MESSAGES } from "@/lib/domains/service";
 import { reconcileTraefik, traefikFromEnv } from "@/lib/domains/traefik";
-import { hostOf } from "@/lib/domains/validate";
+import { DOMAIN_ERRORS, hostOf } from "@/lib/domains/validate";
+import { translator } from "@/lib/i18n/host/lib-messages";
+import { getHostI18n } from "@/lib/i18n/host/server";
 
 // Each action checks the session itself and changes only the signed-in host's own domain (user_id in every query).
 // A Duo second person managing someone else's account is sent away by requireOwnAccount: the domain is the owner's.
@@ -27,13 +29,28 @@ async function syncTls(): Promise<void> {
 
 export type DomainFormState = { status: "idle" } | { status: "error"; error: string };
 
+// The service words its refusals in English; each is shown as the same line in the host's language.
+const say = translator({ ...DOMAIN_ERRORS, ...DOMAIN_SERVICE_MESSAGES }, {
+  empty: "domain.errorEmpty",
+  invalid: "domain.errorInvalid",
+  ip: "domain.errorIp",
+  reserved: "domain.errorReserved",
+  ours: "domain.errorOurs",
+  wildcard: "domain.errorWildcard",
+  too_long: "domain.errorTooLong",
+  no_tld: "domain.errorNoTld",
+  not_entitled: "domain.errorNotEntitled",
+  taken: "domain.errorTaken",
+});
+
 export async function saveDomain(_prev: DomainFormState, form: FormData): Promise<DomainFormState> {
   const user = await requireOwnAccount();
-  if (!authEnabled()) return { status: "error", error: "The demo data can't use a custom domain. Sign in with the database set up." };
+  const { t } = await getHostI18n();
+  if (!authEnabled()) return { status: "error", error: t("domain.demo") };
   const traefik = traefikFromEnv();
-  if (!traefik.ok) return { status: "error", error: "Custom domains are not set up on this server yet." };
+  if (!traefik.ok) return { status: "error", error: t("domain.errorNotSetUp") };
   const result = await addDomain(pool(), user.id, form.get("domain"), { resolver: systemResolver(), appHosts: appHosts() });
-  if (!result.ok) return { status: "error", error: result.message };
+  if (!result.ok) return { status: "error", error: say(t, result.message) };
   await syncTls();
   revalidatePath("/dashboard/domain");
   redirect("/dashboard/domain?saved=1");

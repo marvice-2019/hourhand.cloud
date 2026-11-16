@@ -4,6 +4,7 @@ import { BillingApiError } from "../billing/providers";
 import { NotFoundError } from "../data/types";
 import { parsePrice, PRICE_INVALID } from "../event-types";
 import { invoiceForMembershipGrant } from "../gst/invoices";
+import { fillTemplate } from "../i18n/host/lib-messages";
 import { kickJobs } from "../jobs/kick";
 import { OfferRefusedError, resolvePrice, type AppliedOffer, type ResolvePriceInput } from "../offers/offers";
 import { PackageUnavailableError } from "../packages/packages";
@@ -40,28 +41,39 @@ export interface PlanInput { name: string; sessions: number; priceMinor: number;
 
 export type PlanFormErrors = Partial<Record<"name" | "sessions" | "price" | "rollover" | "rolloverCap" | "eventTypeIds", string>>;
 
+/** Every message validatePlanForm can give, so the dashboard can show it in the host's language (lib-messages.ts). */
+export const MEMBERSHIP_PLAN_MESSAGES = {
+  name: "Give it a name, up to 100 characters.",
+  sessionsRange: "Enter {min} to {max} sessions a month.",
+  priceInvalid: PRICE_INVALID,
+  rollover: "Pick what happens to unused sessions.",
+  capRange: "Enter {min} to {max} sessions.",
+  eventTypesNone: "Pick at least one event type the sessions can be booked for.",
+  eventTypesMax: "Pick up to {max} event types.",
+} as const;
+
 /** Checks the host's membership form. Price in rupees as typed. */
 export function validatePlanForm(form: { name: string; sessions: string; price: string; rollover: string; rolloverCap: string; eventTypeIds: string[] }):
   { ok: true; value: PlanInput } | { ok: false; errors: PlanFormErrors } {
   const errors: PlanFormErrors = {};
   const whole = (raw: string) => (/^\d+$/.test(raw.trim()) ? Number(raw.trim()) : null);
   const name = form.name.trim();
-  if (name.length < 1 || name.length > 100) errors.name = "Give it a name, up to 100 characters.";
+  if (name.length < 1 || name.length > 100) errors.name = MEMBERSHIP_PLAN_MESSAGES.name;
   const sessions = whole(form.sessions);
   const { sessions: s, rolloverCap: c, maxEventTypes } = MEMBERSHIP_LIMITS;
-  if (sessions === null || sessions < s.min || sessions > s.max) errors.sessions = `Enter ${s.min} to ${s.max} sessions a month.`;
+  if (sessions === null || sessions < s.min || sessions > s.max) errors.sessions = fillTemplate(MEMBERSHIP_PLAN_MESSAGES.sessionsRange, { min: s.min, max: s.max });
   const price = parsePrice(form.price);
-  if (price === "invalid" || price === null) errors.price = PRICE_INVALID;
+  if (price === "invalid" || price === null) errors.price = MEMBERSHIP_PLAN_MESSAGES.priceInvalid;
   const rollover = form.rollover as Rollover;
-  if (!["none", "capped", "unlimited"].includes(rollover)) errors.rollover = "Pick what happens to unused sessions.";
+  if (!["none", "capped", "unlimited"].includes(rollover)) errors.rollover = MEMBERSHIP_PLAN_MESSAGES.rollover;
   let rolloverCap: number | null = null;
   if (rollover === "capped") {
     rolloverCap = whole(form.rolloverCap);
-    if (rolloverCap === null || rolloverCap < c.min || rolloverCap > c.max) errors.rolloverCap = `Enter ${c.min} to ${c.max} sessions.`;
+    if (rolloverCap === null || rolloverCap < c.min || rolloverCap > c.max) errors.rolloverCap = fillTemplate(MEMBERSHIP_PLAN_MESSAGES.capRange, { min: c.min, max: c.max });
   }
   const ids = [...new Set(form.eventTypeIds)];
-  if (ids.length === 0 || ids.some((id) => !UUID.test(id))) errors.eventTypeIds = "Pick at least one event type the sessions can be booked for.";
-  else if (ids.length > maxEventTypes) errors.eventTypeIds = `Pick up to ${maxEventTypes} event types.`;
+  if (ids.length === 0 || ids.some((id) => !UUID.test(id))) errors.eventTypeIds = MEMBERSHIP_PLAN_MESSAGES.eventTypesNone;
+  else if (ids.length > maxEventTypes) errors.eventTypeIds = fillTemplate(MEMBERSHIP_PLAN_MESSAGES.eventTypesMax, { max: maxEventTypes });
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return { ok: true, value: { name, sessions: sessions!, priceMinor: price as number, rollover, rolloverCap, eventTypeIds: ids } };
 }

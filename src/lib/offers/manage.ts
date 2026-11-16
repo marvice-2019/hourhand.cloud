@@ -3,6 +3,7 @@ import type pg from "pg";
 import { NotFoundError } from "../data/types";
 import { parsePrice } from "../event-types";
 import { couponUses, type Campaign } from "./offers";
+import { fillTemplate } from "../i18n/host/lib-messages";
 import { CODE_PATTERN, MAX_PERCENT, normaliseCode, type Discount, type SlidingScale } from "./pricing";
 
 // The host's side of offers: forms checked here, and every query takes the signed-in host's id, so another host's
@@ -14,26 +15,47 @@ const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 type Errors = Record<string, string>;
 
+/** Every message the offer forms show, as code -> English template (the dashboard shows the host's language). */
+export const OFFER_FORM_MESSAGES = {
+  percent: "Enter a whole percent from 1 to {max}.",
+  fixed: "Enter the amount off in rupees, like 200 or 199.50.",
+  kind: "Pick percent or a fixed amount.",
+  maxUses: "Total uses: a whole number, at least 1, or leave it empty.",
+  maxUsesPerEmail: "Uses per client: a whole number, at least 1, or leave it empty.",
+  code: "Use 3 to 32 letters, digits, - or _, like DIWALI20.",
+  expiresOn: "Pick today or a later date, or leave it empty.",
+  rupees: "Enter rupees, like 500.",
+  suggested: "The suggested amount has to sit between the lowest and highest.",
+  note: "Keep the explanation under 500 characters.",
+  name: "Give it a short name, up to 60 characters, like Diwali offer.",
+  banner: "Write the banner guests see, up to 200 characters.",
+  startsOn: "Pick the first day.",
+  endsOn: "Pick the last day.",
+  endsPassed: "The last day has already passed.",
+  endsBeforeStart: "The last day can't be before the first.",
+} as const;
+const M = OFFER_FORM_MESSAGES;
+
 /** "percent" with a whole 1 to 90, or "fixed" with rupees as typed. */
 export function parseDiscount(kind: string, raw: string, errors: Errors): Discount | null {
   if (kind === "percent") {
     const n = /^\d{1,2}$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
-    if (!(n >= 1 && n <= MAX_PERCENT)) { errors.value = `Enter a whole percent from 1 to ${MAX_PERCENT}.`; return null; }
+    if (!(n >= 1 && n <= MAX_PERCENT)) { errors.value = fillTemplate(M.percent, { max: MAX_PERCENT }); return null; }
     return { kind, value: n };
   }
   if (kind === "fixed") {
     const p = parsePrice(raw);
-    if (p === null || p === "invalid") { errors.value = "Enter the amount off in rupees, like 200 or 199.50."; return null; }
+    if (p === null || p === "invalid") { errors.value = M.fixed; return null; }
     return { kind, value: p };
   }
-  errors.kind = "Pick percent or a fixed amount.";
+  errors.kind = M.kind;
   return null;
 }
 
-const whole = (raw: string, field: string, label: string, errors: Errors): number | null => {
+const whole = (raw: string, field: "maxUses" | "maxUsesPerEmail", errors: Errors): number | null => {
   const t = raw.trim();
   if (!t) return null;
-  if (!/^\d{1,6}$/.test(t) || Number(t) < 1) { errors[field] = `${label}: a whole number, at least 1, or leave it empty.`; return null; }
+  if (!/^\d{1,6}$/.test(t) || Number(t) < 1) { errors[field] = M[field]; return null; }
   return Number(t);
 };
 
@@ -51,12 +73,12 @@ export function validateCouponForm(form: { code: string; kind: string; value: st
   { ok: true; value: CouponInput } | { ok: false; errors: Errors } {
   const errors: Errors = {};
   const code = normaliseCode(form.code);
-  if (!CODE_PATTERN.test(code)) errors.code = "Use 3 to 32 letters, digits, - or _, like DIWALI20.";
+  if (!CODE_PATTERN.test(code)) errors.code = M.code;
   const discount = parseDiscount(form.kind, form.value, errors);
   const expiresOn = form.expiresOn.trim() || null;
-  if (expiresOn && (!DATE.test(expiresOn) || expiresOn < today)) errors.expiresOn = "Pick today or a later date, or leave it empty.";
-  const maxUses = whole(form.maxUses, "maxUses", "Total uses", errors);
-  const maxUsesPerEmail = whole(form.maxUsesPerEmail, "maxUsesPerEmail", "Uses per client", errors);
+  if (expiresOn && (!DATE.test(expiresOn) || expiresOn < today)) errors.expiresOn = M.expiresOn;
+  const maxUses = whole(form.maxUses, "maxUses", errors);
+  const maxUsesPerEmail = whole(form.maxUsesPerEmail, "maxUsesPerEmail", errors);
   if (Object.keys(errors).length > 0 || !discount) return { ok: false, errors };
   return { ok: true, value: { code, discount, expiresOn, maxUses, maxUsesPerEmail, ...itemLists(form) } };
 }
@@ -144,15 +166,15 @@ export function validateSlidingForm(form: { min: string; suggested: string; max:
   const errors: Errors = {};
   const money = (raw: string, field: string) => {
     const p = parsePrice(raw);
-    if (p === null || p === "invalid") { errors[field] = "Enter rupees, like 500."; return 0; }
+    if (p === null || p === "invalid") { errors[field] = M.rupees; return 0; }
     return p;
   };
   const minMinor = money(form.min, "min"), suggestedMinor = money(form.suggested, "suggested"), maxMinor = money(form.max, "max");
   const note = form.note.trim();
   if (!errors.min && !errors.suggested && !errors.max && !(minMinor <= suggestedMinor && suggestedMinor <= maxMinor)) {
-    errors.suggested = "The suggested amount has to sit between the lowest and highest.";
+    errors.suggested = M.suggested;
   }
-  if (note.length > 500) errors.note = "Keep the explanation under 500 characters.";
+  if (note.length > 500) errors.note = M.note;
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return { ok: true, value: { minMinor, suggestedMinor, maxMinor, note: note || null } };
 }
@@ -187,13 +209,13 @@ export function validateCampaignForm(form: { name: string; banner: string; kind:
   { ok: true; value: CampaignInput } | { ok: false; errors: Errors } {
   const errors: Errors = {};
   const name = form.name.trim(), banner = form.banner.trim(), startsOn = form.startsOn.trim(), endsOn = form.endsOn.trim();
-  if (name.length < 1 || name.length > 60) errors.name = "Give it a short name, up to 60 characters, like Diwali offer.";
-  if (banner.length < 1 || banner.length > 200) errors.banner = "Write the banner guests see, up to 200 characters.";
+  if (name.length < 1 || name.length > 60) errors.name = M.name;
+  if (banner.length < 1 || banner.length > 200) errors.banner = M.banner;
   const discount = parseDiscount(form.kind, form.value, errors);
-  if (!DATE.test(startsOn)) errors.startsOn = "Pick the first day.";
-  if (!DATE.test(endsOn)) errors.endsOn = "Pick the last day.";
-  else if (endsOn < today) errors.endsOn = "The last day has already passed.";
-  else if (DATE.test(startsOn) && endsOn < startsOn) errors.endsOn = "The last day can't be before the first.";
+  if (!DATE.test(startsOn)) errors.startsOn = M.startsOn;
+  if (!DATE.test(endsOn)) errors.endsOn = M.endsOn;
+  else if (endsOn < today) errors.endsOn = M.endsPassed;
+  else if (DATE.test(startsOn) && endsOn < startsOn) errors.endsOn = M.endsBeforeStart;
   if (Object.keys(errors).length > 0 || !discount) return { ok: false, errors };
   return { ok: true, value: { name, banner, discount, startsOn, endsOn, ...itemLists(form) } };
 }

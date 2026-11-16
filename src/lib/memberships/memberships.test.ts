@@ -422,7 +422,8 @@ describe.skipIf(!BASE)("memberships (Postgres)", () => {
   });
 
   describe("offers on the first month", () => {
-    const today = () => new Date().toISOString().slice(0, 10);
+    // Campaigns run by the host's calendar date (Asia/Kolkata), which can be a day ahead of UTC: span the day either side.
+    const day = (offset: number) => new Date(Date.now() + offset * DAY).toISOString().slice(0, 10);
     const invoiceFor = async (subId: string, paymentId: string, amount: number) => ({
       entity: "event", event: "invoice.paid", created_at: unix(new Date()),
       payload: { invoice: { entity: { id: `inv_${Math.random().toString(36).slice(2, 8)}`, subscription_id: subId, payment_id: paymentId, amount_paid: amount, currency: "INR", status: "paid" } } },
@@ -484,7 +485,7 @@ describe.skipIf(!BASE)("memberships (Postgres)", () => {
       const fake = fakeRazorpay();
       const plan = await createMembershipPlan({ pool, provider: fake.provider }, priya.id, input());
       await createCampaign(pool, priya.id, {
-        name: "Diwali", banner: "₹500 off your first month", discount: { kind: "fixed", value: 50_000 }, startsOn: today(), endsOn: today(),
+        name: "Diwali", banner: "₹500 off your first month", discount: { kind: "fixed", value: 50_000 }, startsOn: day(-1), endsOn: day(1),
         eventTypeIds: [], packageIds: [], membershipPlanIds: [plan.id],
       });
       const r = await startMembership({ pool, provider: fake.provider }, { planId: plan.id, ...person() }, { plan: "solo", couponCode: null, now: new Date() });

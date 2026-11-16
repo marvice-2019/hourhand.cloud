@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "./ui/Button";
+import { useHostI18n } from "./HostI18nProvider";
 
 /** Copies the full booking URL for a path like "/priya/coaching" (or a ready `url`) and says "Copied" for 2 seconds. */
-export function CopyLinkButton({ path = "", url, label = "Copy link" }: { path?: string; url?: string; label?: string }) {
+export function CopyLinkButton({ path = "", url, label }: { path?: string; url?: string; label?: string }) {
+  const { t } = useHostI18n();
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
 
   useEffect(() => {
@@ -24,7 +26,7 @@ export function CopyLinkButton({ path = "", url, label = "Copy link" }: { path?:
 
   return (
     <Button variant="secondary" size="sm" onClick={copy}>
-      <span aria-live="polite">{state === "copied" ? "Copied" : state === "failed" ? "Couldn't copy" : label}</span>
+      <span aria-live="polite">{state === "copied" ? t("common.copied") : state === "failed" ? t("common.copyFailed") : (label ?? t("common.copyLink"))}</span>
     </Button>
   );
 }
