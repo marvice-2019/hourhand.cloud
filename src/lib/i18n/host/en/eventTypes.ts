@@ -217,6 +217,11 @@ export const eventTypes = {
   "eventTypes.errDurationsTwice": "{minutes} minutes is listed twice. Give each length once.",
   "eventTypes.errDurationsPriceFirst": "Set the event's price first; a length's own price replaces it for that length.",
   "eventTypes.errDurationsGroup": "A group class runs for one length. Remove the other lengths, or make it one-on-one.",
+  "eventTypes.errConditionParent": "Pick an earlier yes/no or choice question to depend on.",
+  "eventTypes.errConditionChain": "That question is itself shown only sometimes. Pick one that is always asked.",
+  "eventTypes.errConditionValues": "Tick at least one answer that shows this question.",
+  "eventTypes.errRangeNumbers": "Enter the limits as plain numbers, like 0 or 120.",
+  "eventTypes.errRangeOrder": "The lowest number can't be above the highest.",
   // Import messages, one per code in IMPORT_MESSAGES (src/lib/import/messages.ts); the English must match.
   "eventTypes.importMsgTimeout": "{label} took too long to answer. Try again in a minute.",
   "eventTypes.importMsgUnreachable": "Couldn't reach {label} just now. Try again in a minute.",

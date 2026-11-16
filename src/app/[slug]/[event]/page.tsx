@@ -16,6 +16,7 @@ import { hostPlan } from "@/lib/billing/account";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
 import { smsOffered } from "@/lib/sms/offer";
 import { razorpayStatus } from "@/lib/payments/host-razorpay";
+import { toIntakeQuestion } from "@/lib/intake/conditions";
 import { countPageView } from "@/lib/analytics/page-view";
 import { pagePricing } from "@/lib/offers/offers";
 import { discountText } from "@/lib/offers/labels";
@@ -45,7 +46,7 @@ export default async function PublicEventPage({ params, searchParams }: { params
   const langQuery = typeof lang === "string" && lang === locale ? `?lang=${locale}` : "";
   const questions = (await store.listCustomQuestions(host.id, eventType.id))
     .sort((a, b) => a.position - b.position)
-    .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
+    .map(toIntakeQuestion);
   // Packages need Postgres, a paid plan and the host's Razorpay; offered only when a buyer could actually pay.
   const pool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
   const plan = pool ? await hostPlan(pool, host.id) : "free";

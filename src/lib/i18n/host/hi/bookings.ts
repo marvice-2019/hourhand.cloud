@@ -3,18 +3,18 @@ import type { bookings as en } from "../en/bookings";
 export const bookings: Record<keyof typeof en, string> = {
   // List
   "bookings.title": "बुकिंग",
-  "bookings.intro": "जिसने भी आपके साथ समय बुक किया है, सब यहाँ हैं, आने वाली बुकिंग पहले। समय {zone} में।",
+  "bookings.intro": "आपके साथ समय बुक करने वाले सभी लोग, आने वाली बुकिंग सबसे ऊपर। समय {zone} में है।",
   "bookings.empty": "अभी कोई बुकिंग नहीं है। अपना लिंक शेयर करें, बुकिंग यहाँ दिखने लगेंगी।",
   "bookings.dateTime": "{date}, {time}",
   "bookings.statusCancelled": "कैंसल",
   "bookings.statusAwaitingPayment": "पेमेंट बाकी",
-  "bookings.statusDone": "हो गया",
+  "bookings.statusDone": "पूरी हुई",
   "bookings.statusConfirmed": "पक्का",
   "bookings.noShow": "नो-शो",
 
   // One booking
   "bookings.detailTitle": "{name} के साथ बुकिंग",
-  "bookings.returningClient": "पुराने क्लाइंट, सेशन {n}",
+  "bookings.returningClient": "दोबारा आए क्लाइंट, सेशन {n}",
   "bookings.firstSession": "पहला सेशन",
   "bookings.clientHistory": "क्लाइंट की हिस्ट्री और नोट्स",
   "bookings.yourNote": "आपका नोट:",
@@ -39,7 +39,7 @@ export const bookings: Record<keyof typeof en, string> = {
   "bookings.depositRefundPending": "डिपॉज़िट: {amount}, रिफ़ंड हो रहा है",
   "bookings.depositRefunded": "डिपॉज़िट: {amount}, मेहमान को रिफ़ंड हो गया",
   "bookings.depositKept": "डिपॉज़िट: {amount}, नो-शो की वजह से रखा गया",
-  "bookings.depositRefundOn": "{date}, {time} को रिफ़ंड हो जाएगा, जब तक आप उससे पहले नो-शो मार्क न करें।",
+  "bookings.depositRefundOn": "{date}, {time} को रिफ़ंड हो जाएगा, अगर आपने उससे पहले नो-शो मार्क नहीं किया।",
   "bookings.refundStuck": "{provider} ने अभी तक रिफ़ंड स्वीकार नहीं किया ({error})। Hourhand बार-बार कोशिश कर रहा है; अपना {provider} बैलेंस चेक करें।",
   "bookings.phone": "फ़ोन",
 
@@ -89,7 +89,7 @@ export const bookings: Record<keyof typeof en, string> = {
 
   // Changing the booking
   "bookings.changeTitle": "यह बुकिंग बदलें",
-  "bookings.reasonLabel": "{name} के लिए वजह (ज़रूरी नहीं)",
+  "bookings.reasonLabel": "{name} को बताने के लिए वजह (ज़रूरी नहीं)",
   "bookings.alsoCancelNextWeek": "इस सीरीज़ का अगला हफ़्ता भी कैंसल करें",
   "bookings.alsoCancelLaterWeeks": "इस सीरीज़ के बाद वाले {n} हफ़्ते भी कैंसल करें",
   "bookings.cancelNote": "हम {name} को ईमेल कर देंगे कि आपने कैंसल किया है।",
@@ -101,7 +101,7 @@ export const bookings: Record<keyof typeof en, string> = {
   "bookings.yesCancel": "हाँ, कैंसल करें",
   "bookings.keepIt": "रहने दें",
   "bookings.cancelBooking": "बुकिंग कैंसल करें",
-  "bookings.moveBooking": "दूसरे समय पर ले जाएँ",
+  "bookings.moveBooking": "समय बदलें",
   "bookings.pickNewTime": "नया समय चुनें ({zone})",
   "bookings.noFreeTimes": "अगले 14 दिनों में कोई समय खाली नहीं है।",
   "bookings.undoNoShow": "नो-शो हटाएँ",
@@ -110,7 +110,7 @@ export const bookings: Record<keyof typeof en, string> = {
   // Hourhand video (3.11)
   "bookings.videoTitle": "Hourhand video",
   "bookings.videoStart": "कॉल शुरू करें",
-  "bookings.videoHintGuest": "शुरू होने से 15 मिनट पहले खुलता है। आप होस्ट के रूप में जुड़ते हैं और अपने गेस्ट को लॉबी से अंदर लाते हैं।",
+  "bookings.videoHintGuest": "शुरू होने से 15 मिनट पहले खुलता है। आप होस्ट के रूप में जुड़ते हैं और अपने मेहमान को लॉबी से अंदर लाते हैं।",
   "bookings.videoHintClass": "शुरू होने से 15 मिनट पहले खुलता है। आप होस्ट के रूप में जुड़ते हैं और अपनी क्लास को लॉबी से अंदर लाते हैं।",
   "bookings.videoBack": "बुकिंग पर वापस जाएँ",
   "bookings.prepTitle": "सेशन की तैयारी",

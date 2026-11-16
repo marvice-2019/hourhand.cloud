@@ -14,9 +14,10 @@ import { checkOneOff, oneOffSlug } from "./one-off";
 import { queueWaitlistFor } from "../waitlist";
 import { classKeyOf, localDay, weekOf } from "../slots";
 import { queueRefunds } from "../payments/series";
+import { hostDisplayName } from "../display-name";
 import {
   DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type AvailabilityRule, type BookingLink,
-  type BookingWithInvitee, type CreateBookingInput, type DataStore, type EventType, type EventTypeDraft, type Interval, type User,
+  type BookingWithInvitee, type CreateBookingInput, type CustomQuestion, type DataStore, type EventType, type EventTypeDraft, type Interval, type User,
 } from "./types";
 
 const MIN = 60_000;
@@ -36,7 +37,7 @@ export function getPool(databaseUrl: string): pg.Pool {
 }
 
 const USER = "id, email, coalesce(name, '') as name, slug, timezone, time_format, locale, host_locale";
-const toUser = (r: Row): User => ({ id: r.id as string, email: r.email as string, name: r.name as string, slug: r.slug as string, timezone: r.timezone as string, timeFormat: r.time_format as User["timeFormat"], locale: r.locale as string, hostLocale: (r.host_locale as string | null) ?? "en" });
+const toUser = (r: Row): User => ({ id: r.id as string, email: r.email as string, name: hostDisplayName(r.name as string | null, r.email as string), slug: r.slug as string, timezone: r.timezone as string, timeFormat: r.time_format as User["timeFormat"], locale: r.locale as string, hostLocale: (r.host_locale as string | null) ?? "en" });
 
 const EVENT = `id, user_id, schedule_id, name, slug, description, duration_minutes, min_notice_minutes, booking_window_days, start_increment_minutes,
   buffer_before_minutes, buffer_after_minutes, daily_limit, cancel_cutoff_minutes, price_minor, currency, hidden, active, position, kind, max_repeats, deposit_minor, redirect_url, weekly_limit, cancellation_policy, seat_limit, duration_options, duration_prices`;
@@ -348,9 +349,15 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
     async listCustomQuestions(userId, eventTypeId) {
       if (!isId(userId) || !isId(eventTypeId)) return [];
       const { rows } = await pool.query(
-        "select q.id, q.event_type_id, q.label, q.kind, q.required, q.choices, q.position from custom_questions q join event_types e on e.id = q.event_type_id where q.event_type_id = $1 and e.user_id = $2 order by q.position",
+        `select q.id, q.event_type_id, q.label, q.kind, q.required, q.choices, q.position, q.show_if_question_id, q.show_if_values, q.first_booking_only,
+           q.min_value, q.max_value, q.template_id
+         from custom_questions q join event_types e on e.id = q.event_type_id where q.event_type_id = $1 and e.user_id = $2 order by q.position`,
         [eventTypeId, userId]);
-      return rows.map((r) => ({ id: r.id, eventTypeId: r.event_type_id, label: r.label, kind: r.kind, required: r.required, choices: r.choices, position: r.position }));
+      return rows.map((r) => ({
+        id: r.id, eventTypeId: r.event_type_id, label: r.label, kind: r.kind, required: r.required, choices: r.choices, position: r.position,
+        showIf: r.show_if_question_id ? { questionId: r.show_if_question_id, values: r.show_if_values } : null, firstBookingOnly: r.first_booking_only,
+        minValue: r.min_value, maxValue: r.max_value, templateId: r.template_id,
+      }));
     },
     async getDefaultSchedule(userId) {
       const find = () => pool.query(`select ${SCHEDULE} from availability_schedules where user_id = $1 and is_default`, [userId]);
@@ -781,12 +788,22 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
         // Keep a client-sent id only when it already belongs to a question of this event type.
         const own = new Set((await client.query("select id from custom_questions where event_type_id = $1", [eventTypeId])).rows.map((r) => r.id as string));
         await client.query("delete from custom_questions where event_type_id = $1", [eventTypeId]);
-        const saved = [];
+        const saved: CustomQuestion[] = [];
         for (const [position, q] of questions.entries()) {
+          // A condition names an earlier question by list position (validateQuestions checked it); it is stored by id.
+          const showIf = q.showIf && saved[q.showIf.questionIndex] ? { questionId: saved[q.showIf.questionIndex].id, values: [...q.showIf.values] } : null;
+          // A template link is kept only when the template is this host's own.
           const { rows } = await client.query(
-            "insert into custom_questions (id, event_type_id, label, kind, required, choices, position) values (coalesce($1::uuid, gen_random_uuid()),$2,$3,$4,$5,$6,$7) returning id",
-            [q.id !== null && own.has(q.id) ? q.id : null, eventTypeId, q.label, q.kind, q.required, q.choices, position]);
-          saved.push({ id: rows[0].id as string, eventTypeId, label: q.label, kind: q.kind, required: q.required, choices: [...q.choices], position });
+            `insert into custom_questions (id, event_type_id, label, kind, required, choices, position, show_if_question_id, show_if_values, first_booking_only, min_value, max_value, template_id)
+             values (coalesce($1::uuid, gen_random_uuid()),$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
+               (select id from intake_templates where id = $13::uuid and user_id = $14))
+             returning id, template_id`,
+            [q.id !== null && own.has(q.id) ? q.id : null, eventTypeId, q.label, q.kind, q.required, q.choices, position, showIf?.questionId ?? null, showIf?.values ?? [],
+              q.firstBookingOnly === true, q.minValue ?? null, q.maxValue ?? null, q.templateId && isId(q.templateId) ? q.templateId : null, userId]);
+          saved.push({
+            id: rows[0].id as string, eventTypeId, label: q.label, kind: q.kind, required: q.required, choices: [...q.choices], position,
+            showIf, firstBookingOnly: q.firstBookingOnly === true, minValue: q.minValue ?? null, maxValue: q.maxValue ?? null, templateId: rows[0].template_id ?? null,
+          });
         }
         return saved;
       });

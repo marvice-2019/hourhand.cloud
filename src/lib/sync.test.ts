@@ -15,9 +15,12 @@ describe("summarizeSync", () => {
     expect(summarizeSync([{ status: "degraded", lastSyncedAt: ago(1) }], now).status).toBe("degraded");
   });
 
-  it("reports disconnected when any connection is down, or none exist", () => {
+  it("reports disconnected when any connection is down", () => {
     expect(summarizeSync([{ status: "ok", lastSyncedAt: ago(1) }, { status: "disconnected", lastSyncedAt: null }], now))
       .toEqual({ status: "disconnected", minutesAgo: null });
-    expect(summarizeSync([], now).status).toBe("disconnected");
+  });
+
+  it("reports none, not disconnected, when no calendar is connected (bookings are not paused then)", () => {
+    expect(summarizeSync([], now)).toEqual({ status: "none", minutesAgo: null });
   });
 });

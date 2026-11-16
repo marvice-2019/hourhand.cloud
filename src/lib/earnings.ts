@@ -1,7 +1,9 @@
 import type pg from "pg";
 
 // A host's month in money and sessions (India time). Read straight from payments, package purchases, invoices and
-// bookings, so it always agrees with them. Money is in paise.
+// bookings, so it always agrees with them. The figures are in the host's currency (INR on Razorpay, the Stripe
+// account's otherwise), in minor units; money taken in any other currency (say, before switching provider) is reported
+// per currency in otherCurrencies and never added to them.
 
 type Db = Pick<pg.Pool, "query">;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -30,10 +32,14 @@ export interface MonthlyEarnings {
   netMinor: number;
   /** GST on this month's invoices, less credit notes; part of net, owed to the government. */
   gstMinor: number;
-  /** An estimate of Razorpay's fee on what came in (2% + 18% GST); the settlement report is the real figure. 0 for Stripe hosts. */
+  /** The provider's fees as charged (tax included) on money captured this month, where Razorpay or Stripe has reported them. */
+  feesMinor: number;
+  /** An estimate (2% + 18% GST) for INR money whose real fee isn't in yet; 0 once every fee is known, and for Stripe hosts. */
   feeEstimateMinor: number;
   sessions: { held: number; noShows: number; cancelledByGuest: number; cancelledByHost: number; upcoming: number };
   byEventType: EarningsLine[];
+  /** Net received per other currency (prices + packages + kept deposits − refunds), in that currency's minor units. */
+  otherCurrencies: { currency: string; netMinor: number }[];
 }
 
 /** The month's bounds in UTC for "YYYY-MM" in India time; null if it isn't a month. */
@@ -50,10 +56,9 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
   const range = monthRange(month);
   if (!range || !UUID.test(hostId)) return null;
   const { from, to } = range;
-  // Money in one currency only, so totals never add rupees to dollars (a host who switched providers sees each month in
-  // the currency they take payments in now).
+  // Money in one currency only, so totals never add rupees to dollars.
   const args = [hostId, from, to, currency];
-  const [money, refunds, packages, kept, held, gst, sessions, byBooking, byPackage] = await Promise.all([
+  const [money, refunds, packages, kept, held, gst, sessions, byBooking, byPackage, others, fees] = await Promise.all([
     db.query(`select coalesce(sum(amount_minor), 0)::bigint as total from payments
               where host_id = $1 and currency = $4 and kind = 'payment' and paid_at >= $2 and paid_at < $3 and status in ('paid', 'refund_pending', 'refunded')`, args),
     // A refund's month is when it was recorded. Some weeks of a paid series refunded on their own are dated in
@@ -81,6 +86,33 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
               where p.host_id = $1 and p.currency = $4 and p.kind = 'payment' and p.paid_at >= $2 and p.paid_at < $3 and p.status in ('paid', 'refund_pending', 'refunded') group by e.id, e.name`, args),
     db.query(`select e.id, e.name, coalesce(sum(k.price_minor), 0)::bigint as total from package_purchases k join event_types e on e.id = k.event_type_id
               where k.host_id = $1 and k.currency = $4 and k.status = 'paid' and k.paid_at >= $2 and k.paid_at < $3 group by e.id, e.name`, args),
+    // Everything not in rupees, by currency, on the same rules as the rupee figures above.
+    db.query(`select currency, sum(amount)::bigint as total from (
+                select currency, amount_minor as amount from payments
+                  where host_id = $1 and kind = 'payment' and paid_at >= $2 and paid_at < $3 and status in ('paid', 'refund_pending', 'refunded')
+                union all select p.currency, -(p.refunded_minor - coalesce((select sum(r.amount_minor) from payment_refunds r where r.payment_id = p.id), 0)) from payments p
+                  where p.host_id = $1 and p.kind = 'payment' and p.status = 'refunded' and p.refunded_at >= $2 and p.refunded_at < $3
+                union all select p.currency, -r.amount_minor from payment_refunds r join payments p on p.id = r.payment_id
+                  where p.host_id = $1 and p.kind = 'payment' and r.refunded_at >= $2 and r.refunded_at < $3
+                union all select currency, price_minor from package_purchases where host_id = $1 and status = 'paid' and paid_at >= $2 and paid_at < $3
+                union all select p.currency, p.amount_minor from payments p join bookings b on b.id = p.booking_id join invitees i on i.booking_id = b.id
+                  where p.host_id = $1 and p.kind = 'deposit' and p.status = 'paid' and i.no_show_at is not null and b.start_at >= $2 and b.start_at < $3
+              ) m where upper(currency) <> upper($4) group by currency order by currency`, args),
+    // Razorpay's real fees on rupee money captured this month (refunded or not: a refund doesn't give the fee back), and
+    // the income whose fee isn't known yet, which is all that gets estimated.
+    db.query(`select coalesce(sum(fee), 0)::bigint as fees, coalesce(sum(unknown), 0)::bigint as unknown from (
+                select fee_minor as fee, 0 as unknown from payments
+                  where host_id = $1 and currency = $4 and fee_minor is not null and status in ('paid', 'refund_pending', 'refunded') and paid_at >= $2 and paid_at < $3
+                union all select fee_minor, 0 from package_purchases
+                  where host_id = $1 and currency = $4 and fee_minor is not null and status = 'paid' and paid_at >= $2 and paid_at < $3
+                union all select 0, amount_minor from payments
+                  where host_id = $1 and currency = $4 and kind = 'payment' and fee_minor is null and status in ('paid', 'refund_pending', 'refunded') and paid_at >= $2 and paid_at < $3
+                union all select 0, price_minor from package_purchases
+                  where host_id = $1 and currency = $4 and fee_minor is null and status = 'paid' and paid_at >= $2 and paid_at < $3
+                union all select 0, p.amount_minor from payments p join bookings b on b.id = p.booking_id join invitees i on i.booking_id = b.id
+                  where p.host_id = $1 and p.currency = $4 and p.kind = 'deposit' and p.fee_minor is null and p.status = 'paid' and i.no_show_at is not null
+                    and b.start_at >= $2 and b.start_at < $3
+              ) f`, args),
   ]);
   const n = (r: { rows: { total: string | number }[] }) => Number(r.rows[0].total);
   const bookingsMinor = n(money), packagesMinor = n(packages), refundsMinor = n(refunds), depositsKeptMinor = n(kept);
@@ -90,12 +122,15 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
   for (const r of byPackage.rows) line(r.id, r.name).packagesMinor = Number(r.total);
   const s = sessions.rows[0];
   const received = bookingsMinor + packagesMinor + depositsKeptMinor;
+  const unknownFeeMinor = Number(fees.rows[0].unknown);
   return {
     month, currency, bookingsMinor, packagesMinor, refundsMinor, depositsKeptMinor, depositsHeldMinor: n(held),
     netMinor: received - refundsMinor, gstMinor: n(gst),
-    feeEstimateMinor: currency === "INR" ? Math.round((received * RAZORPAY_FEE_BP * 1.18) / 10_000) : 0,
+    feesMinor: Number(fees.rows[0].fees),
+    feeEstimateMinor: currency === "INR" ? Math.round((unknownFeeMinor * RAZORPAY_FEE_BP * 1.18) / 10_000) : 0,
     sessions: { held: s.held, noShows: s.no_shows, cancelledByGuest: s.by_guest, cancelledByHost: s.by_host, upcoming: s.upcoming },
     byEventType: [...lines.values()].sort((a, b) => b.bookingsMinor + b.packagesMinor - (a.bookingsMinor + a.packagesMinor)),
+    otherCurrencies: others.rows.map((r) => ({ currency: String(r.currency).toUpperCase(), netMinor: Number(r.total) })).filter((o) => o.netMinor !== 0),
   };
 }
 
@@ -117,7 +152,7 @@ export async function queueMonthlyReports(db: Db, now: Date): Promise<number> {
   return rowCount ?? 0;
 }
 
-/** The report as CSV rows for an accountant: one line per figure, in the report's currency with two decimals. */
+/** The report as CSV rows for an accountant: one line per figure in the report's currency, two decimals; other currencies on their own lines. */
 export function earningsCsv(e: MonthlyEarnings): string {
   const r = (m: number) => (m / 100).toFixed(2);
   const cell = (v: string) => (/[",\n\r]/.test(v) || /^[=+\-@\t\r]/.test(v) ? `"${(/^[=+\-@\t\r]/.test(v) ? `'${v}` : v).replace(/"/g, '""')}"` : v);
@@ -125,10 +160,14 @@ export function earningsCsv(e: MonthlyEarnings): string {
   const value = (v: string) => (/^-?\d+(\.\d+)?$/.test(v) ? v : cell(v));
   const rows = [
     ["Month", e.month], ["Currency", e.currency], ["Bookings paid", r(e.bookingsMinor)], ["Packages paid", r(e.packagesMinor)], ["Deposits kept (no-shows)", r(e.depositsKeptMinor)],
-    ["Refunds", r(-e.refundsMinor)], ["Net received", r(e.netMinor)], ...(e.currency === "INR" ? [["of which GST", r(e.gstMinor)], ["Razorpay fee (estimate)", r(e.feeEstimateMinor)]] : []),
+    ["Refunds", r(-e.refundsMinor)], ["Net received", r(e.netMinor)],
+    ...(e.currency === "INR"
+      ? [["of which GST", r(e.gstMinor)], ["Razorpay fees (as charged)", r(e.feesMinor)], ["Razorpay fees (estimated until reported)", r(e.feeEstimateMinor)]]
+      : [["Stripe fees (as charged)", r(e.feesMinor)]]),
     ["Deposits still held", r(e.depositsHeldMinor)], ["Sessions held", String(e.sessions.held)], ["No-shows", String(e.sessions.noShows)],
     ["Cancelled by guest", String(e.sessions.cancelledByGuest)], ["Cancelled by you", String(e.sessions.cancelledByHost)],
     ...e.byEventType.map((l) => [`${l.eventName}`, r(l.bookingsMinor + l.packagesMinor)]),
+    ...e.otherCurrencies.map((o) => [`Net received in ${o.currency} (not in the figures above)`, r(o.netMinor)]),
   ];
   return ["Item,Value", ...rows.map(([k, v]) => `${cell(k)},${value(v)}`)].join("\r\n") + "\r\n";
 }

@@ -65,6 +65,7 @@ export const mail = {
   "mail.rBookings": "Bookings",
   "mail.rPackages": "Packages",
   "mail.rRefunds": "Refunds",
+  "mail.rAlsoIn": "Also received in {currency}",
   "mail.rHeld": "Sessions held",
   "mail.rNoShows": "No-shows",
   "mail.lFullReport": "See the full report",
