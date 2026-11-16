@@ -63,7 +63,7 @@ If you want mail sent **to** booking@hourhand.cloud to arrive somewhere, add a m
 
 ## 5. Environment variables (Coolify → app → Environment)
 
-Generate the two random values on your own machine with `openssl rand -hex 32` (once each). **Keep `TOKEN_ENCRYPTION_KEY` in your password manager and never change it:** every connected calendar and every host's Razorpay key is sealed with it, so a new key disconnects them all.
+Generate the two random values on your own machine with `openssl rand -hex 32` (once each). **Keep `TOKEN_ENCRYPTION_KEY` in your password manager and never change it:** every connected calendar, every host's Razorpay key and every private client and session note is sealed with it, so a new key disconnects them all and makes notes unreadable.
 
 | Name | Value | Required |
 | --- | --- | --- |
@@ -80,12 +80,13 @@ Generate the two random values on your own machine with `openssl rand -hex 32` (
 | `STRIPE_SECRET_KEY`, `STRIPE_CONNECT_WEBHOOK_SECRET` | from Stripe (sandbox first), Runtime only | for hosts outside India taking payments through Stripe Connect. Both are needed; without them the Stripe option on Integrations says "not set up on this server" |
 | other `STRIPE_*` | only if you get Stripe for Hourhand plans (see backend.md) | no |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | from Entra (section 6) | for Outlook and Sign in with Microsoft |
+| `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ZOOM_WEBHOOK_SECRET` | from the Zoom app (section 6b), as **Runtime** variables | for Zoom links |
 | `TRUSTED_PROXIES` | leave unset (defaults cover Coolify's Docker network) | no |
 | `RAZORPAY_PLAN_DOMAIN_MONTH` | the Razorpay Plan id of the custom-domain add-on (section 5c) | for custom domains |
 | `TRAEFIK_DYNAMIC_DIR` | `/traefik-dynamic` (the mount in section 5c) | for custom domains |
 | `HOURHAND_UPSTREAM_URL` | `http://hourhand-app:3000` (section 5c) | for custom domains |
 
-Never set `HOURHAND_ALLOW_MEMORY`, `HOURHAND_MAIL_TO_LOG`, `HOURHAND_E2E`, `GOOGLE_API_BASE_URL`, `RAZORPAY_API_BASE_URL`, `STRIPE_API_BASE_URL`, `MICROSOFT_LOGIN_BASE_URL`, `MICROSOFT_GRAPH_BASE_URL` or `ICLOUD_CALDAV_URL` in production; they exist for local testing only.
+Never set `HOURHAND_ALLOW_MEMORY`, `HOURHAND_MAIL_TO_LOG`, `HOURHAND_E2E`, `GOOGLE_API_BASE_URL`, `RAZORPAY_API_BASE_URL`, `STRIPE_API_BASE_URL`, `MICROSOFT_LOGIN_BASE_URL`, `MICROSOFT_GRAPH_BASE_URL`, `ZOOM_OAUTH_BASE_URL`, `ZOOM_API_BASE_URL` or `ICLOUD_CALDAV_URL` in production; they exist for local testing only.
 
 iCloud calendars need no server keys: each host connects with their own Apple ID and app-specific password, sealed with `TOKEN_ENCRYPTION_KEY`.
 
@@ -561,6 +562,19 @@ Done 2026-10-13: the Entra app is registered and `MICROSOFT_CLIENT_ID` and `MICR
 Teams links only work for work or school Microsoft 365 accounts; personal Outlook.com accounts get Outlook calendar sync but no Teams link.
 
 **Action needed:** a client secret value was pasted into chat on 2026-10-11. Delete it in Entra and create a new one (step 4).
+
+## 6b. Zoom app (2.4: a Zoom link for every Zoom booking)
+
+Not done yet. Until `ZOOM_CLIENT_ID` and `ZOOM_CLIENT_SECRET` are set, the Zoom option still saves, the editor says "Zoom isn't set up on this server", and Zoom bookings get no link.
+
+1. [marketplace.zoom.us](https://marketplace.zoom.us) → Develop → Build App → **General App**, **User-managed** (each host authorises their own Zoom account). Name `Hourhand`.
+2. Basic Information → OAuth Information: redirect URL `https://hourhand.cloud/api/integrations/zoom/callback`. Add the same URL to the **OAuth allow list**, plus `http://localhost:3000/api/integrations/zoom/callback` for development. Copy **Client ID** and **Client Secret** into Coolify as `ZOOM_CLIENT_ID` and `ZOOM_CLIENT_SECRET` (Runtime variables, not build-time).
+3. Scopes: `meeting:write:meeting`, `meeting:update:meeting`, `meeting:delete:meeting`, `user:read:user`. Nothing else. A host who unticks one is sent back with "Zoom didn't grant the permission to create meetings".
+4. Features → Access → **Event Subscription** on: add the endpoint `https://hourhand.cloud/api/webhooks/zoom`, subscribe to **App Deauthorized** (under Marketplace / App). Copy the **Secret Token** into Coolify as `ZOOM_WEBHOOK_SECRET`. Zoom checks the URL when you save it; Hourhand answers that check once the variable is set and the app redeployed.
+5. Redeploy. Integrations → Connect Zoom with your own Zoom account; make a test booking on an event type set to Zoom and check the link in the confirmation email, the calendar invite and the booking page. Reschedule it (same link, new time in Zoom) and cancel it (meeting gone from Zoom).
+6. Until the app is **published** on the Zoom Marketplace, only users on the Zoom account that owns the app can connect, and Zoom sends the deauthorization notice only for published apps. A handful of outside hosts can test it first through Zoom's beta sharing (Beta Test → Request to share; Zoom approves it, for limited users and time). For every host to connect, submit it for Marketplace review: listing, privacy policy (`https://hourhand.cloud/privacy`), terms, support URL, a test plan linked in the release notes, a test account, and the Technical Design Document. Sources: https://developers.zoom.us/docs/distribute/sharing-private-and-beta-apps/ and https://developers.zoom.us/docs/distribute/app-submission/common-rejection-issues/
+
+What hosts get: each Zoom booking gets its own scheduled meeting in the host's Zoom (waiting room on, join before host off, passcode per the host's Zoom setting, topic "event name with guest name"). Group class seats share one meeting. Zoom's limit is 100 meetings created or updated per host per day.
 
 ## 7. Watch it (first week)
 

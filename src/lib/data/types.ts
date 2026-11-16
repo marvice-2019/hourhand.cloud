@@ -1,3 +1,5 @@
+import type { ConsentInput } from "../privacy/consent";
+
 // Entities mirror docs/schema.sql (snake_case columns -> camelCase fields). Times are UTC Date objects.
 
 export type Interval = { from: string; to: string }; // "HH:MM" wall time in the schedule's zone
@@ -210,7 +212,9 @@ export interface CreateBookingInput {
   weeks?: number;
   /** Pay with a session package (its buyer's token): one credit per booking, checked and used in the same write. Postgres only. */
   packageToken?: string;
-  invitee: { name: string; email: string; timezone: string; phone: string | null; answers: InviteeAnswer[]; guests?: string[]; locale?: string; whatsappOptIn?: boolean; smsOptIn?: boolean };
+  invitee: { name: string; email: string; timezone: string; phone: string | null; answers: InviteeAnswer[]; guests?: string[]; locale?: string; whatsappOptIn?: boolean; smsOptIn?: boolean;
+    /** The consent log lines to record with each booking this makes (see src/lib/privacy/consent.ts). Postgres only; a move records none. */
+    consent?: ConsentInput[] };
 }
 
 export type BookingLinkState = "open" | "used" | "expired" | "revoked";
@@ -358,8 +362,12 @@ export interface DataStore {
   markRunningLate(manageToken: string, minutes: number, now: Date): Promise<BookingWithInvitee>;
   /** The host's private note about a client (by email, any case); "" when none. */
   getClientNote(hostId: string, email: string): Promise<string>;
-  /** Saves it; an empty note removes it. */
+  /** Saves it; an empty note removes it. Postgres seals it (AES-256-GCM, TOKEN_ENCRYPTION_KEY) before it is stored. */
   saveClientNote(hostId: string, email: string, note: string): Promise<void>;
+  /** The host's private session note on one of their bookings; "" when none or not theirs. */
+  getBookingNote(hostId: string, bookingId: string): Promise<string>;
+  /** Saves it, sealed like client notes; an empty note removes it. Throws NotFoundError unless the booking is `hostId`'s. */
+  saveBookingNote(hostId: string, bookingId: string, note: string): Promise<void>;
   /**
    * A hidden one_off event type at the given times, with a single-use link to it that expires at the last time; all in one
    * write. Throws InvalidOneOffError unless there are 1–20 distinct future times and the duration is 5–720 minutes.
