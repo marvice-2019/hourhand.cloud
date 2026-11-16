@@ -10,15 +10,27 @@ import { getPool } from "@/lib/data/pg-store";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
 import { purchaseByToken, purchaseSessions } from "@/lib/packages/packages";
+import { requestPaymentDeps } from "@/lib/payments/request-deps";
+import { settleStripeSession } from "@/lib/payments/stripe-checkout";
 
 export const dynamic = "force-dynamic";
 
 /** The buyer's own page for a session package: what's left, until when, their sessions, and booking the next one. */
-export default async function PackagePage({ params }: { params: Promise<{ token: string }> }) {
+export default async function PackagePage({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ session_id?: string }> }) {
   const { token } = await params;
+  const { session_id: sessionId } = await searchParams;
   const db = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
-  const purchase = db ? await purchaseByToken(db, token) : null;
+  let purchase = db ? await purchaseByToken(db, token) : null;
   if (!purchase) notFound();
+  // Back from Stripe Checkout: confirmed only once the session, read back from Stripe as the host's account, matches.
+  if (purchase.status === "pending" && typeof sessionId === "string") {
+    const stripe = requestPaymentDeps()?.stripe;
+    const { rows: [mine] } = await db!.query("select 1 from package_purchases where id = $1 and provider = 'stripe' and provider_order_id = $2", [purchase.id, sessionId]);
+    if (stripe && mine) {
+      await settleStripeSession(stripe.deps, sessionId, new Date()).catch((error) => console.error("[payments] Stripe return check failed", (error as Error).message));
+      purchase = (await purchaseByToken(db!, token)) ?? purchase;
+    }
+  }
   const [host, eventType] = await Promise.all([store.getUser(purchase.hostId), store.getEventType(purchase.hostId, purchase.eventTypeId)]);
   if (!host || !eventType) notFound();
   const now = new Date();

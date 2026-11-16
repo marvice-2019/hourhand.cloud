@@ -149,6 +149,15 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
         body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), locale }),
       });
       const body = await res.json();
+      if ((res.status === 201 || res.status === 200) && body.payment?.provider === "stripe" && typeof body.payment.url === "string") {
+        // Stripe Checkout on the host's account. It can't run inside a frame, so an embedded booking page opens it in a new tab
+        // and shows the held booking here; Stripe brings the guest back to the booked page, which checks the payment.
+        if (window.top !== window.self) {
+          window.open(body.payment.url, "_blank", "noopener");
+          router.push(`/${slug}/${event}/booked/${body.bookingId}${langQuery}`);
+        } else window.location.assign(body.payment.url);
+        return;
+      }
       if ((res.status === 201 || res.status === 200) && body.payment) {
         setBusy(false);
         const prefill = { name: String(data.get("name") ?? ""), email: String(data.get("email") ?? ""), ...(data.get("phone") ? { contact: String(data.get("phone")) } : {}) };

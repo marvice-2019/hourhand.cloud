@@ -63,7 +63,7 @@ await pool.query("insert into subscriptions (user_id, plan, interval, provider, 
 const pj = await signIn(priya.email);
 let res = await submitForm(pj, "/dashboard/integrations", 'name="keyId"', { keyId: "rzp_test_e2ehost1234", keySecret: "e2e-host-key" });
 check(res?.status === 303, "Razorpay keys connected");
-const { rows: [coaching] } = await pool.query("update event_types set deposit_minor = 20000 where user_id = $1 and slug = 'coaching' returning id", [priya.id]);
+const { rows: [coaching] } = await pool.query("update event_types set deposit_minor = 20000, currency = 'INR' where user_id = $1 and slug = 'coaching' returning id", [priya.id]);
 const page = await (await get("/priya/coaching")).text();
 check(page.includes("₹200 refundable deposit"), "booking page explains the ₹200 refundable deposit");
 

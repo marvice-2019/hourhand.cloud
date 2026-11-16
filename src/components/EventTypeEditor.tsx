@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { currencyLabel } from "@/lib/money";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
 import { deleteEventType, saveEventType } from "@/app/dashboard/event-types/actions";
@@ -56,9 +57,12 @@ export interface EventTypeEditorProps {
   initialQuestions: QuestionDraft[];
   /** Shows "Saved" on arrival, after creating a new event type. */
   justSaved?: boolean;
+  /** The currency prices are saved in (the host's payment provider's), and which provider takes them. */
+  currency?: string;
+  provider?: "razorpay" | "stripe" | null;
 }
 
-export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justSaved = false }: EventTypeEditorProps) {
+export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justSaved = false, currency = "INR", provider = null }: EventTypeEditorProps) {
   const router = useRouter();
   const [tab, setTab] = useState<TabId>("details");
   const [form, setForm] = useState(initial);
@@ -219,21 +223,21 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
           ) : errors.durationMinutes && <p className="mt-1 text-sm text-danger">{errors.durationMinutes}</p>}
         </fieldset>
         <div>
-          <Label htmlFor="f-price">Price (₹)</Label>
+          <Label htmlFor="f-price">Price ({currencyLabel(currency)})</Label>
           <Input
             id="f-price" inputMode="decimal" value={form.price} onChange={(e) => set("price")(e.target.value)} error={errors.price}
             aria-describedby="f-price-hint" className="max-w-32" placeholder="Free"
           />
-          <p id="f-price-hint" className="mt-1 text-sm text-text-muted">Leave empty for a free event. Razorpay&apos;s fee comes out of what you receive.</p>
+          <p id="f-price-hint" className="mt-1 text-sm text-text-muted">Leave empty for a free event. {provider === "stripe" ? "Stripe" : "Razorpay"}&apos;s fee comes out of what you receive.</p>
           {errors.price && (
             <div className="flex flex-wrap gap-x-4">
               <Link href="/dashboard/plan" className="inline-flex min-h-11 items-center font-semibold text-accent underline">See plans</Link>
-              <Link href="/dashboard/integrations" className="inline-flex min-h-11 items-center font-semibold text-accent underline">Connect Razorpay</Link>
+              <Link href="/dashboard/integrations" className="inline-flex min-h-11 items-center font-semibold text-accent underline">Connect payments</Link>
             </div>
           )}
         </div>
         <div>
-          <Label htmlFor="f-deposit">No-show deposit (₹)</Label>
+          <Label htmlFor="f-deposit">No-show deposit ({currencyLabel(currency)})</Label>
           <Input
             id="f-deposit" inputMode="decimal" value={form.deposit} onChange={(e) => set("deposit")(e.target.value)} error={errors.deposit}
             aria-describedby="f-deposit-hint" className="max-w-32" placeholder="None"
