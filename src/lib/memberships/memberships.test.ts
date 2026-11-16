@@ -18,6 +18,7 @@ import {
 } from "./memberships";
 import { parseRazorpayMembershipEvent, razorpayMembershipProvider } from "./provider";
 import { handleMembershipWebhook, webhookSecret } from "./webhook";
+import { eraseClient, exportClient } from "../privacy/rights";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const DAY = 86_400_000;
@@ -375,5 +376,26 @@ describe.skipIf(!BASE)("memberships (Postgres)", () => {
     const headers = new Headers({ "x-razorpay-signature": "00" });
     expect(await handleMembershipWebhook(pool, key, "6f1c2d3e-0000-4000-8000-000000000001", "{}", headers, new Date())).toMatchObject({ status: 404 });
     expect(await deliver(charge("sub_not_ours", new Date()))).toMatchObject({ status: 200, body: { outcome: "ignored" } });
+  });
+
+  it("a client's data export lists their membership; erasing waits until it can't charge them, then anonymises it", async () => {
+    const fake = fakeRazorpay();
+    const plan = await createMembershipPlan({ pool, provider: fake.provider }, priya.id, input());
+    const { token, subId } = await joined(plan, fake);
+    const start = new Date(Date.now() - 5 * DAY);
+    await deliver(charge(subId, start, 600_000, start), { now: start });
+    const m = (await membershipByToken(pool, token))!;
+    const x = (await exportClient(pool, priya.id, m.guestEmail, { includeNotes: false, key: () => key, now: new Date() }))!;
+    expect(x.memberships).toEqual([expect.objectContaining({ plan: "Coaching Plus", sessionsPerMonth: 4, status: "active", name: m.guestName, email: m.guestEmail })]);
+    expect(x.memberships[0].charges).toHaveLength(1);
+    // Still renewing: erasing would leave them billed with no link to stop it.
+    await expect(eraseClient(pool, priya.id, priya.id, m.guestEmail, new Date())).rejects.toMatchObject({ reason: "payments_settling" });
+    await deliver(subEvent("subscription.cancelled", subId, "cancelled", start));
+    await eraseClient(pool, priya.id, priya.id, m.guestEmail, new Date());
+    expect(await membershipByToken(pool, token)).toBeNull(); // the old link is dead
+    const { rows: [after] } = await pool.query("select guest_name, guest_email, guest_phone, (select count(*)::int from membership_grants where membership_id = $1) as charges from memberships where id = $1", [m.id]);
+    expect(after.guest_email).not.toBe(m.guestEmail);
+    expect(after.guest_name).not.toBe(m.guestName);
+    expect(after).toMatchObject({ guest_phone: null, charges: 1 }); // the paid months stay
   });
 });
