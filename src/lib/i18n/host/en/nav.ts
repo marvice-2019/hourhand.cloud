@@ -18,6 +18,7 @@ export const nav = {
   "nav.calendars": "Calendars",
   "nav.integrations": "Integrations",
   "nav.domain": "Custom domain",
+  "nav.voice": "Phone receptionist",
   "nav.plan": "Plan",
   "nav.settings": "Settings",
   "nav.main": "Main",

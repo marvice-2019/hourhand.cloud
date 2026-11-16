@@ -11,6 +11,7 @@ import type { Mail } from "../mail/mailer";
 import { keyPairAuth } from "../payments/host-razorpay";
 import { razorpayOrders } from "../payments/razorpay-orders";
 import { createRateLimiter } from "../rate-limit";
+import { agentConfig } from "./agent-config";
 import { mintToolKey } from "./auth";
 import { DEFAULT_RATES } from "./cost";
 import { closeCall, listMessages, rotateKey, saveVoiceSettings } from "./store";
@@ -146,6 +147,14 @@ describe.skipIf(!BASE)("phone receptionist (Postgres)", () => {
       await saveVoiceSettings(pool, ravi.id, { enabled: false });
       expect(await call(ravi, "get_services", {})).toMatchObject({ status: 403, body: { error: "voice_off" } });
       await saveVoiceSettings(pool, ravi.id, { enabled: true });
+    });
+
+    it("stops when the add-on has lapsed, at call start and in every tool", async () => {
+      const lapsed = deps({ hasAddon: async () => false });
+      expect(await call(meera, "get_services", {}, new Date(), lapsed)).toMatchObject({ status: 403, body: { error: "voice_off", end_call: true } });
+      const r = await handleCallStart({ ...hooks(), hasAddon: async () => false }, "init", "Bearer init", { agent_id: "agent_meera" }, new Date());
+      expect((r.body as { dynamic_variables: Record<string, string> }).dynamic_variables.voice_allowed).toBe("no");
+      expect((await call(meera, "get_services", {}, new Date(), deps({ hasAddon: async () => true }))).status).toBe(200);
     });
 
     it("answers unknown tools with 404", async () => {
@@ -347,8 +356,11 @@ describe.skipIf(!BASE)("phone receptionist (Postgres)", () => {
 
       expect((await call(capped, "get_services", {})).status).toBe(200);
       const start = (await handleCallStart(hooks(), "init", "Bearer init", { agent_id: "agent_capped", caller_id: "+919876500010" }, now)).body as { dynamic_variables: Record<string, string> };
-      expect(start.dynamic_variables).toMatchObject({ voice_allowed: "yes", host_name: "Dr capped", recording: "off" });
+      expect(start.dynamic_variables).toMatchObject({ voice_allowed: "yes", host_name: "Dr capped", recording: "off", recording_rule: expect.stringMatching(/not recorded/) });
       expect(start.dynamic_variables.opening_en).toMatch(/automated assistant/);
+      // ElevenLabs wants every variable the agent defines back from this webhook.
+      const defined = agentConfig({ hostName: "x", hostSlug: "x", recordingEnabled: false }).conversation_config.agent.dynamic_variables.dynamic_variable_placeholders;
+      expect(Object.keys(start.dynamic_variables).sort()).toEqual(Object.keys(defined).sort());
 
       await closeCall(pool, { hostId: capped.id, conversationId: nextConv(), callerPhone: null, startedAt: now, durationSecs: 90, costPaise: 0 }); // 10 min
       expect(await call(capped, "get_services", {})).toMatchObject({ status: 403, body: { error: "cap_reached", end_call: true } });

@@ -2,20 +2,8 @@
 // the model ignores it: tools only ever answer from the host's public info, refuse to book without a read-back, and
 // hand the caller to the host after repeated failures.
 
-/** Failed attempts on one call (no free time, time taken, bad details) before the caller is handed to the host. */
-export const MAX_FAILED_ATTEMPTS = 2;
-
-/** Every call starts with this, in the caller's language, before anything else is said. */
-export const DISCLOSURE = {
-  en: (host: string) => `Hello, you've reached ${host}. I'm an automated assistant and I can help you book a session or take a message.`,
-  hi: (host: string) => `नमस्ते, आपने ${host} को कॉल किया है। मैं एक स्वचालित सहायक हूँ। मैं आपकी अपॉइंटमेंट बुक कर सकती हूँ या संदेश ले सकती हूँ।`,
-} as const;
-
-/** Added to the opening line only when the host turned recording on. */
-export const RECORDING_NOTICE = {
-  en: "This call is recorded so the practice can review it.",
-  hi: "यह कॉल रिकॉर्ड की जा रही है ताकि बाद में इसे देखा जा सके।",
-} as const;
+// The opening lines and the failure limit live with the agent config (which scripts/ loads without the app's imports).
+export { DISCLOSURE, MAX_FAILED_ATTEMPTS, RECORDING_NOTICE } from "./agent-config";
 
 /** Health words (English, Hindi, Hinglish) that mean a caller wants advice the receptionist must never give. */
 const ADVICE = [
