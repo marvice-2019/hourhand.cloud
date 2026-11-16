@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { resolveBaseUrl } from "@/lib/auth/auth";
 import { store } from "@/lib/data";
+import { LOCATION_KEYS, isLocale, t } from "@/lib/i18n/guest";
+import { mt } from "@/lib/i18n/mail";
 import { GUEST_LOCATION_LABELS } from "@/lib/location-labels";
 import { buildIcs } from "@/lib/mail/ics";
 import { videoJoinUrl } from "@/lib/video/links";
@@ -16,10 +18,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!host || !eventType) return new NextResponse(null, { status: 404 });
   const base = (resolveBaseUrl() ?? request.nextUrl.origin).replace(/\/+$/, "");
   const manageUrl = `${base}/b/${token}`;
+  // In the language the guest booked in, like their emails.
+  const locale = isLocale(booking.invitee.locale) ? booking.invitee.locale : "en";
+  const place = booking.locationKind ? (locale === "en" ? GUEST_LOCATION_LABELS[booking.locationKind] : t(locale, LOCATION_KEYS[booking.locationKind])) : null;
   const ics = buildIcs({
     uid: `${booking.id}@hourhand`, start: booking.startAt, end: booking.endAt, stamp: new Date(),
-    summary: `${eventType.name} with ${host.name}`, description: `Change or cancel: ${manageUrl}`,
-    location: booking.joinUrl ?? videoJoinUrl(base, booking.locationKind, token) ?? (booking.locationKind ? GUEST_LOCATION_LABELS[booking.locationKind] : null), url: manageUrl,
+    summary: mt(locale, "calWith", { event: eventType.name, host: host.name }), description: mt(locale, "calChange", { url: manageUrl }),
+    location: booking.joinUrl ?? videoJoinUrl(base, booking.locationKind, token) ?? place, url: manageUrl,
   });
   return new NextResponse(ics, {
     headers: { "content-type": "text/calendar; charset=utf-8", "content-disposition": 'attachment; filename="booking.ics"', "cache-control": "no-store" },

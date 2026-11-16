@@ -8,7 +8,7 @@ import { requireHost } from "@/lib/auth/session";
 import { authEnabled } from "@/lib/auth/auth";
 import { hostPlan } from "@/lib/billing/account";
 import { getPool } from "@/lib/data/pg-store";
-import { razorpayStatus } from "@/lib/payments/host-razorpay";
+import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
 import { videoGateError } from "@/lib/video/gate";
 import { videoAvailabilityFor } from "@/lib/video/server";
 
@@ -25,10 +25,16 @@ function refresh(userSlug: string, id?: string) {
 /** Why the host can't charge this price, checked here on the server whatever the editor showed. Null when they can. */
 async function priceError(userId: string, priceMinor: number | null): Promise<string | null> {
   if (priceMinor === null) return null;
-  if (!authEnabled()) return priceGateError({ priceMinor, demo: true, plan: "free", razorpayConnected: false });
+  if (!authEnabled()) return priceGateError({ priceMinor, demo: true, plan: "free", paymentsReady: false });
   const pool = getPool(process.env.DATABASE_URL as string);
-  const [plan, razorpay] = await Promise.all([hostPlan(pool, userId), razorpayStatus(pool, userId)]);
-  return priceGateError({ priceMinor, demo: false, plan, razorpayConnected: razorpay !== null });
+  const [plan, account] = await Promise.all([hostPlan(pool, userId), paymentAccount(pool, userId)]);
+  return priceGateError({ priceMinor, demo: false, plan, paymentsReady: account?.ready === true });
+}
+
+/** Prices are saved in the currency the host's payment provider settles in (INR on Razorpay, the Stripe account's otherwise). */
+async function hostCurrency(userId: string): Promise<string> {
+  if (!authEnabled()) return "INR";
+  return priceCurrency(await paymentAccount(getPool(process.env.DATABASE_URL as string), userId));
 }
 
 /** Creates the event type when `id` is null, otherwise updates it. Saves details, rules and questions together. */
@@ -42,7 +48,7 @@ export async function saveEventType(id: string | null, form: EventTypeForm, ques
   }
   const gate = await priceError(user.id, details.value.priceMinor);
   if (gate) return { ok: false, errors: { price: gate }, questionErrors: [] };
-  // A deposit is a payment too: same plan and Razorpay requirement.
+  // A deposit is a payment too: same plan and payment-account requirement.
   const depositGate = await priceError(user.id, details.value.depositMinor);
   if (depositGate) return { ok: false, errors: { deposit: depositGate }, questionErrors: [] };
   // Hourhand video needs the Jitsi settings on this server and a Solo or Duo plan.
@@ -51,6 +57,7 @@ export async function saveEventType(id: string | null, form: EventTypeForm, ques
     const videoGate = videoGateError({ chosen: true, alreadyChosen: before[0]?.kind === "hourhand_video", availability: await videoAvailabilityFor(user.id) });
     if (videoGate) return { ok: false, errors: { locationKind: videoGate }, questionErrors: [] };
   }
+  if (details.value.priceMinor !== null || details.value.depositMinor !== null) details.value.currency = await hostCurrency(user.id);
   try {
     const saved = id ? await store.updateEventType(user.id, id, details.value) : await store.createEventType(user.id, details.value);
     await store.saveQuestions(user.id, saved.id, checked.value);

@@ -9,21 +9,38 @@ import { isUnpaidRelease } from "@/lib/booking-reasons";
 import { store } from "@/lib/data";
 import { formatDate, zoneName } from "@/lib/format";
 import { LOCATION_KEYS, resolveLocale, t, tNodes } from "@/lib/i18n/guest";
+import { mt } from "@/lib/i18n/mail";
 import { AddToCalendar } from "@/components/AddToCalendar";
 import { AutoRedirect } from "@/components/AutoRedirect";
 import { cleanRedirectUrl } from "@/lib/calendar-links";
 import { resolveBaseUrl } from "@/lib/auth/auth";
 import { videoJoinUrl } from "@/lib/video/links";
+import { requestPaymentDeps } from "@/lib/payments/request-deps";
+import { settleStripeSession } from "@/lib/payments/stripe-checkout";
 
 export const dynamic = "force-dynamic";
 
 
-export default async function BookedPage({ params, searchParams }: { params: Promise<{ slug: string; event: string; bookingId: string }>; searchParams: Promise<{ lang?: string }> }) {
+export default async function BookedPage({ params, searchParams }: { params: Promise<{ slug: string; event: string; bookingId: string }>; searchParams: Promise<{ lang?: string; session_id?: string }> }) {
   const { slug, bookingId } = await params;
-  const { lang } = await searchParams;
+  const { lang, session_id: sessionId } = await searchParams;
   const host = await store.getUserBySlug(slug);
-  const booking = host && (await store.getBooking(host.id, bookingId));
+  let booking = host && (await store.getBooking(host.id, bookingId));
   if (!host || !booking) notFound();
+  // Back from Stripe Checkout: the redirect proves nothing by itself, so the session is read back from Stripe as the
+  // host's account and checked against this booking's payment before it counts. The webhook does the same independently.
+  const paymentDeps = booking.status === "pending_payment" ? requestPaymentDeps() : null;
+  const { rows: [pending] } = paymentDeps
+    ? await paymentDeps.pool.query("select provider, provider_order_id from payments where booking_id = $1 and status = 'pending'", [booking.id])
+    : { rows: [] };
+  const onStripe = pending?.provider === "stripe";
+  const stripe = paymentDeps?.stripe;
+  if (stripe && onStripe && typeof sessionId === "string") {
+    if (pending.provider_order_id === sessionId) {
+      await settleStripeSession(stripe.deps, sessionId!, new Date()).catch((error) => console.error("[payments] Stripe return check failed", (error as Error).message));
+      booking = (await store.getBooking(host.id, bookingId)) ?? booking;
+    }
+  }
   const eventType = await store.getEventType(host.id, booking.eventTypeId);
   // Checked again here: a stored value from before the https rule must never become a link or a redirect.
   const redirectUrl = eventType?.redirectUrl ? cleanRedirectUrl(eventType.redirectUrl) : null;
@@ -40,7 +57,7 @@ export default async function BookedPage({ params, searchParams }: { params: Pro
         <h1 className="font-display text-xl text-text">{t(locale, "confirmingPayment")}</h1>
         <p className="mt-2 max-w-md text-text-muted" role="status">
           {t(locale, "paymentSeconds")} {booking.holdExpiresAt ? tNodes(locale, "heldUntil", { time: time(booking.holdExpiresAt) }) : t(locale, "heldGeneric")}{" "}
-          {t(locale, "closedRazorpay")}
+          {!onStripe && t(locale, "closedRazorpay")}
         </p>
         <AutoRefresh labels={{ waiting: t(locale, "updatesItself"), stopped: t(locale, "stillWaiting") }} />
       </main>
@@ -74,7 +91,7 @@ export default async function BookedPage({ params, searchParams }: { params: Pro
       </Card>
       {booking.status === "confirmed" && (
         <AddToCalendar
-          token={booking.invitee.manageToken} title={`${eventType?.name ?? ""} with ${host.name}`} start={booking.startAt} end={booking.endAt} locale={locale}
+          token={booking.invitee.manageToken} title={mt(locale, "calWith", { event: eventType?.name ?? "", host: host.name })} start={booking.startAt} end={booking.endAt} locale={locale}
           location={joinUrl ?? (booking.locationKind ? t(locale, LOCATION_KEYS[booking.locationKind]) : null)}
           manageUrl={`${(resolveBaseUrl() ?? "").replace(/\/+$/, "")}/b/${booking.invitee.manageToken}`}
         />

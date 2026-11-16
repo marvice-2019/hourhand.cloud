@@ -28,14 +28,16 @@ export interface PlanLimits {
   footer: boolean;
   /** Meeting polls open (taking votes) at once. */
   openPolls: number;
+  /** Clients can find the host's times by messaging Hourhand's WhatsApp number (after the host turns it on). */
+  whatsappBooking: boolean;
   /** Private video rooms on the owner's own Jitsi server (the "Hourhand video" location). */
   hourhandVideo: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true, openPolls: 1, hourhandVideo: false },
-  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, hourhandVideo: true },
-  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, hourhandVideo: true },
+  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, hourhandVideo: false },
+  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, hourhandVideo: true },
+  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, hourhandVideo: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {
