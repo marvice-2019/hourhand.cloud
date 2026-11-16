@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
 import { deleteEventType, saveEventType } from "@/app/dashboard/event-types/actions";
 import type { CustomQuestion, LocationKind, QuestionDraft } from "@/lib/data/types";
+import type { VideoAvailability } from "@/lib/video/gate";
 import type { ZoomSetup } from "@/lib/zoom/connection";
 import { ZoomHint } from "./ZoomHint";
 import { START_INCREMENTS, slugify, type EventTypeErrors, type EventTypeForm, type QuestionErrors } from "@/lib/event-types";
@@ -30,6 +31,7 @@ const LOCATIONS: { kind: LocationKind | ""; label: HostKey }[] = [
   { kind: "google_meet", label: "eventTypes.locGoogleMeet" },
   { kind: "zoom", label: "eventTypes.locZoom" },
   { kind: "teams", label: "eventTypes.locTeams" },
+  { kind: "hourhand_video", label: "eventTypes.locHourhandVideo" },
   { kind: "phone_host_calls", label: "eventTypes.locPhoneHostCalls" },
   { kind: "phone_guest_calls", label: "eventTypes.locPhoneGuestCalls" },
   { kind: "in_person", label: "eventTypes.locInPerson" },
@@ -68,9 +70,11 @@ export interface EventTypeEditorProps {
   provider?: "razorpay" | "stripe" | null;
   /** Whether choosing Zoom gets bookings a link. */
   zoomSetup?: ZoomSetup;
+  /** Whether Hourhand video can be picked: set up on this server and on the host's plan. */
+  video?: VideoAvailability;
 }
 
-export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justSaved = false, currency = "INR", provider = null, zoomSetup = "not_configured" }: EventTypeEditorProps) {
+export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justSaved = false, currency = "INR", provider = null, zoomSetup = "not_configured", video = "not_set_up" }: EventTypeEditorProps) {
   const router = useRouter();
   const { t, tNodes } = useHostI18n();
   const [tab, setTab] = useState<TabId>("details");
@@ -263,11 +267,17 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
         </div>
         <div>
           <Label htmlFor="f-location">{t("eventTypes.location")}</Label>
-          <select id="f-location" aria-describedby={form.locationKind === "teams" || form.locationKind === "zoom" ? "f-location-hint" : undefined} value={form.locationKind} onChange={(e) => set("locationKind")(e.target.value)} className={`h-11 ${fieldClasses(false)}`}>
+          <select id="f-location" aria-describedby={form.locationKind === "teams" || form.locationKind === "zoom" || form.locationKind === "hourhand_video" ? "f-location-hint" : undefined} value={form.locationKind} onChange={(e) => set("locationKind")(e.target.value)} className={`h-11 ${fieldClasses(false)}`}>
             {LOCATIONS.map((l) => <option key={l.kind} value={l.kind}>{t(l.label)}</option>)}
           </select>
           {form.locationKind === "teams" && (
             <p id="f-location-hint" className="mt-1 text-sm text-text-muted">{t("eventTypes.teamsHint")}</p>
+          )}
+          {errors.locationKind && <p role="alert" className="mt-1 text-sm text-danger">{errors.locationKind}</p>}
+          {form.locationKind === "hourhand_video" && !errors.locationKind && (
+            <p id="f-location-hint" className={`mt-1 text-sm ${video === "ready" ? "text-text-muted" : "text-danger"}`}>
+              {t(video === "ready" ? "eventTypes.videoReady" : video === "plan" ? "eventTypes.videoNeedsPlan" : "eventTypes.videoNotSetUp")}
+            </p>
           )}
           {form.locationKind === "zoom" && <ZoomHint setup={zoomSetup} id="f-location-hint" />}
         </div>

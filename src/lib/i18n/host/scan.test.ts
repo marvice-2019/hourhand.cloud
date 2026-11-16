@@ -8,6 +8,7 @@ import { dashboardFiles, looksLikeCopy, readRepoFile, scanSource } from "./scan"
  */
 const PENDING: Record<string, string> = {
   "src/app/dashboard/earnings/export/route.ts": "CSV column headers stay English so spreadsheets and accountants' imports keep working",
+  "src/app/dashboard/analytics/export/route.ts": "CSV column headers stay English so spreadsheets and accountants' imports keep working",
   "src/app/dashboard/invoices/export/route.ts": "CSV column headers stay English so spreadsheets and accountants' imports keep working",
   "src/app/dashboard/clients/[key]/export/route.ts": "a client's data export the host may pass on to the client; its JSON/HTML stays English like the record it copies",
 };

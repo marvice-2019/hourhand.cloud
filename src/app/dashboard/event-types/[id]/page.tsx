@@ -5,6 +5,7 @@ import { EventTypeSchedule } from "@/components/EventTypeSchedule";
 import { store } from "@/lib/data";
 import { toForm } from "@/lib/event-types";
 import { requireHost } from "@/lib/auth/session";
+import { videoAvailabilityFor } from "@/lib/video/server";
 import { authEnabled } from "@/lib/auth/auth";
 import { FollowUpSettingsForm } from "@/components/FollowUpSettingsForm";
 import { getPool } from "@/lib/data/pg-store";
@@ -24,6 +25,7 @@ export default async function EventTypePage({ params, searchParams }: {
   const { saved, followups, schedule } = await searchParams;
   const user = await requireHost();
   const { t } = await getHostI18n();
+  const video = await videoAvailabilityFor(user.id);
   const eventType = await store.getEventType(user.id, id);
   if (!eventType) notFound();
   const [locations, questions, account, schedules] = await Promise.all([
@@ -57,6 +59,7 @@ export default async function EventTypePage({ params, searchParams }: {
         initial={toForm(eventType, locations[0])}
         initialQuestions={ordered.map(({ id: qid, label, kind, required, choices }) => ({ id: qid, label, kind, required, choices }))}
         justSaved={saved === "1"}
+        video={video}
         currency={currency}
         provider={account?.provider ?? null}
         zoomSetup={await zoomSetupFor(() => getPool(process.env.DATABASE_URL as string), user.id)}

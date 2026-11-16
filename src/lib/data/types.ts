@@ -90,10 +90,10 @@ export class InvalidOneOffError extends Error {
 }
 
 export type LocationKind =
-  | "google_meet" | "zoom" | "teams" | "phone_host_calls" | "phone_guest_calls" | "in_person" | "custom" | "ask_guest";
+  | "google_meet" | "zoom" | "teams" | "phone_host_calls" | "phone_guest_calls" | "in_person" | "custom" | "ask_guest" | "hourhand_video";
 
 export const LOCATION_KINDS: readonly LocationKind[] = [
-  "google_meet", "zoom", "teams", "phone_host_calls", "phone_guest_calls", "in_person", "custom", "ask_guest",
+  "google_meet", "zoom", "teams", "phone_host_calls", "phone_guest_calls", "in_person", "custom", "ask_guest", "hourhand_video",
 ];
 
 export interface EventLocation {

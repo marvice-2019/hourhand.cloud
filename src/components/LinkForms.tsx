@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { createOneOff, createSingleUseLink, type LinkFormState } from "@/app/dashboard/links/actions";
+import type { VideoAvailability } from "@/lib/video/gate";
 import type { ZoomSetup } from "@/lib/zoom/connection";
 import { CopyLinkButton } from "./CopyLinkButton";
 import { ZoomHint } from "./ZoomHint";
@@ -54,13 +55,14 @@ const LOCATIONS: { kind: string; brand?: string; label?: HostKey; needs?: HostKe
   { kind: "google_meet", brand: "Google Meet" },
   { kind: "teams", brand: "Microsoft Teams" },
   { kind: "zoom", brand: "Zoom" },
+  { kind: "hourhand_video", label: "links.locHourhandVideo" },
   { kind: "phone_host_calls", label: "links.locPhoneHostCalls" },
   { kind: "phone_guest_calls", label: "links.locPhoneGuestCalls", needs: "links.needsPhone" },
   { kind: "in_person", label: "links.locInPerson", needs: "links.needsAddress" },
   { kind: "custom", label: "links.locCustom", needs: "links.needsDetails" },
 ];
 
-export function OneOffForm({ timeZone, zoomSetup = "not_configured" }: { timeZone: string; zoomSetup?: ZoomSetup }) {
+export function OneOffForm({ timeZone, zoomSetup = "not_configured", video = "not_set_up" }: { timeZone: string; zoomSetup?: ZoomSetup; video?: VideoAvailability }) {
   const { t } = useHostI18n();
   const [state, action, pending] = useActionState(createOneOff, idle);
   const [rows, setRows] = useState<number[]>([0, 1, 2]);
@@ -77,6 +79,11 @@ export function OneOffForm({ timeZone, zoomSetup = "not_configured" }: { timeZon
           {LOCATIONS.map((l) => <option key={l.kind} value={l.kind}>{l.label ? t(l.label) : l.brand}</option>)}
         </select>
         {kind === "teams" && <p className="mt-1 text-sm text-text-muted">{t("links.teamsHint")}</p>}
+        {kind === "hourhand_video" && (
+          <p className={`mt-1 text-sm ${video === "ready" ? "text-text-muted" : "text-danger"}`}>
+            {t(video === "ready" ? "links.videoReady" : video === "plan" ? "links.videoNeedsPlan" : "links.videoNotSetUp")}
+          </p>
+        )}
         {kind === "zoom" && <ZoomHint setup={zoomSetup} />}
       </div>
       {needs && <div><Label htmlFor="oo-location-value">{t(needs)}</Label><Input id="oo-location-value" name="locationValue" /></div>}

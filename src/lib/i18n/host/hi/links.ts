@@ -64,4 +64,9 @@ export const links: Record<keyof typeof en, string> = {
   "links.errTimesCount": "1 से {n} समय ऑफ़र करें।",
   "links.errTimesFuture": "हर समय आगे का होना चाहिए।",
   "links.errTimesOnce": "हर समय एक ही बार ऑफ़र किया जा सकता है।",
+  // Hourhand video (3.11)
+  "links.locHourhandVideo": "Hourhand video (Zoom या Meet अकाउंट की ज़रूरत नहीं)",
+  "links.videoReady": "आपके गेस्ट को एक निजी वीडियो रूम मिलता है। आप होस्ट के रूप में जुड़ते हैं और उन्हें लॉबी से अंदर लाते हैं। कॉल रिकॉर्ड नहीं होतीं।",
+  "links.videoNeedsPlan": "Hourhand video के लिए Solo या Duo प्लान चाहिए।",
+  "links.videoNotSetUp": "इस सर्वर पर Hourhand video अभी सेट अप नहीं है।",
 };

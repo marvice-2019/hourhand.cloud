@@ -32,6 +32,7 @@ export const polls: Record<keyof typeof en, string> = {
   "polls.locInPerson": "आमने-सामने",
   "polls.locCustomGuest": "होस्ट से मिली जानकारी",
   "polls.locAskGuest": "आपकी चुनी हुई जगह",
+  "polls.locHourhandVideo": "Hourhand video",
   "polls.doneCreated": "आपका पोल तैयार है। नीचे दिया लिंक शेयर करें।",
   "polls.doneConfirmed": "बुक हो गया। जिन्होंने हाँ या ज़रूरत हो तो कहा था, उन सबको अभी पुष्टि भेजी जा रही है।",
   "polls.doneCancelled": "पोल कैंसल हो गया। इसके समय खाली कर दिए गए और कुछ भी बुक नहीं हुआ।",

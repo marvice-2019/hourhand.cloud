@@ -20,6 +20,7 @@ import { offerLabel } from "@/lib/offers/labels";
 import { offerForBooking } from "@/lib/offers/offers";
 import { requestPaymentDeps } from "@/lib/payments/request-deps";
 import { settleStripeSession } from "@/lib/payments/stripe-checkout";
+import { videoJoinUrl } from "@/lib/video/links";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,8 @@ export default async function BookedPage({ params, searchParams }: { params: Pro
   // Checked again here: a stored value from before the https rule must never become a link or a redirect.
   const redirectUrl = eventType?.redirectUrl ? cleanRedirectUrl(eventType.redirectUrl) : null;
   const tz = booking.invitee.timezone;
+  // Hourhand video bookings join through /b/<token>/video, which checks the booking on every visit.
+  const joinUrl = booking.joinUrl ?? videoJoinUrl((resolveBaseUrl() ?? "").replace(/\/+$/, ""), booking.locationKind, booking.invitee.manageToken);
   const locale = resolveLocale(lang, host.locale);
   const q = typeof lang === "string" && lang === locale ? `?lang=${locale}` : "";
   const time = (d: Date) => <LocalTime date={d} tz={tz} locale={locale} />;
@@ -89,7 +92,7 @@ export default async function BookedPage({ params, searchParams }: { params: Pro
             <dt className="text-sm text-text-muted">{t(locale, "when")}</dt>
             <dd className="text-text">{tNodes(locale, "whenRange", { date: formatDate(booking.startAt, tz, locale), start: time(booking.startAt), end: time(booking.endAt), zone: zoneName(tz) })}</dd>
           </div>
-          {booking.locationKind && <div><dt className="text-sm text-text-muted">{t(locale, "where")}</dt><dd className="text-text">{t(locale, LOCATION_KEYS[booking.locationKind])}{booking.joinUrl && booking.status === "confirmed" && <> · <a href={booking.joinUrl} className="font-semibold text-accent underline" rel="noopener noreferrer" target="_blank">{t(locale, "joinCall")}</a></>}</dd></div>}
+          {booking.locationKind && <div><dt className="text-sm text-text-muted">{t(locale, "where")}</dt><dd className="text-text">{t(locale, LOCATION_KEYS[booking.locationKind])}{joinUrl && booking.status === "confirmed" && <> · <a href={joinUrl} className="font-semibold text-accent underline" rel="noopener noreferrer" target="_blank">{t(locale, "joinCall")}</a></>}</dd></div>}
           <div><dt className="text-sm text-text-muted">{t(locale, "bookedFor")}</dt><dd className="text-text">{booking.invitee.name}, {/\.invalid$/i.test(booking.invitee.email) ? booking.invitee.phone : booking.invitee.email}</dd></div>
           {offer && (
             <div>
@@ -106,7 +109,7 @@ export default async function BookedPage({ params, searchParams }: { params: Pro
       {booking.status === "confirmed" && (
         <AddToCalendar
           token={booking.invitee.manageToken} title={mt(locale, "calWith", { event: eventType?.name ?? "", host: host.name })} start={booking.startAt} end={booking.endAt} locale={locale}
-          location={booking.joinUrl ?? (booking.locationKind ? t(locale, LOCATION_KEYS[booking.locationKind]) : null)}
+          location={joinUrl ?? (booking.locationKind ? t(locale, LOCATION_KEYS[booking.locationKind]) : null)}
           manageUrl={`${(resolveBaseUrl() ?? "").replace(/\/+$/, "")}/b/${booking.invitee.manageToken}`}
         />
       )}

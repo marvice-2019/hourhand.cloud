@@ -13,6 +13,7 @@ export const nav: Record<keyof typeof en, string> = {
   "nav.offers": "ஆஃபர்கள்",
   "nav.memberships": "மெம்பர்ஷிப்கள்",
   "nav.earnings": "வருமானம்",
+  "nav.analytics": "பகுப்பாய்வு",
   "nav.invoices": "இன்வாய்ஸ்கள்",
   "nav.availability": "கிடைக்கும் நேரம்",
   "nav.calendars": "காலெண்டர்கள்",
