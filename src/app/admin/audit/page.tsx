@@ -5,7 +5,7 @@ import { getPool } from "@/lib/data/pg-store";
 
 export const dynamic = "force-dynamic";
 
-const ACTIONS: Record<string, string> = { "host.view": "Opened host", "staff.grant": "Added to staff", "staff.revoke": "Removed from staff" };
+const ACTIONS: Record<string, string> = { "host.view": "Opened host", "staff.grant": "Added to staff", "staff.revoke": "Removed from staff", "host.plan": "Changed plan" };
 
 export default async function AdminAuditPage({ searchParams }: { searchParams: Promise<{ before?: string }> }) {
   await requireStaff("view_audit");
@@ -24,7 +24,7 @@ export default async function AdminAuditPage({ searchParams }: { searchParams: P
               <tr key={e.id} className="border-t border-border text-text">
                 <td className="py-2 pr-4 whitespace-nowrap">{when(e.at)}</td>
                 <td className="py-2 pr-4">{e.actorEmail}</td>
-                <td className="py-2 pr-4">{ACTIONS[e.action] ?? e.action}{e.detail.role ? ` (${String(e.detail.role)})` : ""}</td>
+                <td className="py-2 pr-4">{ACTIONS[e.action] ?? e.action}{e.detail.role ? ` (${String(e.detail.role)})` : ""}{e.detail.to ? ` (${String(e.detail.from)} to ${String(e.detail.to)})` : ""}</td>
                 <td className="py-2">{e.targetType === "user" && e.targetId ? <Link href={`/admin/hosts/${e.targetId}`} className="text-accent underline">{String(e.detail.email ?? e.targetId)}</Link> : "–"}</td>
               </tr>
             ))}

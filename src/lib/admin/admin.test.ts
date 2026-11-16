@@ -4,6 +4,8 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { migrate } from "../../../scripts/migrate";
 import { seed } from "../../../scripts/seed";
+import { hostPlan } from "../billing/account";
+import { setComplimentaryPlan } from "./plans";
 import { hostDetail, listHosts, overview } from "./queries";
 import { can, envSuperAdmins, grantRole, listAudit, listStaff, revokeRole, staffRole, type Actor } from "./roles";
 
@@ -18,6 +20,8 @@ describe("staff permissions", () => {
     expect(can("super_admin", "manage_staff")).toBe(true);
     expect(can("super_admin", "view_audit")).toBe(true);
     expect(can(null, "view_overview")).toBe(false);
+    expect(can("admin", "manage_plans")).toBe(false);
+    expect(can("super_admin", "manage_plans")).toBe(true);
   });
 
   it("reads SUPER_ADMIN_EMAILS loosely: spaces, case, and junk dropped", () => {
@@ -148,5 +152,28 @@ describe.skipIf(!BASE)("staff and admin views (Postgres)", () => {
     const o = await overview(pool, new Date());
     expect(o.hosts).toBe((await listHosts(pool)).total);
     expect(o).toMatchObject({ closedHosts: 0, activeMemberships: 0 });
+  });
+
+  it("a super admin gives a host a complimentary plan, which unlocks it at once; never over a paid subscription", async () => {
+    const owner = await actor("owner");
+    expect(await hostPlan(pool, ids.host)).toBe("free");
+    await setComplimentaryPlan(pool, owner, ids.host, "duo");
+    expect(await hostPlan(pool, ids.host)).toBe("duo");
+    expect((await listHosts(pool, { q: "meera" })).hosts[0]).toMatchObject({ plan: "duo", planStatus: "active" });
+    await setComplimentaryPlan(pool, owner, ids.host, "free");
+    expect(await hostPlan(pool, ids.host)).toBe("free");
+    // Admins can't; nonsense plans and unknown hosts are refused.
+    await pool.query("insert into staff_roles (user_id, role) values ($1, 'admin') on conflict (user_id) do update set role = 'admin'", [ids.support]);
+    await expect(setComplimentaryPlan(pool, await actor("support"), ids.host, "solo")).rejects.toMatchObject({ reason: "not_allowed" });
+    await pool.query("delete from staff_roles where user_id = $1", [ids.support]);
+    await expect(setComplimentaryPlan(pool, owner, ids.host, "enterprise")).rejects.toMatchObject({ reason: "bad_plan" });
+    await expect(setComplimentaryPlan(pool, owner, "6f1c2d3e-0000-4000-8000-000000000001", "solo")).rejects.toMatchObject({ reason: "not_found" });
+    // A host paying through Razorpay keeps what they pay for.
+    await pool.query("update subscriptions set plan = 'solo', provider = 'razorpay', provider_subscription_id = 'sub_paid_1', status = 'active' where user_id = $1", [ids.other]);
+    await pool.query("insert into subscriptions (user_id, plan, provider, provider_subscription_id, status) select $1, 'solo', 'razorpay', 'sub_paid_1', 'active' where not exists (select 1 from subscriptions where user_id = $1)", [ids.other]);
+    await expect(setComplimentaryPlan(pool, owner, ids.other, "free")).rejects.toMatchObject({ reason: "paid_subscription" });
+    expect(await hostPlan(pool, ids.other)).toBe("solo");
+    const log = await listAudit(pool, { limit: 2 });
+    expect(log.map((e) => [e.action, e.detail.from, e.detail.to])).toEqual([["host.plan", "duo", "free"], ["host.plan", "free", "duo"]]);
   });
 });
