@@ -1,6 +1,7 @@
 import type { HandlerResult, PaymentDeps } from "../booking";
 import { isNamedError } from "../data/types";
 import { BOOKING_LIMITS, CONFIRM_PAYMENT_LIMIT, type createRateLimiter } from "../rate-limit";
+import { parseOfferInput, type OfferRefusedError } from "../offers/offers";
 import { chargeableCurrency, startStripePurchase } from "../payments/stripe-checkout";
 import { stripeReady } from "../payments/stripe-connect";
 import { confirmPurchase, pendingPurchase, publicPackage, startPurchase, type PurchaseStartError, type PurchaseVerifyError } from "./packages";
@@ -26,7 +27,8 @@ export async function handleStartPurchase(
   const found = await publicPackage(deps.pool, packageId);
   if (!found) return { status: 404, body: { error: "not_found" } };
   // Selling needs a paid plan and the host's own Razorpay or Stripe account in the package's currency, like a priced event type.
-  const onPlan = (await deps.planFor(found.host.id)) !== "free";
+  const plan = await deps.planFor(found.host.id);
+  const onPlan = plan !== "free";
   const auth = onPlan ? await deps.authFor(found.host.id) : null;
   const stripeHost = onPlan && !auth && deps.stripe ? await deps.stripe.deps.accountFor(found.host.id) : null;
   const stripe = stripeReady(stripeHost) && chargeableCurrency(stripeHost.currency) && stripeHost.currency === found.pkg.currency ? stripeHost : null;
@@ -35,21 +37,24 @@ export async function handleStartPurchase(
     return { status: 429, body: { error: "too_many_requests" } };
   }
   try {
+    const offers = { plan, couponCode: parseOfferInput(input).couponCode, now: new Date(), limit };
     if (stripe && deps.stripe) {
-      const row = await pendingPurchase(deps.pool, found.pkg, { name, email, phone: phone || null, idempotencyKey }, "stripe");
-      if (row.status !== "pending") return { status: 200, body: { token: row.token, status: row.status, payment: null } };
+      const { offer, ...row } = await pendingPurchase(deps.pool, found.pkg, { name, email, phone: phone || null, idempotencyKey }, "stripe", offers);
+      const withOffer = offer ? { offer } : {};
+      if (row.status !== "pending") return { status: 200, body: { token: row.token, status: row.status, payment: null, ...withOffer } };
       const page = `${deps.stripe.baseUrl.replace(/\/+$/, "")}/p/${row.token}`;
       const payment = await startStripePurchase({ pool: deps.pool, api: deps.stripe.deps.api, host: stripe }, {
         purchaseId: row.id, amountMinor: row.price_minor, currency: row.currency, productName: `${found.pkg.name} (${found.pkg.sessions} × ${found.eventType.name}) with ${found.host.name}`,
         customerEmail: email, successUrl: `${page}?session_id={CHECKOUT_SESSION_ID}`, cancelUrl: `${deps.stripe.baseUrl.replace(/\/+$/, "")}/pkg/${found.pkg.id}`,
       }, new Date());
-      return { status: 200, body: { token: row.token, status: row.status, payment: { provider: "stripe", ...payment } } };
+      return { status: 200, body: { token: row.token, status: row.status, payment: { provider: "stripe", ...payment }, ...withOffer } };
     }
-    const r = await startPurchase({ pool: deps.pool, auth: auth!, orders: deps.ordersFor(auth!) }, { packageId, name, email, phone: phone || null, idempotencyKey });
+    const r = await startPurchase({ pool: deps.pool, auth: auth!, orders: deps.ordersFor(auth!) }, { packageId, name, email, phone: phone || null, idempotencyKey }, offers);
     return { status: 200, body: { ...r, payment: r.payment && { provider: "razorpay", ...r.payment } } };
   } catch (err) {
     if (isNamedError(err, "NotFoundError")) return { status: 404, body: { error: "not_found" } };
     if (isNamedError<PurchaseStartError>(err, "PurchaseStartError") || isNamedError(err, "PaymentStartError")) return { status: 502, body: { error: "payment_unavailable" } };
+    if (isNamedError<OfferRefusedError>(err, "OfferRefusedError")) return { status: err.status, body: err.body };
     throw err;
   }
 }

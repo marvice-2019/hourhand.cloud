@@ -4,6 +4,8 @@ import { NotFoundError } from "../data/types";
 import { parsePrice, PRICE_INVALID } from "../event-types";
 import { kickJobs } from "../jobs/kick";
 import { invoiceForPurchase } from "../gst/invoices";
+import type { Plan } from "../billing/plans";
+import { OfferRefusedError, resolvePrice, type AppliedOffer, type ResolvePriceInput } from "../offers/offers";
 import type { PaymentCheckDeps } from "../payments/booking-payments";
 import type { HostRazorpayAuth } from "../payments/host-razorpay";
 import type { RazorpayOrders, RazorpayPayment } from "../payments/razorpay-orders";
@@ -196,18 +198,29 @@ export class PurchaseStartError extends Error {
  * package, so a later edit of the package doesn't change what was bought.
  */
 export async function pendingPurchase(
-  pool: Pick<pg.Pool, "query">, pkg: Package, input: { name: string; email: string; phone: string | null; idempotencyKey: string }, provider: "razorpay" | "stripe",
-): Promise<{ id: string; package_id: string; token: string; status: PackagePurchase["status"]; provider_order_id: string | null; price_minor: number; currency: string; provider: string; checkout_url: string | null }> {
+  pool: pg.Pool, pkg: Package, input: { name: string; email: string; phone: string | null; idempotencyKey: string }, provider: "razorpay" | "stripe",
+  offers?: PurchaseOffers,
+): Promise<{ id: string; package_id: string; token: string; status: PackagePurchase["status"]; provider_order_id: string | null; price_minor: number; currency: string; provider: string; checkout_url: string | null; offer?: AppliedOffer }> {
+  // The price after at most one offer (Razorpay and Stripe alike), worked out and recorded by resolvePrice; a repeat of
+  // the request gets the same one. A refused offer (bad code, too many tries) throws OfferRefusedError.
+  const priced = offers ? await resolvePrice(pool, {
+    hostId: pkg.userId, plan: offers.plan, item: { kind: "package", id: pkg.id, listMinor: pkg.priceMinor, currency: pkg.currency }, email: input.email,
+    couponCode: offers.couponCode, payMinor: null, idempotencyKey: input.idempotencyKey, now: offers.now, limit: offers.limit, reserve: true,
+  }) : null;
+  if (priced && !priced.ok) throw new OfferRefusedError(priced.status, priced.body);
   const { rows: [row] } = await pool.query(
     `insert into package_purchases (package_id, host_id, event_type_id, sessions, price_minor, valid_days, guest_name, guest_email, guest_phone, idempotency_key, currency, provider)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      on conflict (idempotency_key) do update set updated_at = package_purchases.updated_at
      returning id, package_id, token, status, provider_order_id, price_minor, currency, provider, checkout_url`,
-    [pkg.id, pkg.userId, pkg.eventTypeId, pkg.sessions, pkg.priceMinor, pkg.validDays, input.name, input.email, input.phone, input.idempotencyKey, pkg.currency, provider]);
+    [pkg.id, pkg.userId, pkg.eventTypeId, pkg.sessions, priced?.chargeMinor ?? pkg.priceMinor, pkg.validDays, input.name, input.email, input.phone, input.idempotencyKey, pkg.currency, provider]);
   // The same key for another package (or a retry after the host switched providers) is not this purchase.
   if (row.package_id !== pkg.id || row.provider !== provider) throw new NotFoundError("Package");
-  return row;
+  return priced?.ok && priced.offer ? { ...row, offer: priced.offer } : row;
 }
+
+/** What a purchase needs for offers: the host's plan, the code the buyer typed, and the coupon rate limiter. */
+export type PurchaseOffers = { plan: Plan; couponCode: string | null; now: Date; limit?: ResolvePriceInput["limit"] };
 
 /**
  * Starts a purchase: a pending row and a Razorpay order on the host's account. A repeat of the same request (same key)
@@ -217,16 +230,18 @@ export async function pendingPurchase(
 export async function startPurchase(
   deps: { pool: pg.Pool; auth: HostRazorpayAuth; orders: RazorpayOrders },
   input: { packageId: string; name: string; email: string; phone: string | null; idempotencyKey: string },
-): Promise<{ token: string; status: PackagePurchase["status"]; payment: PurchaseCheckout | null }> {
+  offers?: PurchaseOffers,
+): Promise<{ token: string; status: PackagePurchase["status"]; payment: PurchaseCheckout | null; offer?: AppliedOffer }> {
   const { pool, auth, orders } = deps;
   const found = await publicPackage(pool, input.packageId);
   if (!found) throw new NotFoundError("Package");
   const { pkg } = found;
   if (pkg.currency !== CURRENCY) throw new PurchaseStartError("The package isn't priced in rupees", false);
-  const row = await pendingPurchase(pool, pkg, input, "razorpay");
+  const { offer: applied, ...row } = await pendingPurchase(pool, pkg, input, "razorpay", offers);
+  const offer = applied ? { offer: applied } : {};
   const checkout = (orderId: string): PurchaseCheckout => ({ orderId, keyId: auth.keyId, amount: row.price_minor, currency: CURRENCY });
-  if (row.status !== "pending") return { token: row.token, status: row.status, payment: null };
-  if (row.provider_order_id) return { token: row.token, status: row.status, payment: checkout(row.provider_order_id) };
+  if (row.status !== "pending") return { token: row.token, status: row.status, payment: null, ...offer };
+  if (row.provider_order_id) return { token: row.token, status: row.status, payment: checkout(row.provider_order_id), ...offer };
 
   // The row stays locked while the order is made, so a concurrent repeat waits and then reuses this order.
   const orderId = await inTx(pool, async (client) => {
@@ -241,7 +256,7 @@ export async function startPurchase(
     await client.query("update package_purchases set provider_order_id = $2, updated_at = now() where id = $1", [row.id, order.id]);
     return order.id;
   });
-  return { token: row.token, status: "pending", payment: checkout(orderId) };
+  return { token: row.token, status: "pending", payment: checkout(orderId), ...offer };
 }
 
 /**

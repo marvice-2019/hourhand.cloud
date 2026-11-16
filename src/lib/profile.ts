@@ -16,23 +16,33 @@ const REVIEW_HOSTS = /^(g\.page|maps\.app\.goo\.gl|goo\.gl|(www\.)?google\.[a-z.
 
 export type ProfileInput = Omit<Profile, "hasPhoto" | "photoVersion">;
 
+/** Every error validateProfile gives, as code -> English. The dashboard shows each in the host's language. */
+export const PROFILE_MESSAGES = {
+  headline: "Keep the headline to 120 characters.",
+  bio: "Keep the about text to 2,000 characters.",
+  area: "Keep the area to 120 characters.",
+  whatsapp: "Enter the number with its country code, like +91 98765 43210.",
+  instagram: "Enter your Instagram username, like priya.coaching.",
+  reviewsUrl: "Paste the https link to your Google reviews (from Google Maps or your Business Profile's Share button).",
+} as const;
+
 /** Checks the settings form. Empty fields clear; an Indian 10-digit mobile gets +91. */
 export function validateProfile(input: Record<string, string>): { ok: true; value: ProfileInput } | { ok: false; errors: Record<string, string> } {
   const errors: Record<string, string> = {};
   const v = (k: string) => (input[k] ?? "").trim();
   const opt = (s: string) => (s === "" ? null : s);
   const headline = v("headline"), bio = v("bio").replace(/\r\n/g, "\n"), area = v("area");
-  if (headline.length > 120) errors.headline = "Keep the headline to 120 characters.";
-  if (bio.length > 2000) errors.bio = "Keep the about text to 2,000 characters.";
-  if (area.length > 120) errors.area = "Keep the area to 120 characters.";
+  if (headline.length > 120) errors.headline = PROFILE_MESSAGES.headline;
+  if (bio.length > 2000) errors.bio = PROFILE_MESSAGES.bio;
+  if (area.length > 120) errors.area = PROFILE_MESSAGES.area;
 
   let whatsapp: string | null = v("whatsapp").replace(/[\s()-]/g, "");
   if (whatsapp === "") whatsapp = null;
   else if (/^[6-9]\d{9}$/.test(whatsapp)) whatsapp = `+91${whatsapp}`;
-  if (whatsapp !== null && !/^\+[1-9]\d{7,14}$/.test(whatsapp)) errors.whatsapp = "Enter the number with its country code, like +91 98765 43210.";
+  if (whatsapp !== null && !/^\+[1-9]\d{7,14}$/.test(whatsapp)) errors.whatsapp = PROFILE_MESSAGES.whatsapp;
 
   const instagram = v("instagram").replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//, "").replace(/\/.*$/, "");
-  if (instagram && !/^[A-Za-z0-9._]{1,30}$/.test(instagram)) errors.instagram = "Enter your Instagram username, like priya.coaching.";
+  if (instagram && !/^[A-Za-z0-9._]{1,30}$/.test(instagram)) errors.instagram = PROFILE_MESSAGES.instagram;
 
   const reviewsUrl = v("reviewsUrl");
   if (reviewsUrl) {
@@ -41,7 +51,7 @@ export function validateProfile(input: Record<string, string>): { ok: true; valu
       const u = new URL(reviewsUrl);
       ok = u.protocol === "https:" && REVIEW_HOSTS.test(u.hostname) && reviewsUrl.length <= 500;
     } catch { /* not a URL */ }
-    if (!ok) errors.reviewsUrl = "Paste the https link to your Google reviews (from Google Maps or your Business Profile's Share button).";
+    if (!ok) errors.reviewsUrl = PROFILE_MESSAGES.reviewsUrl;
   }
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return { ok: true, value: { headline: opt(headline), bio: opt(bio), area: opt(area), whatsapp, instagram: opt(instagram), reviewsUrl: opt(reviewsUrl) } };

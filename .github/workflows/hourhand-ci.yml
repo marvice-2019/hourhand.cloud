@@ -19,6 +19,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Every guest text catalog has every language (src/lib/i18n/catalogs.test.ts finds the catalogs on its own). Its own
+  # job, fast and with no database, so "i18n catalogs" can be a required status check on main: a PR that adds a
+  # language, or an English line, without the translations can't merge. The same tests also run inside `check`.
+  i18n:
+    name: i18n catalogs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Every catalog has every language
+        run: npm run test:i18n
+
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -65,14 +83,14 @@ jobs:
           path: e2e/.out/
           retention-days: 7
 
-  # Production deploy: only after `check` passes on a push to main. Coolify's own git auto-deploy
+  # Production deploy: only after `check` and `i18n` pass on a push to main. Coolify's own git auto-deploy
   # never fired (PR #8 needed a manual Redeploy), so CI triggers it through Coolify's API instead
   # and waits for the result, so a failed deploy turns this run red.
   # Needs two secrets in the GitHub Environment "Production": COOLIFY_WEBHOOK (the app's Deploy
   # Webhook URL, from its Webhooks tab in Coolify) and COOLIFY_TOKEN (a Coolify API token with
   # deploy permission). Environment secrets reach a job only when it names that environment.
   deploy:
-    needs: check
+    needs: [check, i18n]
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     environment:
       name: Production

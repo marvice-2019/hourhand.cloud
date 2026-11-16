@@ -1,4 +1,5 @@
 import type { Interval } from "./data/types";
+import { fillTemplate } from "./i18n/host/lib-messages";
 
 // Pure checks for the availability screen. Error keys match the input ids on the page,
 // so each message lands next to the field it is about.
@@ -10,6 +11,20 @@ export type Checked<T> = { ok: true; value: T } | { ok: false; errors: FieldErro
 export type WeeklyHours = Record<number, Interval[]>;
 
 export const MAX_BLOCK_DAYS = 62;
+
+/** Every error these checks give, as code -> English template. The dashboard shows each in the host's language. */
+export const AVAILABILITY_MESSAGES = {
+  timeFrom: "Use a time like 09:00.",
+  timeTo: "Use a time like 17:00.",
+  endBeforeStart: "End time must be after the start time.",
+  overlap: "This range overlaps another one on the same day.",
+  unknownDay: "Unknown day.",
+  pickDate: "Pick a date.",
+  datePassed: "That date has already passed.",
+  lastBeforeFirst: "The last day must be on or after the first day.",
+  tooManyDays: "Block up to {n} days at a time.",
+} as const;
+const M = AVAILABILITY_MESSAGES;
 const DAY_MS = 86_400_000;
 
 /** Minutes since midnight for "HH:MM" between 00:00 and 24:00, or null when the format is wrong. */
@@ -29,10 +44,10 @@ export function validateIntervals(intervals: Interval[], prefix: string): FieldE
   intervals.forEach((iv, i) => {
     const from = parseTime(iv.from);
     const to = parseTime(iv.to);
-    if (from === null) errors[`${prefix}-${i}-from`] = "Use a time like 09:00.";
-    if (to === null) errors[`${prefix}-${i}-to`] = "Use a time like 17:00.";
+    if (from === null) errors[`${prefix}-${i}-from`] = M.timeFrom;
+    if (to === null) errors[`${prefix}-${i}-to`] = M.timeTo;
     if (from === null || to === null) return;
-    if (from >= to) errors[`${prefix}-${i}-to`] = "End time must be after the start time.";
+    if (from >= to) errors[`${prefix}-${i}-to`] = M.endBeforeStart;
     else good.push({ i, from, to });
   });
   good.sort((a, b) => a.from - b.from);
@@ -41,7 +56,7 @@ export function validateIntervals(intervals: Interval[], prefix: string): FieldE
   for (const r of good) {
     if (r.from < maxEnd) {
       const later = Math.max(r.i, maxEndIndex);
-      errors[`${prefix}-${later}-from`] = "This range overlaps another one on the same day.";
+      errors[`${prefix}-${later}-from`] = M.overlap;
     }
     if (r.to > maxEnd) {
       maxEnd = r.to;
@@ -57,7 +72,7 @@ export function validateWeeklyHours(hours: WeeklyHours): Checked<WeeklyHours> {
   for (const [key, intervals] of Object.entries(hours)) {
     const day = Number(key);
     if (!Number.isInteger(day) || day < 0 || day > 6) {
-      errors[`w${key}`] = "Unknown day.";
+      errors[`w${key}`] = M.unknownDay;
       continue;
     }
     Object.assign(errors, validateIntervals(intervals, `w${day}`));
@@ -79,8 +94,8 @@ export function todayIn(timezone: string, now: Date): string {
 }
 
 function dateError(value: string, today: string): string | null {
-  if (!isValidDate(value)) return "Pick a date.";
-  if (value < today) return "That date has already passed.";
+  if (!isValidDate(value)) return M.pickDate;
+  if (value < today) return M.datePassed;
   return null;
 }
 
@@ -109,8 +124,8 @@ export function validateDateRange(from: string, to: string, today: string): Chec
   if (badFrom) errors["block-from"] = badFrom;
   if (badTo) errors["block-to"] = badTo;
   if (!badFrom && !badTo) {
-    if (to < from) errors["block-to"] = "The last day must be on or after the first day.";
-    else if (datesInRange(from, to).length > MAX_BLOCK_DAYS) errors["block-to"] = `Block up to ${MAX_BLOCK_DAYS} days at a time.`;
+    if (to < from) errors["block-to"] = M.lastBeforeFirst;
+    else if (datesInRange(from, to).length > MAX_BLOCK_DAYS) errors["block-to"] = fillTemplate(M.tooManyDays, { n: MAX_BLOCK_DAYS });
   }
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, value: { from, to } };
 }

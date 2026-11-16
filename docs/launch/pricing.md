@@ -32,8 +32,8 @@ From `docs/feedback.md`, 190 reviews:
 
 | plan | for | INR monthly | INR yearly | USD monthly | USD yearly | includes |
 | --- | --- | --- | --- | --- | --- | --- |
-| **Free** | trying it, or a light schedule | ₹0 | ₹0 | $0 | $0 | 1 person, unlimited booking links, 2 calendars with the sync light, email reminders, Hourhand footer on the booking page |
-| **Solo** (recommended) | a coach, tutor or therapist running their own bookings | **₹399** + 18% GST = ₹470.82 | **₹3,990** + 18% GST = ₹4,708.20 | **$7** | **$70** | unlimited calendars, sync alerts by WhatsApp and email, 300 WhatsApp/SMS reminders a month, payments at booking, no footer, a human reply within 1 working day |
+| **Free** | trying it, or a light schedule | ₹0 | ₹0 | $0 | $0 | 1 person, unlimited booking links, 1 availability schedule, 2 calendars with the sync light, email reminders, Hourhand footer on the booking page |
+| **Solo** (recommended) | a coach, tutor or therapist running their own bookings | **₹399** + 18% GST = ₹470.82 | **₹3,990** + 18% GST = ₹4,708.20 | **$7** | **$70** | unlimited calendars, several availability schedules (own hours and time zone each), sync alerts by WhatsApp and email, 300 WhatsApp/SMS reminders a month, payments at booking, no footer, a human reply within 1 working day |
 | **Duo** | an owner plus an assistant, or two co-hosts | **₹599** + 18% GST = ₹706.82 | **₹5,990** + 18% GST = ₹7,068.20 | **$11** | **$110** | everything in Solo for 2 people, a shared calendar, 600 reminders a month; each extra person ₹249 ($4) a month |
 
 Against the market: Solo is $7 against Calendly Standard's $10 to $12. Duo is $11 for two people against $32 to $40 for two Calendly Teams seats, and that seat price is the complaint reviewers raised.

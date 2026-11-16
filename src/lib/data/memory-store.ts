@@ -6,7 +6,7 @@ import { buildSeed, type Seed } from "./seed";
 import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
 import {
-  EventTypeInUseError, LinkUnavailableError, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type BookingLink, type BookingWithInvitee,
+  DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type BookingLink, type BookingWithInvitee,
   type CreateBookingInput, type DataStore, type EventType, type EventTypeDraft, type Interval,
 } from "./types";
 
@@ -118,6 +118,10 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       const user = db.users.find((u) => u.id === userId);
       if (user) user.locale = locale;
     },
+    async setUserHostLocale(userId, locale) {
+      const user = db.users.find((u) => u.id === userId);
+      if (user) user.hostLocale = locale;
+    },
     async getUserBySlug(slug) {
       return db.users.find((u) => u.slug === slug && !deleted.has(u.id)) ?? null;
     },
@@ -145,6 +149,64 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       const schedule = db.schedules.find((s) => s.userId === userId && s.isDefault);
       if (!schedule) throw new Error(`No default schedule for ${userId}`);
       return { schedule, rules: db.rules.filter((r) => r.scheduleId === schedule.id) };
+    },
+    async listSchedules(userId) {
+      const fallback = db.schedules.find((s) => s.userId === userId && s.isDefault)?.id ?? null;
+      const types = db.eventTypes.filter((e) => e.userId === userId && e.kind !== "one_off").sort((a, b) => a.position - b.position);
+      return db.schedules
+        .filter((s) => s.userId === userId)
+        .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+        .map((s) => ({ ...s, eventTypes: types.filter((e) => (e.scheduleId ?? fallback) === s.id).map((e) => ({ id: e.id, name: e.name })) }));
+    },
+    async getSchedule(userId, scheduleId) {
+      const schedule = db.schedules.find((s) => s.userId === userId && s.id === scheduleId);
+      return schedule ? { schedule, rules: db.rules.filter((r) => r.scheduleId === schedule.id) } : this.getDefaultSchedule(userId);
+    },
+    async createSchedule(userId, input, limit) {
+      const mine = db.schedules.filter((s) => s.userId === userId);
+      if (mine.length >= limit) throw new ScheduleLimitError(limit);
+      const source = input.copyFrom === undefined ? null : ownedSchedule(userId, input.copyFrom);
+      assertScheduleNameFree(userId, input.name, null);
+      const user = db.users.find((u) => u.id === userId);
+      const made: AvailabilitySchedule = { id: randomUUID(), userId, name: input.name, timezone: input.timezone ?? source?.timezone ?? user?.timezone ?? "Asia/Kolkata", isDefault: false };
+      db.schedules.push(made);
+      if (source) {
+        for (const r of db.rules.filter((x) => x.scheduleId === source.id)) db.rules.push({ ...r, id: randomUUID(), scheduleId: made.id, intervals: r.intervals.map((i) => ({ ...i })) });
+      } else {
+        for (const d of [1, 2, 3, 4, 5]) db.rules.push({ id: randomUUID(), scheduleId: made.id, kind: "weekly", weekday: d, onDate: null, intervals: [{ from: "09:00", to: "17:00" }] });
+      }
+      return { ...made };
+    },
+    async updateSchedule(userId, scheduleId, input) {
+      const schedule = ownedSchedule(userId, scheduleId);
+      assertScheduleNameFree(userId, input.name, scheduleId);
+      schedule.name = input.name;
+      schedule.timezone = input.timezone;
+      return { ...schedule };
+    },
+    async setDefaultSchedule(userId, scheduleId) {
+      const target = ownedSchedule(userId, scheduleId);
+      for (const s of db.schedules) if (s.userId === userId) s.isDefault = s === target;
+    },
+    async deleteSchedule(userId, scheduleId, opts = {}) {
+      const target = ownedSchedule(userId, scheduleId);
+      if (target.isDefault) throw new DefaultScheduleError();
+      const users = db.eventTypes.filter((e) => e.userId === userId && e.scheduleId === scheduleId && e.kind !== "one_off").sort((a, b) => a.position - b.position);
+      if (users.length > 0) {
+        if (opts.moveTo === undefined) throw new ScheduleInUseError(users.map((e) => ({ id: e.id, name: e.name })));
+        if (opts.moveTo === scheduleId) throw new NotFoundError("Schedule");
+        ownedSchedule(userId, opts.moveTo);
+      }
+      for (const e of db.eventTypes) if (e.userId === userId && e.scheduleId === scheduleId) e.scheduleId = opts.moveTo ?? null;
+      db.schedules = db.schedules.filter((s) => s !== target);
+      db.rules = db.rules.filter((r) => r.scheduleId !== scheduleId);
+    },
+    async setEventTypeSchedule(userId, eventTypeId, scheduleId) {
+      const eventType = db.eventTypes.find((e) => e.userId === userId && e.id === eventTypeId);
+      if (!eventType) throw new NotFoundError("Event type");
+      ownedSchedule(userId, scheduleId);
+      eventType.scheduleId = scheduleId;
+      return eventType;
     },
     async listCalendarConnections(userId) {
       return db.connections.filter((c) => c.userId === userId);
@@ -383,8 +445,15 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
     return db.eventTypes.some((e) => e.userId === userId && e.id === eventTypeId);
   }
 
-  function ownedSchedule(userId: string, scheduleId: string) {
-    if (!db.schedules.some((sc) => sc.userId === userId && sc.id === scheduleId)) throw new NotFoundError("Schedule");
+  function ownedSchedule(userId: string, scheduleId: string): AvailabilitySchedule {
+    const schedule = db.schedules.find((sc) => sc.userId === userId && sc.id === scheduleId);
+    if (!schedule) throw new NotFoundError("Schedule");
+    return schedule;
+  }
+
+  /** Same rule as the unique index on (user_id, lower(name)). */
+  function assertScheduleNameFree(userId: string, name: string, exceptId: string | null) {
+    if (db.schedules.some((sc) => sc.userId === userId && sc.id !== exceptId && sc.name.toLowerCase() === name.toLowerCase())) throw new ScheduleNameTakenError();
   }
 
   function setOverride(scheduleId: string, date: string, intervals: Interval[]) {

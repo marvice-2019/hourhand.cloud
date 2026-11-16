@@ -1,6 +1,7 @@
 // One GET to a provider, with a timeout and errors the host can act on. The token travels only in the request header
 // given here: it is never put in a URL, an error message or a log line.
 import { BUFFER, DURATION, START_INCREMENTS } from "../event-types";
+import { importMessage } from "./messages";
 import { ImportError, PROVIDER_LABEL, type FetchLike, type ImportDeps, type ImportProvider } from "./types";
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
@@ -15,17 +16,17 @@ export async function getJson(provider: ImportProvider, url: string, headers: Re
   } catch (e) {
     const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
     throw timedOut
-      ? new ImportError("timeout", `${label} took too long to answer. Try again in a minute.`)
-      : new ImportError("unavailable", `Couldn't reach ${label} just now. Try again in a minute.`);
+      ? new ImportError("timeout", importMessage("timeout", { label }))
+      : new ImportError("unavailable", importMessage("unreachable", { label }));
   }
   if (res.status === 401 || res.status === 403) throw new ImportError("bad_token", messages.badToken);
   if (res.status === 404) throw new ImportError("not_found", messages.notFound);
-  if (res.status === 429) throw new ImportError("rate_limited", `${label} is limiting requests right now. Wait a minute, then try again.`);
-  if (!res.ok) throw new ImportError("unavailable", `${label} had a problem answering (error ${res.status}). Try again in a minute.`);
+  if (res.status === 429) throw new ImportError("rate_limited", importMessage("rateLimited", { label }));
+  if (!res.ok) throw new ImportError("unavailable", importMessage("providerError", { label, status: res.status }));
   try {
     return await res.json();
   } catch {
-    throw new ImportError("bad_response", `${label} sent an answer Hourhand couldn't read. Try again, or create the event types by hand.`);
+    throw new ImportError("bad_response", importMessage("unreadable", { label }));
   }
 }
 
@@ -43,19 +44,19 @@ export function text(v: unknown, max: number): string {
 /** Lengths outside 5 to 720 minutes are brought to the nearest end, with a note. */
 export function clampDuration(raw: number | null, notes: string[]): number {
   if (raw === null) {
-    notes.push("No length was given, so it is set to 30 minutes.");
+    notes.push(importMessage("noLength"));
     return 30;
   }
   const minutes = Math.round(raw);
   const clamped = Math.min(DURATION.max, Math.max(DURATION.min, minutes));
-  if (clamped !== minutes) notes.push(`Length changed from ${minutes} to ${clamped} minutes (Hourhand allows ${DURATION.min} to ${DURATION.max}).`);
+  if (clamped !== minutes) notes.push(importMessage("lengthChanged", { from: minutes, to: clamped, min: DURATION.min, max: DURATION.max }));
   return clamped;
 }
 
 export function clampBuffer(raw: number | null, which: "before" | "after", notes: string[]): number {
   const minutes = Math.round(raw ?? 0);
   const clamped = Math.min(BUFFER.max, Math.max(BUFFER.min, minutes));
-  if (clamped !== minutes) notes.push(`Buffer ${which} changed from ${minutes} to ${clamped} minutes.`);
+  if (clamped !== minutes) notes.push(importMessage(which === "before" ? "bufferBeforeChanged" : "bufferAfterChanged", { from: minutes, to: clamped }));
   return clamped;
 }
 
@@ -63,7 +64,7 @@ export function clampBuffer(raw: number | null, which: "before" | "after", notes
 export function nearestIncrement(raw: number | null, notes: string[]): number | null {
   if (raw === null || raw <= 0) return null;
   const best = [...START_INCREMENTS].reduce((a, b) => (Math.abs(b - raw) < Math.abs(a - raw) ? b : a));
-  if (best !== raw) notes.push(`Start times every ${raw} minutes became every ${best} minutes.`);
+  if (best !== raw) notes.push(importMessage("incrementChanged", { from: raw, to: best }));
   return best;
 }
 

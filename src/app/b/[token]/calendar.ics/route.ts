@@ -5,6 +5,7 @@ import { LOCATION_KEYS, isLocale, t } from "@/lib/i18n/guest";
 import { mt } from "@/lib/i18n/mail";
 import { GUEST_LOCATION_LABELS } from "@/lib/location-labels";
 import { buildIcs } from "@/lib/mail/ics";
+import { videoJoinUrl } from "@/lib/video/links";
 
 export const dynamic = "force-dynamic";
 
@@ -15,14 +16,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!booking || booking.status !== "confirmed") return new NextResponse(null, { status: 404 });
   const [host, eventType] = await Promise.all([store.getUser(booking.hostId), store.getEventType(booking.hostId, booking.eventTypeId)]);
   if (!host || !eventType) return new NextResponse(null, { status: 404 });
-  const manageUrl = `${(resolveBaseUrl() ?? request.nextUrl.origin).replace(/\/+$/, "")}/b/${token}`;
+  const base = (resolveBaseUrl() ?? request.nextUrl.origin).replace(/\/+$/, "");
+  const manageUrl = `${base}/b/${token}`;
   // In the language the guest booked in, like their emails.
   const locale = isLocale(booking.invitee.locale) ? booking.invitee.locale : "en";
   const place = booking.locationKind ? (locale === "en" ? GUEST_LOCATION_LABELS[booking.locationKind] : t(locale, LOCATION_KEYS[booking.locationKind])) : null;
   const ics = buildIcs({
     uid: `${booking.id}@hourhand`, start: booking.startAt, end: booking.endAt, stamp: new Date(),
     summary: mt(locale, "calWith", { event: eventType.name, host: host.name }), description: mt(locale, "calChange", { url: manageUrl }),
-    location: booking.joinUrl ?? place, url: manageUrl,
+    location: booking.joinUrl ?? videoJoinUrl(base, booking.locationKind, token) ?? place, url: manageUrl,
   });
   return new NextResponse(ics, {
     headers: { "content-type": "text/calendar; charset=utf-8", "content-disposition": 'attachment; filename="booking.ics"', "cache-control": "no-store" },

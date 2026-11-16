@@ -1,4 +1,5 @@
 import { promises as dnsPromises } from "node:dns";
+import { fillTemplate } from "../i18n/host/lib-messages";
 import { DOMAIN_TARGET } from "./validate";
 
 // Is a host's domain pointed at Hourhand? Either a CNAME to domains.hourhand.cloud, or (for a root domain, where DNS
@@ -16,6 +17,19 @@ export function systemResolver(timeoutMs = 5_000): Resolver {
   const r = new dnsPromises.Resolver({ timeout: timeoutMs, tries: 2 });
   return { resolveCname: (h) => r.resolveCname(h), resolve4: (h) => r.resolve4(h) };
 }
+
+/**
+ * Every reason a check gives, as code -> English template. The reason is stored in English as the domain's last
+ * error, and the domain page shows it in the host's language. Specific templates come before general ones.
+ */
+export const DNS_MESSAGES = {
+  ourRecordMissing: "Couldn't look up {target} (no A record). This is on Hourhand's side; we'll check again.",
+  ourLookupFailed: "Couldn't look up {target} ({why}). This is on Hourhand's side; we'll check again.",
+  lookupFailed: "The DNS lookup for {domain} didn't answer ({why}). We'll check again.",
+  cnameElsewhere: "{domain} points to {cname}, not {target}. Change the CNAME record's value to {target}.",
+  aElsewhere: "{domain} points to {ips}, which isn't Hourhand. Use a CNAME record to {target} instead.",
+  noRecord: "No DNS record found for {domain} yet. Add the CNAME record below; it can take up to an hour to show up.",
+} as const;
 
 export type DnsCheck =
   | { ok: true; via: "cname" | "a" }
@@ -43,19 +57,19 @@ export async function checkDomainDns(domain: string, resolver: Resolver, target 
   const [mine, ours] = await Promise.all([lookup(() => resolver.resolve4(domain)), lookup(() => resolver.resolve4(target))]);
   if ("failed" in ours || ("records" in ours && ours.records.length === 0)) {
     // Our own record is missing or unreachable: never the host's fault, and never a reason to take a domain down.
-    return { ok: false, transient: true, reason: `Couldn't look up ${target} (${"failed" in ours ? ours.failed : "no A record"}). This is on Hourhand's side; we'll check again.` };
+    return { ok: false, transient: true, reason: "failed" in ours ? fillTemplate(DNS_MESSAGES.ourLookupFailed, { target, why: ours.failed }) : fillTemplate(DNS_MESSAGES.ourRecordMissing, { target }) };
   }
   if ("failed" in mine || "failed" in cname) {
     const why = "failed" in mine ? mine.failed : (cname as { failed: string }).failed;
-    return { ok: false, transient: true, reason: `The DNS lookup for ${domain} didn't answer (${why}). We'll check again.` };
+    return { ok: false, transient: true, reason: fillTemplate(DNS_MESSAGES.lookupFailed, { domain, why }) };
   }
   const a = mine.records;
   if (a.length > 0 && a.every((ip) => ours.records.includes(ip))) return { ok: true, via: "a" };
 
-  if (cname.records.length > 0) return { ok: false, transient: false, reason: `${domain} points to ${cname.records[0]}, not ${target}. Change the CNAME record's value to ${target}.` };
+  if (cname.records.length > 0) return { ok: false, transient: false, reason: fillTemplate(DNS_MESSAGES.cnameElsewhere, { domain, cname: cname.records[0], target }) };
   if (a.length > 0) {
     const stray = a.filter((ip) => !ours.records.includes(ip));
-    return { ok: false, transient: false, reason: `${domain} points to ${stray.join(", ")}, which isn't Hourhand. Use a CNAME record to ${target} instead.` };
+    return { ok: false, transient: false, reason: fillTemplate(DNS_MESSAGES.aElsewhere, { domain, ips: stray.join(", "), target }) };
   }
-  return { ok: false, transient: false, reason: `No DNS record found for ${domain} yet. Add the CNAME record below; it can take up to an hour to show up.` };
+  return { ok: false, transient: false, reason: fillTemplate(DNS_MESSAGES.noRecord, { domain }) };
 }

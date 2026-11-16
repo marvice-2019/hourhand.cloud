@@ -5,12 +5,14 @@ import { requireHost } from "@/lib/auth/session";
 import { hostPlan } from "@/lib/billing/account";
 import { LIMITS } from "@/lib/billing/plans";
 import { getPool } from "@/lib/data/pg-store";
+import { getHostI18n } from "@/lib/i18n/host/server";
 import { acceptsVotes, listPolls } from "@/lib/polls/polls";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewPollPage() {
   const user = await requireHost();
+  const { t } = await getHostI18n();
   let freeLimitReached = false;
   if (authEnabled()) {
     const pool = getPool(process.env.DATABASE_URL as string);
@@ -20,11 +22,9 @@ export default async function NewPollPage() {
   }
   return (
     <div>
-      <Link href="/dashboard/polls" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent underline">Polls</Link>
-      <h1 className="font-display text-xl text-text">New poll</h1>
-      <p className="mt-2 max-w-xl text-text-muted">
-        Propose 2 to 8 times. You get one link to share, in a WhatsApp group or by email. People answer yes, if needed or no for each time.
-      </p>
+      <Link href="/dashboard/polls" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent underline">{t("polls.title")}</Link>
+      <h1 className="font-display text-xl text-text">{t("polls.newPoll")}</h1>
+      <p className="mt-2 max-w-xl text-text-muted">{t("polls.newIntro")}</p>
       <div className="mt-6"><PollForm timeZone={user.timezone} freeLimitReached={freeLimitReached} /></div>
     </div>
   );
