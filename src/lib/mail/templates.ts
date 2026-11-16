@@ -389,13 +389,13 @@ export function renderPollClosedMail(c: { title: string; hostTimezone: string; h
 export function renderReferralRewardMail(c: { role: "referrer" | "referred"; otherName: string | null; value: string; planUrl: string }): RenderedMail {
   const other = c.otherName?.trim() || (c.role === "referrer" ? "A host you invited" : "the host who invited you");
   const intro = c.role === "referrer"
-    ? `${other} just started a paid Hourhand plan through your link. Thank you: your next renewal has a free month of Solo (${c.value}) taken off.`
-    : `Thanks for joining Hourhand through ${other}'s link. Your next renewal has a free month of Solo (${c.value}) taken off.`;
+    ? `${other} just started a paid Hourhand plan through your link. Thank you: a month of Solo, ${c.value}, comes off your next renewal.`
+    : `Thanks for joining Hourhand through ${other}'s link. A month of Solo, ${c.value}, comes off your next renewal.`;
   return render(c.role === "referrer" ? "You earned a free month of Hourhand" : "Your free month of Hourhand", {
     heading: "A free month of Solo", intro,
-    rows: [["Free month", `One month of Solo (${c.value})`], ["When", "Your next renewal"]],
+    rows: [["Free month", `${c.value} off (one month of Solo)`], ["When", "Your next renewal"]],
     link: { label: "See your plan and referrals", url: c.planUrl },
-    note: "If you pay by UPI AutoPay or eMandate, Razorpay can't discount a renewal, so the month is added as Solo after your paid plan ends. Free months can't be exchanged for cash.",
+    note: "On Razorpay the renewal still costs ₹1, the least Razorpay can charge. If you pay by UPI AutoPay or eMandate, Razorpay can't discount a renewal, so the month is added as Solo after your paid plan ends. Free months can't be exchanged for cash.",
     footer: "Sent by Hourhand about your subscription.",
   });
 }

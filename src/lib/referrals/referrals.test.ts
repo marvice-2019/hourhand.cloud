@@ -460,7 +460,7 @@ describe.skipIf(!BASE)("referrals (TEST_DATABASE_URL)", () => {
       const forReferrer = rows.find((r) => r.user_id === referrer.id)!;
       const mail = await renderReferralReward(pool, forReferrer, "https://hourhand.test");
       expect("subject" in mail && mail.subject).toBe("You earned a free month of Hourhand");
-      expect("text" in mail && mail.text).toContain("₹399");
+      expect("text" in mail && mail.text).toContain("₹398");
       expect("text" in mail && mail.text).toContain("can't be exchanged for cash");
       const forReferred = rows.find((r) => r.user_id === referred.id)!;
       const mail2 = await renderReferralReward(pool, forReferred, "https://hourhand.test");

@@ -1,5 +1,6 @@
 import type pg from "pg";
 import { formatMoney, PRICES } from "../billing/plans";
+import { RAZORPAY_REFERRAL_DISCOUNT_INR } from "./credits";
 import { renderReferralRewardMail, type RenderedMail } from "../mail/templates";
 
 /** The queued "free month" email for one side of a referral; skipped if the credit no longer exists. */
@@ -13,6 +14,6 @@ export async function renderReferralReward(pool: Pick<pg.Pool, "query">, c: { de
        left join subscriptions s on s.user_id = k.user_id
       where k.referral_id = $1 and k.role = $2 and k.user_id = $3`, [m[1], role, c.user_id]);
   if (!r) return { skip: "free month no longer exists" };
-  const value = r.provider === "stripe" ? formatMoney(PRICES.solo.month.USD, "USD") : formatMoney(PRICES.solo.month.INR, "INR");
+  const value = r.provider === "stripe" ? formatMoney(PRICES.solo.month.USD, "USD") : formatMoney(RAZORPAY_REFERRAL_DISCOUNT_INR, "INR");
   return renderReferralRewardMail({ role, otherName: r.other_name, value, planUrl: `${baseUrl}/dashboard/referrals` });
 }

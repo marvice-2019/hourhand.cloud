@@ -13,6 +13,13 @@ import { BillingApiError, send, type Fetch } from "../billing/providers";
 
 type Env = Record<string, string | undefined>;
 
+/**
+ * What a free month takes off a Razorpay renewal: the referral Offer's flat amount. Plans charge ₹399, and Razorpay
+ * only applies an offer that leaves more than ₹1 to charge, so the Offer is ₹398 and the host pays ₹1 that month.
+ * Keep this equal to the Offer set as RAZORPAY_REFERRAL_OFFER_ID.
+ */
+export const RAZORPAY_REFERRAL_DISCOUNT_INR = 39_800;
+
 export type ScheduleResult =
   | { kind: "scheduled"; mechanism: "stripe_balance" | "razorpay_offer"; ref: string; stackable: boolean }
   | { kind: "extension"; reason: string };

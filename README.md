@@ -142,13 +142,13 @@ A provider shows as "not set up" until its API key and webhook value are both se
 
 ### Referrals
 
-Each host gets a random link, `https://<your-domain>/r/<code>` (Dashboard → Referrals). Someone who opens it and signs up within 30 days is linked to that host. When that new host's first payment for Solo or Duo goes through (a signed billing webhook: Razorpay `subscription.charged`, Stripe `invoice.paid` with money paid), both get a free month worth one month of Solo (₹399 / $7). Code: `src/lib/referrals/`.
+Each host gets a random link, `https://<your-domain>/r/<code>` (Dashboard → Referrals). Someone who opens it and signs up within 30 days is linked to that host. When that new host's first payment for Solo or Duo goes through (a signed billing webhook: Razorpay `subscription.charged`, Stripe `invoice.paid` with money paid), both get a free month: one month of Solo off their next renewal ($7 on Stripe; ₹398 on Razorpay, so the host pays ₹1 that month). Code: `src/lib/referrals/`.
 
 - **Only real money counts.** Signing up, a subscription being activated, or a fully discounted invoice don't pay out. Each referral pays out once, however many times the webhook arrives.
 - **Limits:** one referral per new account; at most 12 rewarded referrals per referrer in any 12 months (the new host still gets theirs after that); no self-referral. Self-referral means the same mailbox (case, `+tags` and Gmail dots ignored), the same card (Stripe gives a card fingerprint; Razorpay doesn't, so this rule only covers Stripe), or a browser the referrer used in the last 30 days (`hh_dev` cookie). Colleagues on the same email domain can refer each other.
 - **How the free month is given.** Stripe: a credit on the customer's balance of one Solo month, which Stripe takes off the next invoice. Razorpay: a Single Use Offer linked to the subscription through the Update Subscription API; Razorpay applies an offer linked to an active subscription at the end of the current billing cycle, and one at a time, so a second free month waits a cycle. Razorpay can't update UPI AutoPay or eMandate subscriptions: for those hosts the free month is a month of Solo added after their paid plan ends, shown as such on their Referrals page.
 - **Credits never become cash.** Stripe doesn't refund a customer balance; a Razorpay offer only reduces a charge.
-- **Razorpay setup:** in the Razorpay Dashboard, create one Subscriptions Offer: Single Use, flat discount. Razorpay requires more than ₹1 left to charge after an offer, so a renewal can never be fully free. If your Plans charge ₹399 before GST, use ₹398; if they charge the GST-inclusive ₹470.82, use ₹399. Set its id as `RAZORPAY_REFERRAL_OFFER_ID`.
+- **Razorpay setup:** in the Razorpay Dashboard, create one Subscriptions Offer: Single Use, flat discount. Razorpay requires more than ₹1 left to charge after an offer, so a renewal can never be fully free. Hourhand's Plans charge ₹399, so the Offer is **₹398 flat** and the host pays ₹1 that month (`RAZORPAY_REFERRAL_DISCOUNT_INR` in `src/lib/referrals/credits.ts` must match it). Set its id as `RAZORPAY_REFERRAL_OFFER_ID`.
 
 ## Payments at booking
 

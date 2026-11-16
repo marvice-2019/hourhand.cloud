@@ -4,6 +4,7 @@ import { requireOwnAccount } from "@/lib/auth/session";
 import { formatMoney, PRICES } from "@/lib/billing/plans";
 import { getPool } from "@/lib/data/pg-store";
 import { YEARLY_REWARD_CAP } from "@/lib/referrals/codes";
+import { RAZORPAY_REFERRAL_DISCOUNT_INR } from "@/lib/referrals/credits";
 import { getOrCreateCode, referralSummary, type CreditLine } from "@/lib/referrals/store";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ const STATUS: Record<CreditLine["status"], string> = {
 export default async function ReferralsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requireOwnAccount();
   const params = await searchParams;
-  const value = `${formatMoney(PRICES.solo.month.INR, "INR")} / ${formatMoney(PRICES.solo.month.USD, "USD")}`;
+  const value = `${formatMoney(RAZORPAY_REFERRAL_DISCOUNT_INR, "INR")} / ${formatMoney(PRICES.solo.month.USD, "USD")}`;
 
   if (!authEnabled()) {
     return (
