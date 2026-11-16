@@ -9,6 +9,8 @@ import { getPool } from "@/lib/data/pg-store";
 import { CHANNEL_LABELS, listConsents, PURPOSE_LABELS } from "@/lib/privacy/consent";
 import { MAX_NOTE } from "@/lib/privacy/notes";
 import { clientKey, summarizeClients } from "@/lib/clients";
+import { clientMoney, latestAnswers } from "@/lib/client-file";
+import { ClientFile } from "@/components/ClientFile";
 import { store } from "@/lib/data";
 import { formatDate, formatTime } from "@/lib/format";
 import { focusRing } from "@/components/ui/focus";
@@ -27,6 +29,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   const owner = !(await getHostContext())?.acting;
   const note = owner ? await store.getClientNote(user.id, client.email) : "";
   const consents = authEnabled() ? await listConsents(getPool(process.env.DATABASE_URL as string), user.id, client.email) : [];
+  const money = authEnabled() ? await clientMoney(getPool(process.env.DATABASE_URL as string), user.id, client.email) : null;
   const tz = user.timezone;
   return (
     <div>
@@ -39,6 +42,8 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
         <div><dt className="text-sm text-text-muted">No-shows</dt><dd className="text-lg font-semibold text-text">{client.noShows}</dd></div>
         <div><dt className="text-sm text-text-muted">Client since</dt><dd className="text-lg font-semibold text-text">{formatDate(client.firstAt, tz)}</dd></div>
       </dl>
+
+      <ClientFile answers={latestAnswers(history)} money={money} tz={tz} />
 
       {owner ? (
         <Card className="mt-6 max-w-xl">

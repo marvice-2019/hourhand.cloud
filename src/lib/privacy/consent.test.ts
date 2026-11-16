@@ -42,6 +42,13 @@ describe("consent log", () => {
     ]);
   });
 
+  it("logs SMS updates only when ticked, with the words shown", () => {
+    const base = { hostName: "Priya", channel: "booking_page" as const, whatsappOptIn: false, whatsappStatement: "WA", questions: [], answers: [] };
+    expect(consentFor({ ...base, smsOptIn: true, smsStatement: "Text me by SMS." }).map((l) => [l.purpose, l.statement])).toEqual([
+      ["booking", bookingStatement("Priya")], ["sms_updates", "Text me by SMS."]]);
+    expect(consentFor({ ...base, smsOptIn: false, smsStatement: "Text me by SMS." }).map((l) => l.purpose)).toEqual(["booking"]);
+  });
+
   it("is handed to the store with every new booking, in the guest's language, and WhatsApp only with a phone", async () => {
     const { store, inputs } = spyStore();
     const host = (await store.getUserBySlug("priya"))!;

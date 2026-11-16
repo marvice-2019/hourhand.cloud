@@ -9,7 +9,7 @@ import type { CustomQuestion, InviteeAnswer } from "../data/types";
 /** The version of the privacy notice at /privacy that guests are pointed to. Bump it whenever that page's guest text changes. */
 export const PRIVACY_NOTICE_VERSION = "2026-11-15";
 
-export type ConsentPurpose = "booking" | "whatsapp_updates" | "host_question";
+export type ConsentPurpose = "booking" | "whatsapp_updates" | "sms_updates" | "host_question";
 export type ConsentChannel = "booking_page" | "single_use_link" | "package_link";
 
 /** One line of the log as the booking supplies it; the store adds the booking, client and time. */
@@ -32,6 +32,7 @@ export interface ConsentRecord extends ConsentInput {
 export const PURPOSE_LABELS: Record<ConsentPurpose, string> = {
   booking: "Booking details",
   whatsapp_updates: "WhatsApp updates",
+  sms_updates: "SMS updates",
   host_question: "Your consent question",
 };
 
@@ -55,6 +56,9 @@ export function consentFor(opts: {
   channel: ConsentChannel;
   whatsappOptIn: boolean;
   whatsappStatement: string;
+  /** SMS updates ticked for an Indian mobile number. Optional so callers from before SMS existed still build. */
+  smsOptIn?: boolean;
+  smsStatement?: string;
   questions: Pick<CustomQuestion, "id" | "label" | "kind">[];
   answers: InviteeAnswer[];
   noticeVersion?: string;
@@ -63,6 +67,7 @@ export function consentFor(opts: {
   const base = { noticeVersion, channel: opts.channel };
   const lines: ConsentInput[] = [{ ...base, purpose: "booking", granted: true, statement: bookingStatement(opts.hostName) }];
   if (opts.whatsappOptIn) lines.push({ ...base, purpose: "whatsapp_updates", granted: true, statement: opts.whatsappStatement });
+  if (opts.smsOptIn && opts.smsStatement) lines.push({ ...base, purpose: "sms_updates", granted: true, statement: opts.smsStatement });
   for (const q of opts.questions.filter((x) => x.kind === "consent")) {
     const answer = opts.answers.find((a) => a.questionId === q.id)?.answer.trim() ?? "";
     lines.push({ ...base, purpose: "host_question", granted: answer !== "", statement: q.label.slice(0, 2000) });
