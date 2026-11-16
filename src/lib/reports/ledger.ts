@@ -15,7 +15,7 @@ export const isHostId = (id: string) => UUID.test(id);
  * money later, as a refund doesn't give it back).
  */
 export type MoneyType = "sale" | "refund" | "deposit_kept" | "deposit_held" | "fee";
-export type MoneySource = "booking" | "package" | "deposit";
+export type MoneySource = "booking" | "package" | "deposit" | "membership";
 
 export interface MoneyEntry {
   type: MoneyType;
@@ -60,6 +60,15 @@ export const MONEY_SOURCES: MoneySourceQuery[] = [
             e.id as event_type_id, e.name as event_name, k.fee_minor::bigint as fee_minor, null::bigint as fee_tax_minor
           from package_purchases k join event_types e on e.id = k.event_type_id
           where k.host_id = $1 and k.status = 'paid' and k.paid_at >= $2 and k.paid_at < $3`,
+  },
+  {
+    // A month of a membership, counted when its charge is verified (the moment its invoice is issued). Its "event type"
+    // is the membership plan, as a plan can cover several event types.
+    type: "sale", source: "membership",
+    sql: `select m.currency, g.amount_minor::bigint as amount_minor, g.granted_at as at, lower(m.guest_email)::text as client_key, m.guest_name as client_name,
+            'plan:' || p.id::text as event_type_id, p.name as event_name, null::bigint as fee_minor, null::bigint as fee_tax_minor
+          from membership_grants g join memberships m on m.id = g.membership_id join membership_plans p on p.id = m.plan_id
+          where g.host_id = $1 and g.granted_at >= $2 and g.granted_at < $3`,
   },
   {
     type: "deposit_kept", source: "deposit",

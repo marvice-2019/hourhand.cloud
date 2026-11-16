@@ -1,0 +1,108 @@
+-- Roadmap 3.1: memberships. A host sells a monthly plan ("4 sessions a month, ₹6,000") that renews automatically through
+-- a Razorpay Subscription on the host's OWN Razorpay account. Each verified charge (subscription.charged webhook, never a
+-- browser redirect) adds a grant of N session credits. A booking made with the member's private link (/m/<token>) uses
+-- one credit from a grant; cancelling the booking gives the credit back, so like packages nothing stores a balance.
+
+create table membership_plans (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  name text not null check (length(name) between 1 and 100),
+  sessions int not null check (sessions between 1 and 60),             -- credits added by each paid month
+  price_minor int not null check (price_minor between 100 and 50000000),
+  currency text not null default 'INR' check (currency = 'INR'),
+  -- Unused credits at renewal: lost (none), kept up to rollover_cap in total (capped), or all kept (unlimited).
+  rollover text not null check (rollover in ('none', 'capped', 'unlimited')),
+  rollover_cap int check (rollover_cap between 1 and 600),
+  provider text not null default 'razorpay' check (provider in ('razorpay')),
+  provider_plan_id text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  check ((rollover = 'capped') = (rollover_cap is not null)),
+  unique (provider, provider_plan_id)
+);
+create index membership_plans_user_idx on membership_plans (user_id, created_at);
+
+-- The event types a membership's credits can book. Fixed when the plan is made.
+create table membership_plan_event_types (
+  plan_id uuid not null references membership_plans(id) on delete cascade,
+  event_type_id uuid not null references event_types(id) on delete cascade,
+  primary key (plan_id, event_type_id)
+);
+
+create table memberships (
+  id uuid primary key default gen_random_uuid(),
+  plan_id uuid not null references membership_plans(id) on delete restrict,
+  host_id uuid not null references users(id) on delete cascade,
+  -- What was bought, fixed at sign-up so a later change to the plan doesn't change it.
+  sessions int not null,
+  price_minor int not null,
+  currency text not null default 'INR',
+  rollover text not null,
+  rollover_cap int,
+  guest_name text not null,
+  guest_email citext not null,
+  guest_phone text,
+  -- The member's private link. Starts with "m" so it can never be mistaken for a package link (48 hex digits).
+  token text not null unique default 'm' || encode(gen_random_bytes(24), 'hex'),
+  idempotency_key text not null unique,
+  provider text not null default 'razorpay',
+  provider_subscription_id text unique,
+  short_url text,
+  -- The provider's own word: created, authenticated, active, pending, halted, paused, cancelled, completed, expired.
+  status text not null default 'created'
+    check (status in ('created','authenticated','active','pending','halted','paused','cancelled','completed','expired')),
+  status_event_at timestamptz,                -- when the provider event that set the status happened (events can arrive out of order)
+  cancel_at_period_end boolean not null default false,
+  cancel_requested_at timestamptz,
+  current_period_start timestamptz,
+  current_period_end timestamptz,
+  paid_through timestamptz,                   -- end of the last paid month
+  failed_payments int not null default 0,
+  last_failure_at timestamptz,
+  ended_at timestamptz,
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index memberships_host_idx on memberships (host_id, created_at);
+
+-- One per verified charge. `forfeited` is the part of an older grant dropped by a capped rollover at a later renewal.
+create table membership_grants (
+  id uuid primary key default gen_random_uuid(),
+  membership_id uuid not null references memberships(id) on delete cascade,
+  host_id uuid not null references users(id) on delete cascade,
+  provider_payment_id text not null unique,
+  amount_minor int not null,
+  period_start timestamptz not null,
+  period_end timestamptz not null,
+  credits int not null check (credits >= 0),
+  forfeited int not null default 0 check (forfeited >= 0),
+  expires_at timestamptz,                     -- null: kept while the membership renews (rollover)
+  granted_at timestamptz not null default now()
+);
+create index membership_grants_membership_idx on membership_grants (membership_id, granted_at);
+
+-- Every webhook delivery handled, so a repeat delivery does nothing.
+create table membership_events (
+  host_id uuid not null references users(id) on delete cascade,
+  event_id text not null,
+  type text not null,
+  received_at timestamptz not null default now(),
+  primary key (host_id, event_id)
+);
+
+-- The secret the host pastes into their Razorpay webhook settings. Generated by Hourhand, sealed with TOKEN_ENCRYPTION_KEY.
+create table membership_webhook_secrets (
+  user_id uuid primary key references users(id) on delete cascade,
+  secret_encrypted bytea not null,
+  created_at timestamptz not null default now()
+);
+
+alter table bookings add column membership_grant_id uuid references membership_grants(id) on delete restrict;
+create index bookings_membership_grant_idx on bookings (membership_grant_id) where membership_grant_id is not null;
+
+-- A GST invoice per membership charge. An invoice is for exactly one of: a payment, a package, a membership charge.
+alter table invoices add column membership_grant_id uuid references membership_grants(id) on delete restrict;
+alter table invoices drop constraint invoices_check;
+alter table invoices add constraint invoices_one_source check (num_nonnulls(payment_id, package_purchase_id, membership_grant_id) = 1);
+create unique index invoices_one_per_membership_grant on invoices (membership_grant_id) where kind = 'invoice' and membership_grant_id is not null;

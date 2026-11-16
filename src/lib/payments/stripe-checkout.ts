@@ -27,6 +27,8 @@ const SESSION_MINUTES = 31;
 
 /** Currencies with no minor unit: Hourhand stores prices in hundredths, so a host settling in one of these can't charge yet. */
 const ZERO_DECIMAL = new Set(["BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"]);
+/** Currencies Stripe counts in whole units (no cents), so their minor units aren't hundredths. */
+export const isZeroDecimal = (c: string) => ZERO_DECIMAL.has(c.toUpperCase());
 export const chargeableCurrency = (c: string | null): c is string => c !== null && /^[A-Z]{3}$/.test(c) && !ZERO_DECIMAL.has(c) && c !== "INR";
 
 export interface StripeSession {
@@ -42,8 +44,11 @@ export interface StripeSession {
 
 export interface StripeRefund { id: string; status: string; amount: number }
 
-/** Stripe's fee on a charge as its balance transaction reports it: GST/VAT part included, in the account's settlement currency. */
-export interface StripeFee { feeMinor: number; taxMinor: number; currency: string }
+/**
+ * Stripe's fee on a charge as its balance transaction reports it: GST/VAT part included, in the account's settlement
+ * currency. exchangeRate is Stripe's own rate when the charge was converted: charge amount × rate = settlement amount.
+ */
+export interface StripeFee { feeMinor: number; taxMinor: number; currency: string; exchangeRate: number | null }
 
 export interface StripeCheckoutApi {
   createSession(account: string, p: {
@@ -74,7 +79,8 @@ export function stripeFeeOf(pi: Record<string, unknown>): StripeFee | null {
   const tax = (Array.isArray(t.fee_details) ? t.fee_details : [])
     .filter((d): d is Record<string, unknown> => !!d && typeof d === "object" && (d as Record<string, unknown>).type === "tax" && String((d as Record<string, unknown>).currency).toLowerCase() === currency.toLowerCase())
     .reduce((sum, d) => sum + (typeof d.amount === "number" && Number.isInteger(d.amount) && d.amount > 0 ? d.amount : 0), 0);
-  return { feeMinor: fee, taxMinor: Math.min(tax, fee), currency: currency.toUpperCase() };
+  const rate = typeof t.exchange_rate === "number" && Number.isFinite(t.exchange_rate) && t.exchange_rate > 0 ? t.exchange_rate : null;
+  return { feeMinor: fee, taxMinor: Math.min(tax, fee), currency: currency.toUpperCase(), exchangeRate: rate };
 }
 
 const SESSION_ID = /^cs_[A-Za-z0-9_]{8,200}$/;

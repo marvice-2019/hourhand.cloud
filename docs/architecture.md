@@ -190,6 +190,10 @@ These are server actions (SA) and route handlers (GET/POST). "Host" means a sign
 - **Secrets.** OAuth tokens and the iCloud password are encrypted with AES-GCM, with the key in an environment variable on Coolify. Every variable is listed in `.env.example`, which holds no values.
 - **Backups.** Nightly `pg_dump` to off-box storage (Coolify backup to S3-compatible storage), and a restore test monthly.
 
+### Booking analytics (roadmap 3.6)
+
+First-party only, in the same Postgres (`db/migrations/0048_analytics.sql`, code in `src/lib/analytics/`). Booking pages count a view server-side after the response (`after()`); the slot picker sends one beacon to `/api/events`; `POST /api/bookings` reports "started" and "created". A booking counts as completed once confirmed (a lapsed payment hold never does). Visitors are de-duplicated per page and step per UTC day by a hash of a daily salt, address, browser and host; the salt is deleted when the day ends and nothing else about the visitor is kept. Do Not Track, Global Privacy Control and bots are skipped. The job runner rolls finished days into `analytics_daily` hourly (idempotent), keeps raw rows 90 days and daily totals 2 years. Free sees 7 days; Solo and Duo see 90 and can export CSV (`LIMITS` in `src/lib/billing/plans.ts`). The guest-facing description is in `/privacy` under "What we collect from guests"; keep the two in step.
+
 ## 5. Build order
 
 The hours are estimates for one experienced full-stack developer working with AI-assisted tools.

@@ -63,7 +63,7 @@ If you want mail sent **to** booking@hourhand.cloud to arrive somewhere, add a m
 
 ## 5. Environment variables (Coolify → app → Environment)
 
-Generate the two random values on your own machine with `openssl rand -hex 32` (once each). **Keep `TOKEN_ENCRYPTION_KEY` in your password manager and never change it:** every connected calendar and every host's Razorpay key is sealed with it, so a new key disconnects them all.
+Generate the two random values on your own machine with `openssl rand -hex 32` (once each). **Keep `TOKEN_ENCRYPTION_KEY` in your password manager and never change it:** every connected calendar, every host's Razorpay key and every private client and session note is sealed with it, so a new key disconnects them all and makes notes unreadable.
 
 | Name | Value | Required |
 | --- | --- | --- |
@@ -99,6 +99,8 @@ iCloud calendars need no server keys: each host connects with their own Apple ID
 **Security fixes (2026-10-11):** if you put Cloudflare (or any other proxy) in front of Coolify, add its address ranges to `TRUSTED_PROXIES`, or every visitor shares one rate-limit bucket. Keep the app's own port closed to the internet so all traffic comes through Coolify's proxy.
 
 **Group classes and installable app (2026-10-13):** migrations run to `0025` (adds the seat column to bookings; existing bookings are untouched). No new variables. Hosts can install Hourhand to their phone's home screen from the dashboard.
+
+**Hourhand video (3.11):** migration `0059` adds the `hourhand_video` location and the `video_rooms` and `video_guest_links` tables. The feature stays off until `JITSI_DOMAIN`, `JITSI_APP_ID` and `JITSI_APP_SECRET` are set as Runtime variables, and it needs its own Jitsi server: see `docs/video-jitsi.md`.
 
 ## 5b. WhatsApp (D7: automatic confirmations and reminders)
 

@@ -20,7 +20,9 @@ export interface CurrencyTotals {
   bookingsMinor: number;
   /** Session packages paid. */
   packagesMinor: number;
-  /** bookings + packages: what came in for sales. */
+  /** Membership months charged. */
+  membershipsMinor: number;
+  /** bookings + packages + memberships: what came in for sales. */
   grossMinor: number;
   /** Prices paid back. */
   refundsMinor: number;
@@ -68,7 +70,8 @@ export interface SessionStats {
 }
 
 export interface ClientLine { clientKey: string; name: string; currency: string; netMinor: number; sessions: number }
-export interface EventTypeLine { eventTypeId: string; eventName: string; currency: string; bookingsMinor: number; packagesMinor: number; depositsKeptMinor: number; sessions: number }
+/** Revenue by event type; a membership plan (id "plan:…") is a line of its own, as it can cover several event types. */
+export interface EventTypeLine { eventTypeId: string; eventName: string; currency: string; bookingsMinor: number; packagesMinor: number; membershipsMinor: number; depositsKeptMinor: number; sessions: number }
 export interface TrendPoint { month: string; currency: string; netSalesMinor: number; netIncomeMinor: number }
 
 export interface BusinessReport {
@@ -91,16 +94,17 @@ function totalsFor(currency: string, entries: MoneyEntry[]): CurrencyTotals {
   const sum = (f: (e: MoneyEntry) => boolean) => entries.reduce((s, e) => (f(e) ? s + e.amountMinor : s), 0);
   const bookingsMinor = sum((e) => e.type === "sale" && e.source === "booking");
   const packagesMinor = sum((e) => e.type === "sale" && e.source === "package");
+  const membershipsMinor = sum((e) => e.type === "sale" && e.source === "membership");
   const refundsMinor = sum((e) => e.type === "refund");
   const depositsKeptMinor = sum((e) => e.type === "deposit_kept");
-  const grossMinor = bookingsMinor + packagesMinor;
+  const grossMinor = bookingsMinor + packagesMinor + membershipsMinor;
   const netSalesMinor = grossMinor - refundsMinor;
   const fees = entries.filter((e) => e.type === "fee");
   // Only income whose real fee isn't in yet is estimated, so a fee is never counted twice.
   const unknown = entries.filter((e) => (e.type === "sale" || e.type === "deposit_kept") && e.feeMinor === null);
   const unknownMinor = unknown.reduce((s, e) => s + e.amountMinor, 0);
   return {
-    currency, bookingsMinor, packagesMinor, grossMinor, refundsMinor, netSalesMinor, depositsKeptMinor,
+    currency, bookingsMinor, packagesMinor, membershipsMinor, grossMinor, refundsMinor, netSalesMinor, depositsKeptMinor,
     netIncomeMinor: netSalesMinor + depositsKeptMinor, depositsHeldMinor: sum((e) => e.type === "deposit_held"),
     feesReportedMinor: fees.length ? fees.reduce((s, e) => s + e.amountMinor, 0) : null,
     feeTaxReportedMinor: fees.length ? fees.reduce((s, e) => s + (e.feeTaxMinor ?? 0), 0) : null,
@@ -184,16 +188,17 @@ export function summarize({ period, now, money, sessions, documents, trendFrom }
       if (e.clientName) c.name = e.clientName;
     }
     const lk = `${e.currency}|${e.eventTypeId}`;
-    const l = lines.get(lk) ?? lines.set(lk, { eventTypeId: e.eventTypeId, eventName: e.eventName, currency: e.currency, bookingsMinor: 0, packagesMinor: 0, depositsKeptMinor: 0, sessions: types.get(e.eventTypeId) ?? 0 }).get(lk)!;
+    const l = lines.get(lk) ?? lines.set(lk, { eventTypeId: e.eventTypeId, eventName: e.eventName, currency: e.currency, bookingsMinor: 0, packagesMinor: 0, membershipsMinor: 0, depositsKeptMinor: 0, sessions: types.get(e.eventTypeId) ?? 0 }).get(lk)!;
     if (e.type === "deposit_kept") l.depositsKeptMinor += e.amountMinor;
     else if (e.source === "package") l.packagesMinor += sign * e.amountMinor;
+    else if (e.source === "membership") l.membershipsMinor += sign * e.amountMinor;
     else l.bookingsMinor += sign * e.amountMinor;
   }
   const shown = new Map<string, number>();
   const topClients = [...clients.values()].filter((c) => c.netMinor > 0)
     .sort((a, b) => byCurrency(a.currency, b.currency) || b.netMinor - a.netMinor || a.name.localeCompare(b.name))
     .filter((c) => { const n = shown.get(c.currency) ?? 0; shown.set(c.currency, n + 1); return n < TOP_CLIENTS; });
-  const lineTotal = (l: EventTypeLine) => l.bookingsMinor + l.packagesMinor + l.depositsKeptMinor;
+  const lineTotal = (l: EventTypeLine) => l.bookingsMinor + l.packagesMinor + l.membershipsMinor + l.depositsKeptMinor;
   const byEventType = [...lines.values()].sort((a, b) => byCurrency(a.currency, b.currency) || lineTotal(b) - lineTotal(a) || a.eventName.localeCompare(b.eventName));
 
   const trendMonths = monthsBetween(trendFrom, period.to, tz);

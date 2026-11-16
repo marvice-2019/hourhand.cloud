@@ -55,6 +55,7 @@ export function pnlCsv(r: BusinessReport, periodLabel: string): string {
   for (const c of r.currencies) {
     add("Income: session payments", c.currency, c.bookingsMinor);
     add("Income: packages", c.currency, c.packagesMinor);
+    add("Income: memberships", c.currency, c.membershipsMinor);
     add("Income: forfeited deposits", c.currency, c.depositsKeptMinor);
     add("Less: refunds", c.currency, -c.refundsMinor);
     add("Net income", c.currency, c.netIncomeMinor);

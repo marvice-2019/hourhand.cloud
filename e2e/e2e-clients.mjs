@@ -71,8 +71,8 @@ check(html.includes("Private note") && html.includes("History"), "client page sh
 const res = await submitForm(pj, page, 'name="note"', { key, note: "Working on interview prep. Prefers mornings." });
 check(res?.status === 303 && res.headers.get("location")?.includes("saved=1"), `note saved (${res?.status})`);
 const who = (await pool.query("select i.email from invitees i join bookings b on b.id = i.booking_id where b.host_id = $1", [priya.id])).rows.find((r) => r.email.toLowerCase() === g.email.toLowerCase());
-const stored = (await pool.query("select note from client_notes where host_id = $1 and email = $2", [priya.id, who.email])).rows[0]?.note;
-check(stored === "Working on interview prep. Prefers mornings.", "note stored for this host and client");
+const stored = (await pool.query("select note, note_sealed from client_notes where host_id = $1 and email = $2", [priya.id, who.email])).rows[0];
+check(stored?.note === "" && Buffer.isBuffer(stored?.note_sealed) && !stored.note_sealed.toString("utf8").includes("interview"), "note stored for this host and client, sealed (no plaintext in the row)");
 html = await (await get(`/dashboard/bookings/${g.id}`, pj)).text();
 check(html.includes("Your note:") && html.includes("Working on interview prep"), "booking page shows the note");
 check(html.includes("Client history and notes"), "booking page links to the client");

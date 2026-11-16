@@ -22,13 +22,13 @@ export interface RouteDeps {
 /** Files every page needs, the same for every host. */
 const SHARED_FILES = /^\/(?:_next\/|favicon\.ico$|icon\.svg$|icons\/[^/]+$|apple-icon|manifest\.webmanifest$|robots\.txt$|assets\/)/;
 /** The JSON endpoints the booking pages call from the browser. They take ids, not a host, and are public on hourhand.cloud too. */
-const BOOKING_APIS = new Set(["/api/slots", "/api/bookings", "/api/bookings/pay", "/api/waitlist"]);
+const BOOKING_APIS = new Set(["/api/slots", "/api/bookings", "/api/bookings/pay", "/api/waitlist", "/api/events"]);
 /** A manage link and its calendar file, and the guest's manage actions. */
 const MANAGE_PAGE = /^\/b\/([^/]+)(?:\/calendar\.ics)?$/;
 const MANAGE_API = /^\/api\/b\/([^/]+)\/(?:cancel|reschedule|late)$/;
 const PHOTO = /^\/api\/photo\/([^/]+)$/;
 /** Top-level routes of the app. A slug equal to one of these (older accounts) must not open that route on a custom domain. */
-const APP_ROUTES = new Set(["api", "b", "dashboard", "invoice", "l", "login", "offline", "onboarding", "p", "pkg", "privacy", "sign-in", "terms", "site", "assets"]);
+const APP_ROUTES = new Set(["api", "b", "dashboard", "invoice", "l", "login", "offline", "onboarding", "p", "pkg", "join", "m", "member", "privacy", "sign-in", "terms", "site", "assets"]);
 
 /** "Book.Coach.com:443" → "book.coach.com". Null for a missing or malformed Host header. */
 export function normalizeHost(header: string | null): string | null {

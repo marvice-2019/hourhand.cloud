@@ -6,11 +6,6 @@ import { TZDate } from "@date-fns/tz";
 export const PERIOD_KINDS = ["last_30", "this_month", "last_month", "this_quarter", "last_quarter", "this_fy", "last_fy", "custom"] as const;
 export type PeriodKind = (typeof PERIOD_KINDS)[number];
 
-export const PERIOD_LABELS: Record<PeriodKind, string> = {
-  last_30: "Last 30 days", this_month: "This month", last_month: "Last month", this_quarter: "This quarter", last_quarter: "Last quarter",
-  this_fy: "This financial year", last_fy: "Last financial year", custom: "Custom dates",
-};
-
 export interface Period {
   kind: PeriodKind;
   /** Inclusive start and exclusive end, as instants. */

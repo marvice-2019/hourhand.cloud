@@ -7,18 +7,24 @@ import type { BookingEmailKind, CalendarJobKind, NotificationKind, VideoJobKind 
 import type { InviteeAnswer, LocationKind } from "../data/types";
 import type { HourCycle } from "../format";
 import { GUEST_LOCATION_LABELS } from "../location-labels";
+import { extraGuestVideoJoinUrl, videoJoinUrlFor, type VideoAudience } from "../video/links";
+import { pgExtraGuestLinks } from "../video/guest-links";
 import { MailError, type Mailer } from "../mail/mailer";
 import { invoiceById } from "../gst/invoices";
 import { monthlyEarnings } from "../earnings";
+import { requestForEmail } from "../privacy/rights";
 import { paymentAccount, priceCurrency } from "../payments/host-payments";
-import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderRenewalReminder, renderPollClosedMail, renderPollVoterMail, renderSeatInviteMail, renderWaitlistMail, renderZoomAlert, type BookingMailContext, type RenderedMail } from "../mail/templates";
-import { PLAN_NAMES, PRICES, priceLine, type BillingInterval, type PaidPlan } from "../billing/plans";
+import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderRenewalReminder, renderPollClosedMail, renderPollVoterMail, renderSeatInviteMail, renderWaitlistMail, renderDataRequestMail, renderZoomAlert, type BookingMailContext, type RenderedMail } from "../mail/templates";
+import { PLAN_NAMES, PRICES, type BillingInterval, type PaidPlan } from "../billing/plans";
 import { freeSlots } from "../booking";
 import { pollMailData } from "../polls/polls";
 import { createPgStore } from "../data/pg-store";
 import { hostPlan } from "../billing/account";
 import { buildFollowUp, FOLLOW_UP_KIND } from "../follow-ups/follow-ups";
 import { linkKey } from "../follow-ups/tokens";
+import { hostLocaleOf } from "../i18n/host";
+import { hostMonth, makeHostI18n } from "../i18n/host/format";
+import { hostPriceLine } from "../i18n/host/price";
 import { isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
 import { ZoomApiError, type ZoomMeetingInput } from "../zoom/client";
 import { withZoomToken, type ZoomDeps } from "../zoom/connection";
@@ -26,6 +32,7 @@ import { ZOOM_READY_SQL } from "../zoom/sql";
 import type { SmsConfig } from "../sms/config";
 import { queueSmsFallback, sendBookingSms, smsSkipReason } from "../sms/outbox";
 import { SmsError } from "../sms/provider";
+import { renderMembership } from "../memberships/mail";
 
 // Runs due rows of the notifications queue: emails, writes to the host's calendar (Google, Microsoft, iCloud) and to
 // their Zoom (a meeting per booking). Several workers can run
@@ -79,11 +86,14 @@ const CONTEXT = `
       order by p.created_at desc limit 1) as paid_minor,
     (select p.kind from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
       order by p.created_at desc limit 1) as paid_kind,
+    (select json_build_object('kind', a.kind, 'label', a.label, 'code', oc.code, 'listMinor', a.list_minor, 'discountMinor', a.discount_minor)
+      from offer_applications a left join offer_coupons oc on oc.id = a.coupon_id
+      where a.item_kind = 'event_type' and a.host_id = b.host_id and a.idempotency_key = b.idempotency_key) as offer,
     (select p.currency from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
       order by p.created_at desc limit 1) as paid_currency,
     (select p.provider from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
       order by p.created_at desc limit 1) as paid_provider,
-    coalesce(u.name, '') as host_name, u.email as host_email, u.timezone as host_timezone, u.time_format as host_time_format,
+    coalesce(u.name, '') as host_name, u.email as host_email, u.timezone as host_timezone, u.time_format as host_time_format, u.host_locale,
     loc.kind as location_kind, loc.value as location_value, atc.provider as add_to_provider, atc.can_teams as add_to_can_teams,
     -- a calendar write that hasn't been tried yet or is running right now; one waiting to retry doesn't hold emails back
     exists (select 1 from notifications cj where (cj.booking_id = b.id or cj.booking_id in (select m.id from bookings m where b.class_key is not null and m.class_key = b.class_key))
@@ -113,17 +123,20 @@ const CONTEXT = `
 
 type ContextRow = Record<string, unknown>;
 
-function toContext(r: ContextRow, baseUrl: string): BookingMailContext {
+function toContext(r: ContextRow, baseUrl: string, audience: VideoAudience = "guest"): BookingMailContext {
   return {
     bookingId: r.id as string, eventName: r.event_name as string,
-    hostName: r.host_name as string, hostEmail: r.host_email as string, hostTimezone: r.host_timezone as string, hostTimeFormat: r.host_time_format as HourCycle,
+    hostName: r.host_name as string, hostEmail: r.host_email as string, hostTimezone: r.host_timezone as string, hostTimeFormat: r.host_time_format as HourCycle, hostLocale: (r.host_locale as string | null) ?? "en",
     guestName: r.guest_name as string, guestEmail: r.guest_email as string, guestTimezone: r.guest_timezone as string, locale: (r.guest_locale as string | null) ?? "en",
     startAt: new Date(r.start_at as Date), endAt: new Date(r.end_at as Date),
     location: r.location_kind ? { kind: r.location_kind as LocationKind, value: (r.location_value as string | null) ?? null } : null,
-    joinUrl: (r.join_url as string | null) ?? null,
+    // Hourhand video: Hourhand's own join page (never the room or a token), the host's or the guest's, checked on every visit.
+    joinUrl: (r.join_url as string | null)
+      ?? videoJoinUrlFor(audience, baseUrl, r.booking_location_kind as string | null, { bookingId: r.id as string, manageToken: r.manage_token as string | null }),
     answers: (r.answers as InviteeAnswer[]) ?? [],
     cancelledBy: (r.cancelled_by as BookingMailContext["cancelledBy"]) ?? null, cancelReason: (r.cancel_reason as string | null) ?? null,
     paidMinor: (r.paid_minor as number | null) ?? null, paidIsDeposit: r.paid_kind === "deposit",
+    offer: (r.offer as BookingMailContext["offer"]) ?? null,
     paidCurrency: (r.paid_currency as string | null) ?? null, paidProvider: (r.paid_provider as "razorpay" | "stripe" | null) ?? null,
     previousStartAt: r.previous_start_at ? new Date(r.previous_start_at as Date) : null,
     movedBy: (r.previous_cancelled_by as BookingMailContext["movedBy"]) ?? null,
@@ -133,6 +146,9 @@ function toContext(r: ContextRow, baseUrl: string): BookingMailContext {
     runningLateMinutes: Number(/:late:(\d+)/.exec(String(r.dedupe_key ?? ""))?.[1] ?? r.running_late_minutes) || null,
   };
 }
+
+/** A guest email going to someone the guest added, not the guest who booked. */
+const extraGuestMail = (c: Claimed, r: ContextRow) => c.recipient.toLowerCase() !== String(r.guest_email).toLowerCase() && c.kind.endsWith("_guest");
 
 const REBOOK_DAYS = 21;
 
@@ -252,7 +268,8 @@ async function runCalendarJob(pool: pg.Pool, deps: CalendarDeps, c: Claimed, r: 
   const providerOf = (cal: { providerId: CalendarProviderId }): CalendarProvider | { skip: string } =>
     deps.providers[cal.providerId] ?? { skip: `${PROVIDER_NAMES[cal.providerId] ?? cal.providerId} calendars are not configured on this server` };
   const kind = c.kind as CalendarJobKind;
-  const ctx = toContext(r, baseUrl);
+  // The event goes in the host's calendar, so it carries the host's join link (Hourhand video).
+  const ctx = toContext(r, baseUrl, "host");
   const placeOf = (joinUrl: string | null) => !ctx.location || ctx.location.kind === "google_meet" || ctx.location.kind === "teams" ? null
     : joinUrl ? `${GUEST_LOCATION_LABELS[ctx.location.kind]}: ${joinUrl}`
     : ctx.location.value ? `${GUEST_LOCATION_LABELS[ctx.location.kind]}: ${ctx.location.value}` : GUEST_LOCATION_LABELS[ctx.location.kind];
@@ -302,7 +319,7 @@ async function runCalendarJob(pool: pg.Pool, deps: CalendarDeps, c: Claimed, r: 
     // A Zoom link made since this batch was read goes in the event's location.
     const zoomUrl = ctx.location?.kind === "zoom" ? ((await pool.query("select join_url from bookings where id = $1", [r.id])).rows[0]?.join_url as string | null) ?? null : null;
     let event = await provider.insertEvent(token, cal.externalId, {
-      summary, description, start: ctx.startAt, end: ctx.endAt, timeZone: ctx.hostTimezone, location: placeOf(zoomUrl),
+      summary, description, start: ctx.startAt, end: ctx.endAt, timeZone: ctx.hostTimezone, location: placeOf(zoomUrl ?? (ctx.location?.kind === "hourhand_video" ? ctx.joinUrl : null)),
       attendee: { email: ctx.guestEmail, name: ctx.guestName }, conference, bookingId: ctx.bookingId,
     });
     // Meet and Teams links can be created asynchronously; give the provider a moment so the guest's confirmation can carry the link.
@@ -426,27 +443,27 @@ async function createOrShare(
 /** The host's one email about a Zoom connection that stopped working; skipped once they've reconnected or removed it. */
 async function renderZoomAlertMail(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
   const id = /^zoom:([0-9a-f-]{36}):alert:/.exec(c.dedupe_key)?.[1];
-  const { rows: [z] } = id ? await pool.query("select account_email, status, last_error from integrations where id = $1", [id]) : { rows: [] };
+  const { rows: [z] } = id ? await pool.query("select i.account_email, i.status, i.last_error, u.host_locale from integrations i join users u on u.id = i.user_id where i.id = $1", [id]) : { rows: [] };
   if (!z) return { skip: "Zoom connection removed" };
   if (z.status === "ok") return { skip: "Zoom reconnected" };
-  return renderZoomAlert({ accountEmail: z.account_email ?? "your Zoom account", lastError: z.last_error, integrationsUrl: `${baseUrl}/dashboard/integrations` });
+  return renderZoomAlert({ accountEmail: z.account_email ?? "your Zoom account", lastError: z.last_error, integrationsUrl: `${baseUrl}/dashboard/integrations`, hostLocale: z.host_locale });
 }
 
 async function renderAlert(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
   const connectionId = /^calendar:([0-9a-f-]{36}):alert:/.exec(c.dedupe_key)?.[1];
   const { rows: [conn] } = connectionId
-    ? await pool.query("select account_email, status, last_error from calendar_connections where id = $1", [connectionId])
+    ? await pool.query("select c.account_email, c.status, c.last_error, u.host_locale from calendar_connections c join users u on u.id = c.user_id where c.id = $1", [connectionId])
     : { rows: [] };
   if (!conn) return { skip: "calendar connection removed" };
   if (conn.status === "ok") return { skip: "calendar connection recovered" };
-  return renderCalendarAlert({ accountEmail: conn.account_email, disconnected: conn.status === "disconnected", lastError: conn.last_error, calendarsUrl: `${baseUrl}/dashboard/calendars` });
+  return renderCalendarAlert({ accountEmail: conn.account_email, disconnected: conn.status === "disconnected", lastError: conn.last_error, calendarsUrl: `${baseUrl}/dashboard/calendars`, hostLocale: conn.host_locale });
 }
 
 /** The renewal reminder goes only if that same period is still about to renew: not after a cancel, pause or renewal. */
 async function renderRenewal(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
   const m = /^renewal:([^:]+):(\d+)$/.exec(c.dedupe_key);
   const { rows: [s] } = await pool.query(
-    `select s.plan, s.interval, s.provider, s.provider_subscription_id, s.status, s.current_period_end, s.cancel_at_period_end, u.timezone
+    `select s.plan, s.interval, s.provider, s.provider_subscription_id, s.status, s.current_period_end, s.cancel_at_period_end, u.timezone, u.host_locale
        from subscriptions s join users u on u.id = s.user_id where s.user_id = $1`,
     [c.user_id]);
   if (!m || !s || s.provider_subscription_id !== m[1]) return { skip: "subscription changed" };
@@ -454,8 +471,8 @@ async function renderRenewal(pool: pg.Pool, c: Claimed, baseUrl: string): Promis
   if (!s.current_period_end || s.current_period_end.getTime() !== Number(m[2])) return { skip: "period already renewed" };
   if (!(s.plan in PRICES)) return { skip: "not a paid plan" };
   return renderRenewalReminder({
-    planName: PLAN_NAMES[s.plan as PaidPlan], price: priceLine(s.plan as PaidPlan, s.interval as BillingInterval, s.provider === "stripe" ? "USD" : "INR"),
-    renewsOn: s.current_period_end, timezone: s.timezone, planUrl: `${baseUrl}/dashboard/plan`,
+    planName: PLAN_NAMES[s.plan as PaidPlan], price: hostPriceLine(s.plan as PaidPlan, s.interval as BillingInterval, s.provider === "stripe" ? "USD" : "INR", makeHostI18n(hostLocaleOf({ hostLocale: s.host_locale }))),
+    renewsOn: s.current_period_end, timezone: s.timezone, planUrl: `${baseUrl}/dashboard/plan`, hostLocale: s.host_locale,
   });
 }
 
@@ -463,8 +480,10 @@ async function renderEarnings(pool: pg.Pool, c: Claimed, baseUrl: string, now: D
   const m = /^earnings:[0-9a-f-]{36}:(\d{4}-\d{2})$/.exec(c.dedupe_key);
   const e = m ? await monthlyEarnings(pool, c.user_id, m[1], now, priceCurrency(await paymentAccount(pool, c.user_id))) : null;
   if (!e) return { skip: "no report" };
-  const monthLabel = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${e.month}-01T00:00:00Z`));
-  return renderEarningsMail({ currency: e.currency, monthLabel, netMinor: e.netMinor, bookingsMinor: e.bookingsMinor, packagesMinor: e.packagesMinor, refundsMinor: e.refundsMinor,
+  const { rows: [u] } = await pool.query("select host_locale from users where id = $1", [c.user_id]);
+  const locale = hostLocaleOf({ hostLocale: u?.host_locale });
+  const monthLabel = hostMonth(new Date(`${e.month}-01T00:00:00Z`), locale);
+  return renderEarningsMail({ currency: e.currency, monthLabel, hostLocale: locale, netMinor: e.netMinor, bookingsMinor: e.bookingsMinor, packagesMinor: e.packagesMinor, refundsMinor: e.refundsMinor,
     sessionsHeld: e.sessions.held, noShows: e.sessions.noShows, otherCurrencies: e.otherCurrencies, url: `${baseUrl}/dashboard/earnings?month=${e.month}` });
 }
 
@@ -475,6 +494,15 @@ async function renderSeatInvite(pool: pg.Pool, c: Claimed, baseUrl: string): Pro
      where s.owner_id = $1 and s.member_email = $2 and s.accepted_at is null and u.deleted_at is null`, [c.user_id, c.recipient]);
   if (!s) return { skip: "invitation withdrawn or already accepted" };
   return renderSeatInviteMail({ ownerName: s.name, ownerEmail: s.email, url: `${baseUrl}/sign-in` });
+}
+
+/** A client's data request, to their host. Skipped once the host has dealt with it. */
+async function renderDataRequest(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
+  const m = /^data_request:([0-9a-f-]{36})$/.exec(c.dedupe_key);
+  const r = m ? await requestForEmail(pool, m[1]) : null;
+  if (!r) return { skip: "request already dealt with" };
+  const { rows: [u] } = await pool.query("select timezone, host_locale from users where id = $1", [c.user_id]);
+  return renderDataRequestMail({ kind: r.kind, dueAt: r.dueAt, timezone: u?.timezone ?? "Asia/Kolkata", url: `${baseUrl}/dashboard/clients/requests`, hostLocale: u?.host_locale });
 }
 
 const isPollKind = (kind: NotificationKind) => kind === "poll_voter_link" || kind === "poll_host_closed";
@@ -515,14 +543,14 @@ async function renderPackage(pool: pg.Pool, c: Claimed, baseUrl: string): Promis
   if (!m) return { skip: "not a package email" };
   const { rows: [p] } = await pool.query(
     `select p.guest_name, p.guest_email, p.sessions, p.price_minor, p.currency, p.provider, p.expires_at, p.token, p.status, k.name as package_name, e.name as event_name,
-       u.name as host_name, u.email as host_email, u.timezone
+       u.name as host_name, u.email as host_email, u.timezone, u.host_locale
      from package_purchases p join packages k on k.id = p.package_id join event_types e on e.id = p.event_type_id join users u on u.id = p.host_id
      where p.id = $1`, [m[1]]);
   if (!p || p.status !== "paid") return { skip: "package not paid" };
   return renderPackageMail(c.kind as "package_guest" | "package_host", {
     hostName: p.host_name, hostEmail: p.host_email, guestName: p.guest_name, guestEmail: p.guest_email, packageName: p.package_name, eventName: p.event_name,
     sessions: p.sessions, priceMinor: p.price_minor, currency: p.currency, provider: p.provider, expiresAt: p.expires_at, timezone: p.timezone,
-    buyerUrl: `${baseUrl}/p/${p.token}`, dashboardUrl: `${baseUrl}/dashboard/packages`,
+    buyerUrl: `${baseUrl}/p/${p.token}`, dashboardUrl: `${baseUrl}/dashboard/packages`, hostLocale: p.host_locale,
   });
 }
 
@@ -574,7 +602,7 @@ export async function processDueNotifications(
       continue;
     }
     // Host emails about their account rather than a booking.
-    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind);
+    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind) || c.kind === "data_request_host" || c.kind === "membership_guest" || c.kind === "membership_host";
     if (!isAccountMail) {
       if (!r?.id) { await skip(c, "booking no longer exists"); continue; }
       const why = skipReason(c.kind, r, now);
@@ -651,11 +679,16 @@ export async function processDueNotifications(
           : c.kind === "earnings_host" ? await renderEarnings(pool, c, opts.baseUrl, now)
           : c.kind === "waitlist_guest" ? await renderWaitlist(pool, c, opts.baseUrl, now)
           : c.kind === "seat_invite" ? await renderSeatInvite(pool, c, opts.baseUrl)
+          : c.kind === "data_request_host" ? await renderDataRequest(pool, c, opts.baseUrl)
           : c.kind === FOLLOW_UP_KIND ? await buildFollowUp(pool, c, opts.baseUrl, now, followUpLinkKey())
           : isPollKind(c.kind) ? await renderPoll(pool, c, opts.baseUrl, now)
+          : c.kind === "membership_guest" || c.kind === "membership_host" ? await renderMembership(pool, c, opts.baseUrl, now)
           : renderBookingMail(c.kind as BookingEmailKind, {
-            ...toContext(r, opts.baseUrl),
-            extraGuest: c.recipient.toLowerCase() !== String(r.guest_email).toLowerCase() && c.kind.endsWith("_guest"),
+            ...toContext(r, opts.baseUrl, c.kind.endsWith("_host") ? "host" : extraGuestMail(c, r) ? "extra_guest" : "guest"),
+            extraGuest: extraGuestMail(c, r),
+            // An extra guest on Hourhand video gets a join link of their own (never the guest's manage token).
+            ...(extraGuestMail(c, r) && r.booking_location_kind === "hourhand_video" && c.kind !== "cancelled_guest"
+              ? { joinUrl: extraGuestVideoJoinUrl(opts.baseUrl, await pgExtraGuestLinks(pool).linkFor(r.id as string, r.host_id as string, c.recipient)) } : {}),
             ...(c.kind === "cancelled_guest" ? { rebook: await rebookSuggestions(pool, r, opts.baseUrl) } : {}),
             ...((c.kind === "booked_guest" || c.kind === "booked_host") && r.series_id === r.id ? { series: await seriesWeeks(pool, r.id as string, opts.baseUrl) } : {}),
             ...((c.kind === "cancelled_guest" || c.kind === "cancelled_host") && r.series_id ? { alsoCancelled: await cancelledWith(pool, r.id as string) } : {}),

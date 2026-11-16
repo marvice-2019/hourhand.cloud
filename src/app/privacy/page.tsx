@@ -21,7 +21,7 @@ export default function PrivacyPage() {
       </Link>
       <main>
         <h1 className="mt-6 font-display text-xl text-text">Privacy policy</h1>
-        <p className="mt-2 text-sm text-text-muted">Last updated 11 October 2026</p>
+        <p className="mt-2 text-sm text-text-muted">Last updated 15 November 2026</p>
 
         <p className={p}>
           This page explains what Hourhand collects, why, who helps us handle it, how long we keep it and what you can ask us to do with it. We have tried to write it in plain words. If anything is unclear, write to us and a person will answer.
@@ -54,6 +54,11 @@ export default function PrivacyPage() {
           <li>Your name and email address, and your phone number if the host asks for it.</li>
           <li>Your answers to any questions the host adds to the booking form.</li>
           <li>Your time zone, so times show correctly for you.</li>
+          <li>A record of what you agreed to when you booked (for example WhatsApp updates, or a consent question the host asked), with the words you saw, the version of this notice, and when.</li>
+          <li>Any private notes the host writes about you or your sessions. These are encrypted before they are stored and only the host can read them.</li>
+          <li>
+            Anonymous visit counts on booking pages, so a host can see which channels bring their bookings: the page, the step reached (viewed, picked a time, booked), the day, the link&apos;s campaign tags and the referring website&apos;s domain. We count this ourselves, with no cookies and no third parties. We don&apos;t store your IP address or browser details. To avoid counting the same visit twice in a day, we keep a scrambled code made with a key that is deleted at the end of that day, after which the code can&apos;t be linked to you. If your browser sends Do Not Track or Global Privacy Control, we don&apos;t count your visit at all. Raw counts are kept 90 days, daily totals 2 years.
+          </li>
         </ul>
 
         <h2 className={h2}>Why we use it</h2>
@@ -125,9 +130,25 @@ export default function PrivacyPage() {
         </p>
         <p className={p}>If you booked with a host, the host decides what to ask you and keeps their own records of your booking. You can also contact them directly.</p>
 
+        {/* Working draft, review with a lawyer: the host/processor split, the rights flow and the retention rule below. */}
+        <h2 className={h2}>If you booked with a host: your rights</h2>
+        <p className={p}>
+          When you book with a host, the host decides what to collect and why: under the Digital Personal Data Protection Act, 2023 they are the data fiduciary for your booking details, and Hourhand is their data processor. Hourhand keeps the data for them and gives them the tools to respect your rights.
+        </p>
+        <ul className={ul}>
+          <li><strong>A copy of your data.</strong> Open the link in your booking email and choose &ldquo;Ask for a copy&rdquo;. The host is told at once and can send you everything Hourhand holds about you: your bookings, answers, payments, invoices and the consent record.</li>
+          <li><strong>Deletion.</strong> From the same link, choose &ldquo;Ask to delete my data&rdquo;. When the host erases you, your name, email, phone, answers, notes and messages are removed from Hourhand for good. Your past bookings stay in the host&apos;s history without your details.</li>
+          <li><strong>What must be kept.</strong> If you paid and the host issued a GST invoice, the invoice is kept for as long as GST law requires (the CGST Act, 2017 asks for 72 months from the due date of the annual return). It keeps its number, date, amounts and your state; your email is removed, and your name is removed too unless the invoice is for ₹50,000 or more.</li>
+          <li><strong>Withdrawing consent.</strong> Reply STOP to any WhatsApp message to end them. For anything else you agreed to, ask the host; withdrawing is as easy as agreeing.</li>
+          <li><strong>Deadlines.</strong> Your manage page shows the date by which the host must respond. The law allows at most 90 days; we ask hosts to answer far sooner.</li>
+        </ul>
+        <p className={p}>
+          If the host doesn&apos;t respond, write to our grievance officer at <a className={a} href="mailto:Yuvarajgs@marvice.in">Yuvarajgs@marvice.in</a> and we will help you reach them.
+        </p>
+
         <h2 className={h2}>Security</h2>
         <p className={p}>
-          Pages are served over HTTPS. Calendar tokens and Razorpay keys are encrypted with AES-256-GCM, so a copy of the database alone can&apos;t use them. Every host&apos;s records are checked against their account on each request, and sign-in uses one-time links that expire after 15 minutes. No system is perfectly safe; if a breach affects you, we will tell you and the authorities as the law requires.
+          Pages are served over HTTPS. Calendar tokens, Razorpay keys and hosts&apos; private notes are encrypted with AES-256-GCM, so a copy of the database alone can&apos;t use or read them. Every host&apos;s records are checked against their account on each request, and sign-in uses one-time links that expire after 15 minutes. No system is perfectly safe; if a breach affects you, we will tell you and the authorities as the law requires.
         </p>
 
         <h2 className={h2}>Children</h2>

@@ -13,9 +13,3 @@ export function money(minor: number, currency: string): string {
 
 /** "12.5%", or "–" when there is nothing to divide. */
 export const percent = (rate: number | null) => (rate === null ? "–" : `${Math.round(rate * 1000) / 10}%`);
-
-/** "1 Apr 2026" for a "2026-04-01" calendar date. */
-export const dayLabel = (date: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${date}T00:00:00Z`));
-
-/** "Oct 2026" for "2026-10". */
-export const monthLabel = (month: string) => new Intl.DateTimeFormat("en-IN", { month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${month}-01T00:00:00Z`));

@@ -4,7 +4,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { migrate } from "../../../scripts/migrate";
 import { monthlyEarnings } from "../earnings";
-import { creditNoteForRefund, invoiceForPayment, invoiceForPurchase } from "../gst/invoices";
+import { creditNoteForRefund, invoiceForMembershipGrant, invoiceForPayment, invoiceForPurchase } from "../gst/invoices";
 import { reportAccess } from "./access";
 import { gstCsv } from "./csv";
 import { gstDocuments } from "./ledger";
@@ -178,5 +178,28 @@ describe.skipIf(!BASE)("business reports (Postgres)", () => {
     const theirs = (await businessReport(pool, other, october(), now))!;
     expect(theirs.currencies[0].grossMinor).toBe(999_900);
     expect(await businessReport(pool, "not-a-uuid", october(), now)).toBeNull();
+  });
+
+  it("counts membership months as sales, so they reconcile with their invoices too", async () => {
+    const m = (await pool.query("insert into users (email, name, slug) values ('rep-member@example.com', 'Member Host', 'rep-member') returning id")).rows[0].id as string;
+    await pool.query(
+      `insert into tax_profiles (user_id, legal_name, address, state_code, gstin, sac, rate_bp, invoice_prefix) values ($1, 'Host LLP', '1 MG Road, Bengaluru', '29', '29ABCDE1234F1Z5', '999293', 1800, 'MB')`, [m]);
+    const { rows: [plan] } = await pool.query(
+      "insert into membership_plans (user_id, name, sessions, price_minor, rollover, provider_plan_id) values ($1, 'Monthly 4', 4, 300000, 'none', 'plan_rep_m') returning id", [m]);
+    const { rows: [mem] } = await pool.query(
+      `insert into memberships (plan_id, host_id, sessions, price_minor, rollover, guest_name, guest_email, idempotency_key, status)
+       values ($1, $2, 4, 300000, 'none', 'Meera', 'meera@example.in', 'rep-mem-1', 'active') returning id`, [plan.id, m]);
+    for (const [n, at] of [["1", oct(3)], ["2", new Date("2026-11-03T06:00:00Z")]] as const) {
+      const { rows: [g] } = await pool.query(
+        `insert into membership_grants (membership_id, host_id, provider_payment_id, amount_minor, period_start, period_end, credits, granted_at)
+         values ($1, $2, $3, 300000, $4, $4::timestamptz + interval '1 month', 4, $4) returning id`, [mem.id, m, `pay_rep_mem_${n}`, at]);
+      await invoiceForMembershipGrant(pool, g.id, at);
+    }
+    const r = (await businessReport(pool, m, october(), now))!;
+    expect(r.currencies[0]).toMatchObject({ membershipsMinor: 300_000, grossMinor: 300_000, netSalesMinor: 300_000 });
+    expect(r.gst.totalMinor).toBe(300_000);
+    expect(r.uninvoicedMinor).toBe(0);
+    expect(r.topClients.map((c) => [c.name, c.netMinor])).toEqual([["Meera", 300_000]]);
+    expect(r.byEventType.map((l) => [l.eventName, l.membershipsMinor])).toEqual([["Monthly 4", 300_000]]);
   });
 });

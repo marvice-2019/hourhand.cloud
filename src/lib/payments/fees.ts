@@ -1,6 +1,6 @@
 import type pg from "pg";
 import type { PaymentCheckDeps } from "./booking-payments";
-import type { StripeDeps } from "./stripe-checkout";
+import { isZeroDecimal, type StripeDeps, type StripeFee } from "./stripe-checkout";
 
 // The payment provider's fee on each captured payment, fetched for any row that doesn't have it yet: payments captured
 // before fees were recorded, ones confirmed by a path that didn't return the fee, package purchases, and Stripe payments
@@ -64,9 +64,20 @@ export function recordMissingFees(deps: PaymentCheckDeps & { pool: pg.Pool }, no
 }
 
 /**
- * Records Stripe's fee the same way. Stripe reports a fee in the account's settlement currency, which can differ from
- * the currency the guest paid in; such a fee is left unrecorded rather than stored against an amount in another currency.
+ * Stripe's fee in the currency the guest paid. Stripe states it in the account's settlement currency; when that differs,
+ * it is converted back at Stripe's own exchange rate for that charge (settlement = charge × rate). Zero-decimal
+ * currencies count minor units differently, so a conversion involving one is left unrecorded, as is a different
+ * currency with no rate.
  */
+export function stripeFeeIn(fee: StripeFee, paidCurrency: string): { feeMinor: number; taxMinor: number } | null {
+  const paid = paidCurrency.toUpperCase();
+  if (fee.currency === paid) return { feeMinor: fee.feeMinor, taxMinor: fee.taxMinor };
+  if (!fee.exchangeRate || isZeroDecimal(fee.currency) || isZeroDecimal(paid)) return null;
+  const feeMinor = Math.round(fee.feeMinor / fee.exchangeRate);
+  return { feeMinor, taxMinor: Math.min(feeMinor, Math.round(fee.taxMinor / fee.exchangeRate)) };
+}
+
+/** Records Stripe's fee the same way, in the currency the guest paid (see stripeFeeIn). */
 export function recordMissingStripeFees(deps: StripeDeps, now: Date, limit = 20): Promise<FeeResult> {
   const fetchFee = deps.api.paymentFee?.bind(deps.api);
   if (!fetchFee) return Promise.resolve({ checked: 0, recorded: 0, errors: 0 });
@@ -74,6 +85,6 @@ export function recordMissingStripeFees(deps: StripeDeps, now: Date, limit = 20)
     const account = await deps.accountFor(row.host_id);
     if (!account) return null;
     const fee = await fetchFee(account.accountId, row.provider_payment_id);
-    return fee && fee.currency === row.currency.toUpperCase() ? { feeMinor: fee.feeMinor, taxMinor: fee.taxMinor } : null;
+    return fee ? stripeFeeIn(fee, row.currency) : null;
   });
 }
