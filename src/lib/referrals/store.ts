@@ -95,6 +95,8 @@ export interface CreditLine {
   status: "pending" | "scheduled" | "used" | "extension" | "failed";
   mechanism: string | null;
   accessUntil: Date | null;
+  /** Renewals charged in full although the free month was linked (Razorpay didn't apply the offer). */
+  missedRenewals: number;
   createdAt: Date;
 }
 
@@ -108,10 +110,10 @@ export async function referralSummary(db: Db, userId: string): Promise<{ counts:
             (select count(*) from referrals where referrer_id = $1 and status = 'rewarded' and paid_at > now() - interval '365 days')::int as last_year`,
     [userId]);
   const { rows } = await db.query(
-    "select role, status, mechanism, access_until, created_at from referral_credits where user_id = $1 order by created_at desc limit 50", [userId]);
+    "select role, status, mechanism, access_until, missed_renewals, created_at from referral_credits where user_id = $1 order by created_at desc limit 50", [userId]);
   return {
     counts: { invited: c.invited, signedUp: c.signed_up, paid: c.paid, credited: c.credited },
-    credits: rows.map((r) => ({ role: r.role, status: r.status, mechanism: r.mechanism, accessUntil: r.access_until, createdAt: r.created_at })),
+    credits: rows.map((r) => ({ role: r.role, status: r.status, mechanism: r.mechanism, accessUntil: r.access_until, missedRenewals: r.missed_renewals, createdAt: r.created_at })),
     rewardedLastYear: c.last_year,
   };
 }

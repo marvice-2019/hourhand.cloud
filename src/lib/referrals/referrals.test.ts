@@ -10,7 +10,7 @@ import { handleWebhook, saveSubscription } from "../billing/sync";
 import { cookieFrom, DAY_MS, newReferralCode, normaliseEmail, parseReferralCookie, referralCookieValue, YEARLY_REWARD_CAP } from "./codes";
 import { razorpayCredits, stripeCredits, type CreditProvider, type ScheduleResult } from "./credits";
 import { renderReferralReward } from "./mail";
-import { afterBillingWebhook, paymentFromWebhook, referralAccessPlan, type RewardDeps } from "./rewards";
+import { afterBillingWebhook, discountedRazorpayCharge, paymentFromWebhook, referralAccessPlan, type RewardDeps } from "./rewards";
 import { onSessionCreated, onUserCreated } from "./signup";
 import { attributeSignUp, getOrCreateCode, recordClick, referralSummary, rememberDevice } from "./store";
 
@@ -58,7 +58,7 @@ describe("codes, cookies and payments", () => {
     expect(normaliseEmail("p.rao@acme.in")).not.toBe(normaliseEmail("arun@acme.in"));
   });
 
-  it("only a real charge counts as a payment", () => {
+  it("a charge is a captured Razorpay payment or a paid Stripe invoice; a $0 invoice is a renewal with nothing charged", () => {
     const rz = (amount: number, status = "captured") => ({ payload: { payment: { entity: { id: "pay_1", amount, status, created_at: 1_900_000_000 } } } });
     expect(paymentFromWebhook("razorpay", "subscription.charged", rz(47_082))).toMatchObject({ ref: "pay_1", amountMinor: 47_082 });
     expect(paymentFromWebhook("razorpay", "subscription.activated", rz(47_082))).toBeNull();
@@ -66,7 +66,7 @@ describe("codes, cookies and payments", () => {
     expect(paymentFromWebhook("razorpay", "subscription.charged", rz(47_082, "failed"))).toBeNull();
     const st = (amount_paid: number) => ({ data: { object: { id: "in_1", amount_paid, status_transitions: { paid_at: 1_900_000_000 } } } });
     expect(paymentFromWebhook("stripe", "invoice.paid", st(700))).toMatchObject({ ref: "in_1" });
-    expect(paymentFromWebhook("stripe", "invoice.paid", st(0))).toBeNull(); // a fully discounted invoice
+    expect(paymentFromWebhook("stripe", "invoice.paid", st(0))).toMatchObject({ ref: "in_1", amountMinor: 0 }); // a free month covered it
     expect(paymentFromWebhook("stripe", "invoice.payment_succeeded", st(700))).toBeNull(); // same invoice as invoice.paid
   });
 });
@@ -144,12 +144,13 @@ describe.skipIf(!BASE)("referrals (TEST_DATABASE_URL)", () => {
     await saveSubscription(pool, s, env, NOW);
     return s;
   };
-  const charged = (subId: string, payId: string, at = NOW) => ({
+  /** A Razorpay renewal charge. 39,900 paise = Solo monthly at full price; 100 = ₹1, with the referral offer applied. */
+  const charged = (subId: string, payId: string, at = NOW, amount = 39_900) => ({
     event: { provider: "razorpay" as const, eventId: `evt_${payId}`, type: "subscription.charged", subscriptionId: subId },
-    body: { event: "subscription.charged", payload: { subscription: { entity: { id: subId } }, payment: { entity: { id: payId, amount: 47_082, status: "captured", created_at: Math.floor(at.getTime() / 1000) } } } },
+    body: { event: "subscription.charged", payload: { subscription: { entity: { id: subId } }, payment: { entity: { id: payId, amount, status: "captured", created_at: Math.floor(at.getTime() / 1000) } } } },
   });
-  const pay = (subId: string, payId: string, d: RewardDeps, at = NOW) => {
-    const c = charged(subId, payId, at);
+  const pay = (subId: string, payId: string, d: RewardDeps, at = NOW, amount = 39_900) => {
+    const c = charged(subId, payId, at, amount);
     return afterBillingWebhook(pool, c.event, c.body, d, at);
   };
   const referral = async (referredId: string) => (await pool.query("select * from referrals where referred_id = $1", [referredId])).rows[0];
@@ -266,7 +267,7 @@ describe.skipIf(!BASE)("referrals (TEST_DATABASE_URL)", () => {
       expect(mails.map((m) => m.user_id).sort()).toEqual([referrer.id, referred.id].sort());
 
       // The next renewal: the referred host's offer is used; no second reward.
-      await pay(s.id, "pay_second", deps(rp), new Date(NOW.getTime() + 31 * DAY_MS));
+      await pay(s.id, "pay_second", deps(rp), new Date(NOW.getTime() + 31 * DAY_MS), 100);
       expect(await credits(referred.id)).toMatchObject([{ status: "used" }]);
       expect(await credits(referrer.id)).toHaveLength(1);
       expect((await pool.query("select count(*)::int as n from notifications where kind = 'referral_reward_host'")).rows[0].n).toBe(2);
@@ -283,13 +284,49 @@ describe.skipIf(!BASE)("referrals (TEST_DATABASE_URL)", () => {
       expect(await credits(referrer.id)).toMatchObject([{ status: "scheduled", mechanism: "stripe_balance", provider_subscription_id: "sub_st_ref" }]);
       expect(rp.scheduled).toHaveLength(1);
       expect(st.scheduled).toHaveLength(1);
-      // The referrer's next renewal uses it up.
+      // The referrer's next renewal: the $7 credit covers Solo in full, so Stripe's invoice is paid with $0. That uses it.
       await afterBillingWebhook(pool, { provider: "stripe", eventId: "e_inv", type: "invoice.paid", subscriptionId: "sub_st_ref" },
         { data: { object: { id: "in_ref", amount_paid: 0 } } }, deps(rp, st), new Date(NOW.getTime() + 31 * DAY_MS));
-      expect((await credits(referrer.id))[0].status).toBe("scheduled"); // a fully discounted invoice isn't a payment
-      await afterBillingWebhook(pool, { provider: "stripe", eventId: "e_inv2", type: "invoice.paid", subscriptionId: "sub_st_ref" },
-        { data: { object: { id: "in_ref2", amount_paid: 700, status_transitions: { paid_at: Math.floor(NOW.getTime() / 1000) + 62 * 86_400 } } } }, deps(rp, st), new Date(NOW.getTime() + 62 * DAY_MS));
       expect((await credits(referrer.id))[0].status).toBe("used");
+    });
+
+    it("Razorpay: a renewal charged in full means the offer wasn't applied; the month waits, is linked again, and the miss is kept", async () => {
+      const { referred } = await referredPair();
+      const s = await subscribe(referred.id);
+      const rp = fakeCredits("razorpay");
+      await pay(s.id, "pay_miss_first", deps(rp));
+      expect(await credits(referred.id)).toMatchObject([{ status: "scheduled", missed_renewals: 0 }]);
+
+      // The next renewal is charged the full ₹399: Razorpay didn't take the offer off.
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      await pay(s.id, "pay_miss_full", deps(rp), new Date(NOW.getTime() + 31 * DAY_MS), 39_900);
+      spy.mockRestore();
+      const [missed] = await credits(referred.id);
+      expect(missed).toMatchObject({ status: "scheduled", missed_renewals: 1 }); // linked again in the same step
+      expect(missed.error).toContain("₹399");
+      expect(rp.scheduled).toHaveLength(2);
+      const summary = await referralSummary(pool, referred.id);
+      expect(summary.credits[0]).toMatchObject({ status: "scheduled", missedRenewals: 1 });
+
+      // The renewal after that is ₹1: now it is used, and the miss stays on record for support.
+      await pay(s.id, "pay_miss_one", deps(rp), new Date(NOW.getTime() + 62 * DAY_MS), 100);
+      expect(await credits(referred.id)).toMatchObject([{ status: "used", missed_renewals: 1 }]);
+    });
+
+    it("the discounted Razorpay charge per plan: ₹1 for Solo monthly, the price less ₹398 otherwise", () => {
+      expect(discountedRazorpayCharge("solo", "month")).toBe(100);
+      expect(discountedRazorpayCharge("duo", "month")).toBe(59_900 - 39_800);
+      expect(discountedRazorpayCharge("solo", "year")).toBe(399_000 - 39_800);
+      expect(discountedRazorpayCharge("solo", null)).toBeNull();
+    });
+
+    it("a Stripe invoice paid with $0 is a renewal, but never pays out a referral", async () => {
+      const { referrer, referred } = await referredPair();
+      await subscribe(referred.id, { provider: "stripe", id: "sub_zero", priceId: "price_solo_m" });
+      await afterBillingWebhook(pool, { provider: "stripe", eventId: "e_zero", type: "invoice.paid", subscriptionId: "sub_zero" },
+        { data: { object: { id: "in_zero", amount_paid: 0 } } }, deps(null, fakeCredits("stripe")), NOW);
+      expect((await referral(referred.id)).status).toBe("signed_up");
+      expect(await credits(referrer.id)).toHaveLength(0);
     });
 
     it("a referrer on Free keeps theirs waiting, and it is scheduled on their first payment", async () => {
@@ -368,9 +405,9 @@ describe.skipIf(!BASE)("referrals (TEST_DATABASE_URL)", () => {
         await pay(s.id, `pay_two_${i}`, deps(rp), new Date(NOW.getTime() + i * 1000));
       }
       expect((await credits(referrer.id)).map((c) => c.status)).toEqual(["scheduled", "pending"]);
-      await pay(rs.id, "pay_ref_1", deps(rp), new Date(NOW.getTime() + 31 * DAY_MS));
+      await pay(rs.id, "pay_ref_1", deps(rp), new Date(NOW.getTime() + 31 * DAY_MS), 100);
       expect((await credits(referrer.id)).map((c) => c.status)).toEqual(["used", "scheduled"]);
-      await pay(rs.id, "pay_ref_2", deps(rp), new Date(NOW.getTime() + 62 * DAY_MS));
+      await pay(rs.id, "pay_ref_2", deps(rp), new Date(NOW.getTime() + 62 * DAY_MS), 100);
       expect((await credits(referrer.id)).map((c) => c.status)).toEqual(["used", "used"]);
     });
 

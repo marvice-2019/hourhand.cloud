@@ -56,6 +56,7 @@ create table referral_credits (
   access_from timestamptz,
   access_until timestamptz,
   error text,
+  missed_renewals int not null default 0,   -- renewals charged in full although the offer was linked (Razorpay didn't apply it)
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (referral_id, role)

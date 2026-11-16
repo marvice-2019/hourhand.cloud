@@ -17,6 +17,8 @@ const STATUS: Record<CreditLine["status"], string> = {
   failed: "Couldn't be applied automatically. Write to support and we'll sort it out",
 };
 
+const MISSED = "Razorpay didn't take it off your last renewal, so it's set for the next one. If that renewal is charged in full too, write to support";
+
 export default async function ReferralsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requireOwnAccount();
   const params = await searchParams;
@@ -72,7 +74,7 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
           <ul className="mt-3 grid gap-2 text-sm">
             {credits.map((c, i) => (
               <li key={i} className="text-text-muted">
-                <span className="text-text">{c.role === "referrer" ? "For a referral" : "For joining through a link"}</span>, {fmt(c.createdAt)}: {STATUS[c.status]}
+                <span className="text-text">{c.role === "referrer" ? "For a referral" : "For joining through a link"}</span>, {fmt(c.createdAt)}: {c.missedRenewals > 0 && c.status !== "used" ? MISSED : STATUS[c.status]}
                 {c.accessUntil ? `, until ${fmt(c.accessUntil)}` : ""}.
               </li>
             ))}

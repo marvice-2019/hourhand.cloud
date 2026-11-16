@@ -1,9 +1,9 @@
 import type pg from "pg";
-import type { Plan, Provider } from "../billing/plans";
+import { formatMoney, PRICES, type BillingInterval, type Plan, type Provider } from "../billing/plans";
 import { BillingApiError } from "../billing/providers";
 import type { WebhookEvent } from "../billing/webhooks";
 import { DAY_MS, YEARLY_REWARD_CAP } from "./codes";
-import { CreditNotConfigured, creditProviderFromEnv, type CreditProvider } from "./credits";
+import { CreditNotConfigured, creditProviderFromEnv, RAZORPAY_REFERRAL_DISCOUNT_INR, type CreditProvider } from "./credits";
 
 // Rewards: a referral pays out only when the referred host's own Solo or Duo subscription is charged, as reported by a
 // signature-checked billing webhook. Everything here is safe to run twice for the same event.
@@ -20,8 +20,9 @@ export interface VerifiedPayment {
 }
 
 /**
- * The payment a webhook reports, or null when it reports none. Only real money counts: Razorpay subscription.charged
- * with a captured payment, Stripe invoice.paid with amount_paid above zero (a fully discounted invoice isn't a payment).
+ * The charge a webhook reports, or null when it reports none: Razorpay subscription.charged with a captured payment,
+ * or Stripe invoice.paid. A Stripe invoice can be paid with nothing charged (a free month's credit covered it):
+ * amountMinor is then 0. That still counts as a renewal, but only real money (above zero) pays out a referral.
  * Stripe's invoice.payment_succeeded is not used: it fires for the same invoice as invoice.paid.
  */
 export function paymentFromWebhook(provider: Provider, type: string, body: unknown, now = new Date()): VerifiedPayment | null {
@@ -35,16 +36,16 @@ export function paymentFromWebhook(provider: Provider, type: string, body: unkno
   }
   if (type !== "invoice.paid") return null;
   const o = obj(obj(b.data).object);
-  if (typeof o.id !== "string" || typeof o.amount_paid !== "number" || o.amount_paid <= 0) return null;
+  if (typeof o.id !== "string" || typeof o.amount_paid !== "number" || o.amount_paid < 0) return null;
   const paidAt = obj(o.status_transitions).paid_at;
   return { ref: o.id, amountMinor: o.amount_paid, paidAt: typeof paidAt === "number" ? new Date(paidAt * 1000) : now };
 }
 
-interface PlanRow { user_id: string; plan: Plan; status: string; provider: Provider; provider_subscription_id: string; provider_customer_id: string | null }
+interface PlanRow { user_id: string; plan: Plan; interval: BillingInterval | null; status: string; provider: Provider; provider_subscription_id: string; provider_customer_id: string | null }
 
 const planRowFor = async (db: Pick<pg.Pool, "query">, provider: Provider, subscriptionId: string) =>
   (await db.query<PlanRow>(
-    `select user_id, plan, status, provider, provider_subscription_id, provider_customer_id from subscriptions
+    `select user_id, plan, interval, status, provider, provider_subscription_id, provider_customer_id from subscriptions
      where provider = $1 and provider_subscription_id = $2`, [provider, subscriptionId])).rows[0] ?? null;
 
 export interface RewardDeps {
@@ -65,15 +66,49 @@ export async function afterBillingWebhook(pool: pg.Pool, event: WebhookEvent, bo
   if (!sub) return; // not a plan subscription (an add-on, or one that wasn't saved)
   const payment = paymentFromWebhook(event.provider, event.type, body, now);
   if (payment && sub.plan !== "free" && sub.status === "active") {
-    await pool.query(
-      `update referral_credits set status = 'used', updated_at = $3 where user_id = $1 and provider_subscription_id = $2
-         and status = 'scheduled' and scheduled_at < $4`, [sub.user_id, sub.provider_subscription_id, now, payment.paidAt]);
-    const reward = await rewardReferral(pool, sub, payment, deps, now);
+    await settleScheduledCredits(pool, sub, payment, now);
+    // Only real money pays out a referral; a renewal a free month fully covered doesn't.
+    const reward = payment.amountMinor > 0 ? await rewardReferral(pool, sub, payment, deps, now) : { outcome: "none" as const, referrerId: null };
     await applyPendingCredits(pool, sub.user_id, deps, now);
     // A referrer who already pays gets theirs onto their next renewal now, not one renewal later.
     if (reward.outcome === "rewarded" && reward.referrerId) await applyPendingCredits(pool, reward.referrerId, deps, now);
   }
   if (sub.status === "paused" || sub.status === "unpaid" || sub.status === "cancelled") await startExtensions(pool, sub.user_id, now);
+}
+
+/**
+ * The most a Razorpay renewal costs when the referral offer was applied: the plan's price less the offer. For Solo
+ * monthly that is ₹1. Null when the plan's price isn't known (then the renewal can't be checked).
+ */
+export function discountedRazorpayCharge(plan: Plan, interval: BillingInterval | null): number | null {
+  if (plan === "free" || !interval) return null;
+  return PRICES[plan][interval].INR - RAZORPAY_REFERRAL_DISCOUNT_INR;
+}
+
+/**
+ * A renewal was charged: free months handed to the provider before it are settled. A Stripe credit is always taken by
+ * the next invoice, so it is used. A Razorpay offer is used only if the charge shows it was applied (₹1 for Solo
+ * monthly). A renewal charged in full means Razorpay didn't apply it: the free month goes back to waiting, so it is
+ * linked again for the next renewal, and the miss is counted and logged for support.
+ */
+async function settleScheduledCredits(pool: pg.Pool, sub: PlanRow, payment: VerifiedPayment, now: Date): Promise<void> {
+  const { rows } = await pool.query<{ id: string; mechanism: string }>(
+    `select id, mechanism from referral_credits where user_id = $1 and provider_subscription_id = $2
+       and status = 'scheduled' and scheduled_at < $3 order by created_at, id`,
+    [sub.user_id, sub.provider_subscription_id, payment.paidAt]);
+  const ceiling = discountedRazorpayCharge(sub.plan, sub.interval);
+  for (const c of rows) {
+    const applied = c.mechanism !== "razorpay_offer" || (ceiling !== null && payment.amountMinor <= ceiling);
+    if (applied) {
+      await pool.query("update referral_credits set status = 'used', updated_at = $2 where id = $1", [c.id, now]);
+      continue;
+    }
+    const message = `Renewal ${payment.ref} was charged ${formatMoney(payment.amountMinor, "INR")}, not the discounted ${ceiling === null ? "amount" : formatMoney(ceiling, "INR")}: Razorpay didn't apply the offer. Linked again for the next renewal.`;
+    console.error(`[referrals] free month ${c.id} for ${sub.user_id}: ${message}`);
+    await pool.query(
+      `update referral_credits set status = 'pending', missed_renewals = missed_renewals + 1, error = $2, updated_at = $3 where id = $1`,
+      [c.id, message.slice(0, 500), now]);
+  }
 }
 
 export type RewardOutcome = "none" | "rewarded" | "capped" | "blocked";
@@ -153,7 +188,7 @@ export async function applyPendingCredits(pool: pg.Pool, userId: string, deps: R
     await client.query("begin");
     await client.query("select pg_advisory_xact_lock(hashtext($1))", [`referral-credits:${userId}`]);
     const { rows: [sub] } = await client.query<PlanRow>(
-      "select user_id, plan, status, provider, provider_subscription_id, provider_customer_id from subscriptions where user_id = $1", [userId]);
+      "select user_id, plan, interval, status, provider, provider_subscription_id, provider_customer_id from subscriptions where user_id = $1", [userId]);
     if (!sub || sub.plan === "free" || sub.status !== "active" || !sub.provider_subscription_id) { await client.query("commit"); return 0; }
     const cp = deps.credits(sub.provider);
     const { rows: waiting } = await client.query<{ id: string }>(
@@ -176,7 +211,7 @@ export async function applyPendingCredits(pool: pg.Pool, userId: string, deps: R
         }
         await client.query(
           `update referral_credits set status = 'scheduled', mechanism = $2, provider_subscription_id = $3, provider_ref = $4, scheduled_at = $5,
-             error = null, updated_at = $5 where id = $1`, [credit.id, r.mechanism, sub.provider_subscription_id, r.ref, now]);
+             error = case when missed_renewals > 0 then error else null end, updated_at = $5 where id = $1`, [credit.id, r.mechanism, sub.provider_subscription_id, r.ref, now]);
         applied++;
         if (!r.stackable) break;
       } catch (error) {
