@@ -9,6 +9,7 @@ import { tokenKey } from "@/lib/crypto/seal";
 import { getPool } from "@/lib/data/pg-store";
 import { disconnectRazorpay, RazorpayKeyError, razorpayVerifier, saveRazorpayKeys } from "@/lib/payments/host-razorpay";
 import { disconnectStripe, startStripeConnect, StripeConnectError, stripeConnectFromEnv } from "@/lib/payments/stripe-connect";
+import { disconnectZoom, zoomDeps } from "@/lib/zoom/connection";
 
 // Each action checks the session itself and only touches the signed-in host's own keys. The key fields are never logged.
 
@@ -79,4 +80,13 @@ export async function disconnectStripeAction(): Promise<void> {
   const user = await requireUser();
   if (!authEnabled()) redirect("/dashboard/integrations?stripe_error=demo");
   await run(() => disconnectStripe(pool(), user.id), "stripe_disconnected");
+}
+
+/** Removes the host's Zoom: revokes the grant and deletes the stored tokens. Bookings keep the links they already have. */
+export async function disconnectZoomAction(): Promise<void> {
+  const user = await requireUser();
+  if (!authEnabled()) redirect("/dashboard/integrations?zoom_error=demo");
+  await disconnectZoom(pool(), zoomDeps(), user.id);
+  revalidatePath("/dashboard/integrations");
+  redirect("/dashboard/integrations?zoom_disconnected=1");
 }
