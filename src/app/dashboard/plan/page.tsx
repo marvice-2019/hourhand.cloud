@@ -10,6 +10,9 @@ import { addonPriceLine, effectivePlan, LIMITS, PLAN_NAMES, PROVIDER_FOR, priceL
 import { getPool } from "@/lib/data/pg-store";
 import { SeatForm } from "@/components/SeatForm";
 import { seatFor } from "@/lib/seats";
+import { SmsUsageMeter } from "@/components/SmsUsageMeter";
+import { smsConfig } from "@/lib/sms/config";
+import { smsUsage } from "@/lib/sms/outbox";
 import { cancelSubscription, choosePlan, openBillingPortal, pauseSubscription, resumeSubscription } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +52,9 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const live = authEnabled();
   const sub = live ? await getHostSubscription(getPool(process.env.DATABASE_URL as string), user.id) : null;
   const seat = live ? await seatFor(getPool(process.env.DATABASE_URL as string), user.id) : null;
+  // Booking texts: shown only where SMS is set up on this server. Counted for whoever is signed in (a Duo second person
+  // has their own count, against Duo's allowance).
+  const texts = live && smsConfig() ? await smsUsage(getPool(process.env.DATABASE_URL as string), user.id, new Date()) : null;
   const holding = Boolean(sub?.subscriptionId) && sub!.plan !== "free" && sub!.status !== "cancelled";
   const currency: Currency = params.currency === "USD" ? "USD" : "INR";
   const interval: BillingInterval = params.interval === "year" ? "year" : "month";
@@ -114,6 +120,13 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         )}
       </Card>
 
+      {texts && (
+        <Card className="mt-6 max-w-2xl">
+          <h2 className="font-semibold text-text">Booking texts this month</h2>
+          <SmsUsageMeter usage={texts} resets={new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" }).format(texts.resetsAt)} />
+        </Card>
+      )}
+
       <Card className="mt-6 max-w-2xl">
         <h2 className="font-semibold text-text">Add-on: custom domain</h2>
         <p className="mt-1 text-text-muted">
@@ -154,6 +167,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
                   <p className="mt-1 text-text">{priceLine(plan, interval, currency)}</p>
                   <ul className="mt-3 grid gap-1 text-sm text-text-muted">
                     {FEATURES[plan].map((f) => <li key={f}>{f}</li>)}
+                    {smsConfig() && <li>Up to {LIMITS[plan].smsPerMonth} booking texts (SMS) a month to guests in India</li>}
                   </ul>
                   {ready ? (
                     <form action={choosePlan} className="mt-4">

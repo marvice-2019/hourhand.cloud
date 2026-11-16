@@ -1,5 +1,6 @@
 // Integration tests for the Postgres store. They run only when TEST_DATABASE_URL points at a database named for tests;
 // that database is dropped and recreated from the migrations and the seed on every run.
+import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { migrate } from "../../../scripts/migrate";
@@ -8,6 +9,8 @@ import { createPgStore } from "./pg-store";
 import { LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type DataStore, type EventType, type EventTypeDraft, type User } from "./types";
 
 const URL_ = process.env.TEST_DATABASE_URL;
+/** Client notes are sealed; a throwaway key for this run. */
+const NOTE_KEY = randomBytes(32);
 const MIN = 60_000;
 const guest = { name: "Meera Iyer", email: "meera@example.com", timezone: "Asia/Kolkata", phone: null, answers: [] };
 /** Far from the seeded bookings, which sit around the real "now". */
@@ -38,7 +41,7 @@ describe.skipIf(!URL_)("pg store (TEST_DATABASE_URL)", () => {
     await migrate(URL_!);
     await seed(URL_!);
     pool = new pg.Pool({ connectionString: URL_ });
-    store = createPgStore(pool);
+    store = createPgStore(pool, { noteKey: () => NOTE_KEY });
     priya = (await store.getUserBySlug("priya"))!;
     arun = (await store.getUserBySlug("arun"))!;
     const types = await store.listEventTypes(priya.id);

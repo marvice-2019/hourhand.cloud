@@ -20,6 +20,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
   type LinkRow = { id: string; userId: string; eventTypeId: string; tokenHash: string; label: string | null; expiresAt: Date | null; revokedAt: Date | null; createdAt: Date };
   const links: LinkRow[] = []; // newest last
   const linkOfBooking = new Map<string, string>(); // booking id -> booking link id (bookings.booking_link_id)
+  const bookingNotes = new Map<string, string>(); // booking id -> the host's session note (booking_notes)
   const clientNotes = new Map<string, string>(); // "<host id>:<lowercased email>" -> the host's note (client_notes)
   const oneOffTimes = new Map<string, Date[]>(); // one_off event type id -> offered start times, earliest first
 
@@ -76,7 +77,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       id, eventTypeId: et.id, hostId: et.userId, startAt, endAt, bufferedStart, bufferedEnd, status: "confirmed", holdExpiresAt: null,
       locationKind: db.locations.find((l) => l.eventTypeId === et.id)?.kind ?? null, joinUrl: null,
       idempotencyKey: input.idempotencyKey, cancelledAt: null, cancelledBy: null, cancelReason: null, rescheduledFromId: movingId, seriesId: null, seriesIndex: null, classKey, createdAt: new Date(),
-      invitee: { id: randomUUID(), bookingId: id, hostId: et.userId, ...input.invitee, guests: input.invitee.guests ?? [], locale: input.invitee.locale ?? "en", whatsappOptIn: input.invitee.whatsappOptIn === true && input.invitee.phone !== null, manageToken: randomUUID().replaceAll("-", ""), noShowAt: null, runningLateMinutes: null, runningLateAt: null },
+      invitee: { id: randomUUID(), bookingId: id, hostId: et.userId, ...input.invitee, guests: input.invitee.guests ?? [], locale: input.invitee.locale ?? "en", whatsappOptIn: input.invitee.whatsappOptIn === true && input.invitee.phone !== null, smsOptIn: input.invitee.smsOptIn === true && input.invitee.phone !== null, manageToken: randomUUID().replaceAll("-", ""), noShowAt: null, runningLateMinutes: null, runningLateAt: null },
     };
   }
 
@@ -293,9 +294,9 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       }
       const old = db.bookings.find((b) => b.hostId === hostId && b.id === bookingId);
       if (!old) throw new NotFoundError("Booking");
-      const { name, email, timezone, phone, answers, guests, locale, whatsappOptIn } = old.invitee;
+      const { name, email, timezone, phone, answers, guests, locale, whatsappOptIn, smsOptIn } = old.invitee;
       // Both steps run synchronously, so no other request can see the half-done state (one transaction in Postgres).
-      const booking = build({ eventTypeId: old.eventTypeId, startAt, idempotencyKey, invitee: { name, email, timezone, phone, answers: answers.map((a) => ({ ...a })), guests: [...guests], locale, whatsappOptIn } }, old.id);
+      const booking = build({ eventTypeId: old.eventTypeId, startAt, idempotencyKey, invitee: { name, email, timezone, phone, answers: answers.map((a) => ({ ...a })), guests: [...guests], locale, whatsappOptIn, smsOptIn } }, old.id);
       // A moved week stays its series' week.
       Object.assign(booking, { seriesId: old.seriesId, seriesIndex: old.seriesIndex });
       db.bookings.push(booking);
@@ -330,6 +331,14 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       const key = `${hostId}:${email.toLowerCase()}`;
       if (note.trim() === "") clientNotes.delete(key);
       else clientNotes.set(key, note);
+    },
+    async getBookingNote(hostId, bookingId) {
+      return db.bookings.some((b) => b.id === bookingId && b.hostId === hostId) ? bookingNotes.get(bookingId) ?? "" : "";
+    },
+    async saveBookingNote(hostId, bookingId, note) {
+      if (!db.bookings.some((b) => b.id === bookingId && b.hostId === hostId)) throw new NotFoundError("Booking");
+      if (note.trim() === "") bookingNotes.delete(bookingId);
+      else bookingNotes.set(bookingId, note);
     },
     async markRunningLate(manageToken, minutes, now) {
       const booking = db.bookings.find((b) => b.invitee.manageToken === manageToken && b.status === "confirmed");
