@@ -8,29 +8,32 @@ import { ACTING_COOKIE, requireUser } from "@/lib/auth/session";
 import { kickJobs } from "@/lib/jobs/kick";
 import { getPool } from "@/lib/data/pg-store";
 import { isNamedError } from "@/lib/data/types";
-import { acceptSeat, inviteSeat, leaveSeat, removeSeat, seatOwner, type SeatActionError } from "@/lib/seats";
+import type { HostKey } from "@/lib/i18n/host";
+import { getHostI18n } from "@/lib/i18n/host/server";
+import { acceptSeat, inviteSeat, leaveSeat, removeSeat, seatOwner, type SeatActionError, type SeatError } from "@/lib/seats";
 
 // Every action works from the signed-in person's own account (requireUser, never requireHost): a second person can't
 // invite, remove or accept on the owner's behalf.
 
 export type SeatFormState = { status: "idle" } | { status: "invited" } | { status: "error"; error: string };
 
-const MESSAGES: Record<string, string> = {
-  not_duo: "Adding a second person comes with the Duo plan.",
-  invalid_email: "Enter a valid email address.",
-  own_email: "That's your own email. Enter the other person's.",
-  taken: "That person is already the second person on another Duo plan.",
-  too_many: "You've sent 3 invitations today. Try again tomorrow.",
+const MESSAGES: Record<SeatError, HostKey> = {
+  not_duo: "seat.errorNotDuo",
+  invalid_email: "seat.errorInvalidEmail",
+  own_email: "seat.errorOwnEmail",
+  taken: "seat.errorTaken",
+  too_many: "seat.errorTooMany",
 };
 const db = () => getPool(process.env.DATABASE_URL as string);
 
 export async function inviteSeatAction(_prev: SeatFormState, form: FormData): Promise<SeatFormState> {
   const user = await requireUser();
-  if (!authEnabled()) return { status: "error", error: "The demo copy can't add people." };
+  const { t } = await getHostI18n();
+  if (!authEnabled()) return { status: "error", error: t("seat.errorDemo") };
   try {
     await inviteSeat(db(), user, String(form.get("email") ?? ""), new Date());
   } catch (error) {
-    if (isNamedError<SeatActionError>(error, "SeatActionError")) return { status: "error", error: MESSAGES[error.code] };
+    if (isNamedError<SeatActionError>(error, "SeatActionError")) return { status: "error", error: t(MESSAGES[error.code]) };
     throw error;
   }
   kickJobs();

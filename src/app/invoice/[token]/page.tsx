@@ -60,13 +60,14 @@ export default async function InvoicePage({ params }: { params: Promise<{ token:
       </dl>
 
       <table className="mt-6 w-full text-left text-sm">
-        <thead><tr className="text-text-muted"><th className="py-2 pr-4 font-medium">Description</th><th className="py-2 pr-4 font-medium">SAC</th><th className="py-2 pr-4 font-medium">Qty</th><th className="py-2 text-right font-medium">Taxable value</th></tr></thead>
+        <thead><tr className="text-text-muted"><th className="py-2 pr-4 font-medium">Description</th><th className="py-2 pr-4 font-medium">SAC</th><th className="py-2 pr-4 font-medium">Qty</th><th className="py-2 text-right font-medium">{v.discount ? "Value" : "Taxable value"}</th></tr></thead>
         <tbody>
-          <tr className="border-t border-border text-text"><td className="py-2 pr-4">{v.description}</td><td className="py-2 pr-4">{v.sac}</td><td className="py-2 pr-4">1</td><td className="py-2 text-right">{money(v.taxableMinor)}</td></tr>
+          <tr className="border-t border-border text-text"><td className="py-2 pr-4">{v.description}</td><td className="py-2 pr-4">{v.sac}</td><td className="py-2 pr-4">1</td><td className="py-2 text-right">{money(v.discount?.grossMinor ?? v.taxableMinor)}</td></tr>
         </tbody>
       </table>
       <table className="ml-auto mt-4 w-full max-w-xs text-sm">
         <tbody>
+          {v.discount && <>{row("Value before discount", money(v.discount.grossMinor))}{row(`Discount (${v.discount.label})`, `− ${money(v.discount.discountMinor)}`)}</>}
           {row("Taxable value", money(v.taxableMinor))}
           {intra ? <>{row(`CGST ${rate / 2}%`, money(v.cgstMinor))}{row(`SGST ${rate / 2}%`, money(v.sgstMinor))}</> : row(`IGST ${rate}%`, money(v.igstMinor))}
           {row(note ? "Total refunded" : "Total paid", money(v.totalMinor), true)}

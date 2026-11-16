@@ -6,8 +6,9 @@ import { authEnabled, resolveBaseUrl } from "@/lib/auth/auth";
 import { requireOwnAccount } from "@/lib/auth/session";
 import { BillingActionError, hostPlan } from "@/lib/billing/account";
 import { cancelAddon, getAddon, startAddonCheckout } from "@/lib/billing/addons";
-import { addonLive } from "@/lib/billing/plans";
+import { addonLive, VOICE_INCLUDED_MINUTES } from "@/lib/billing/plans";
 import { getPool } from "@/lib/data/pg-store";
+import { getHostI18n } from "@/lib/i18n/host/server";
 import { validateVoiceForm } from "@/lib/voice/settings-form";
 import { markMessageHandled, rotateKey, saveVoiceSettings } from "@/lib/voice/store";
 import { VOICE_PLANS } from "@/lib/voice/tools";
@@ -22,19 +23,20 @@ export type VoiceFormState = { status: "idle" } | { status: "error"; errors: Rec
 
 export async function saveVoice(_prev: VoiceFormState, form: FormData): Promise<VoiceFormState> {
   const user = await requireOwnAccount();
-  if (!authEnabled()) return { status: "error", errors: { form: "The demo data can't use the phone receptionist." } };
+  const { t } = await getHostI18n();
+  if (!authEnabled()) return { status: "error", errors: { form: t("voice.errorDemo") } };
   const v = validateVoiceForm(form);
-  if (!v.ok) return { status: "error", errors: v.errors };
+  if (!v.ok) return { status: "error", errors: Object.fromEntries(Object.entries(v.errors).map(([k, key]) => [k, t(key, { max: VOICE_INCLUDED_MINUTES })])) };
   if (v.value.enabled) {
     const db = pool();
-    if (!VOICE_PLANS.includes(await hostPlan(db, user.id))) return { status: "error", errors: { form: "The phone receptionist needs the Duo or Clinic plan." } };
-    if (!addonLive(await getAddon(db, user.id, "voice"))) return { status: "error", errors: { form: "Add the phone receptionist add-on first." } };
+    if (!VOICE_PLANS.includes(await hostPlan(db, user.id))) return { status: "error", errors: { form: t("voice.errorFormNeedsPlan") } };
+    if (!addonLive(await getAddon(db, user.id, "voice"))) return { status: "error", errors: { form: t("voice.errorFormNeedsAddon") } };
   }
   try {
     await saveVoiceSettings(pool(), user.id, v.value);
   } catch (error) {
     // agent_id is unique: another host's agent.
-    if ((error as { code?: string }).code === "23505") return { status: "error", errors: { agentId: "That agent is linked to another account." } };
+    if ((error as { code?: string }).code === "23505") return { status: "error", errors: { agentId: t("voice.errorAgentTaken") } };
     throw error;
   }
   revalidatePath(PAGE);
