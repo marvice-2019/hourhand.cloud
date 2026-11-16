@@ -9,7 +9,7 @@ create table consent_records (
   booking_id uuid not null references bookings(id) on delete cascade,
   invitee_id uuid not null references invitees(id) on delete cascade,
   email citext not null,                                -- the client, as the host's client list groups them
-  purpose text not null check (purpose in ('booking', 'whatsapp_updates', 'host_question')),
+  purpose text not null check (purpose in ('booking', 'whatsapp_updates', 'sms_updates', 'host_question')),
   granted boolean not null,
   statement text not null check (length(statement) between 1 and 2000),  -- the words on the page, in their language
   notice_version text not null check (length(notice_version) between 1 and 40),

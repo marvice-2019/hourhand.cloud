@@ -158,6 +158,8 @@ export interface Invitee {
   locale: string;
   /** The guest ticked "updates on WhatsApp" for the phone they gave. */
   whatsappOptIn: boolean;
+  /** Texts (SMS) to the phone are on: ticked when booking, or turned on on the manage page. */
+  smsOptIn?: boolean;
 }
 
 /** One entry of invitees.answers (jsonb). The label is copied so later edits to the question don't rewrite history. */
@@ -210,7 +212,7 @@ export interface CreateBookingInput {
   weeks?: number;
   /** Pay with a session package (its buyer's token): one credit per booking, checked and used in the same write. Postgres only. */
   packageToken?: string;
-  invitee: { name: string; email: string; timezone: string; phone: string | null; answers: InviteeAnswer[]; guests?: string[]; locale?: string; whatsappOptIn?: boolean;
+  invitee: { name: string; email: string; timezone: string; phone: string | null; answers: InviteeAnswer[]; guests?: string[]; locale?: string; whatsappOptIn?: boolean; smsOptIn?: boolean;
     /** The consent log lines to record with each booking this makes (see src/lib/privacy/consent.ts). Postgres only; a move records none. */
     consent?: ConsentInput[] };
 }

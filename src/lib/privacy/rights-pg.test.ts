@@ -82,6 +82,8 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
       await pool.query("insert into portal_sessions (id_hash, host_id, email, expires_at) values ($1, $2, 'meera@example.com', $3::timestamptz + interval '30 days')", [`sess-${tag}`, host, now]);
       await pool.query("insert into portal_links (nonce_hash, host_id, email, expires_at) values ($1, $2, 'meera@example.com', $3::timestamptz + interval '15 minutes')", [`link-${tag}`, host, now]);
     }
+    // SMS updates ticked, with the short code their texts link to.
+    await pool.query("update invitees set sms_opt_in_at = $2, sms_code = 'mr1sms' where booking_id = $1", [past.id, now]);
     await store.saveClientNote(priya.id, "meera@example.com", "Generalised anxiety; CBT plan.");
     await store.saveBookingNote(priya.id, past.id, "Session 1: breathing exercise.");
     await store.saveClientNote(priya.id, "ravi@example.com", "Ravi's note.");
@@ -158,8 +160,8 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
     const meeraRows = (sql: string) => count(sql, [priya.id]);
     // No trace of her email, name or phone left in Priya's data.
     expect(await meeraRows("select count(*)::int as n from invitees where host_id = $1 and (email = 'meera@example.com' or name like '%Meera%' or phone = '+919876543210' or answers::text like '%anxiety%' or cardinality(guests) > 0)")).toBe(0);
-    const erased = await pool.query("select name, email, phone, answers, guests::text[] as guests, whatsapp_opt_in_at, manage_token from invitees where booking_id = any($1::uuid[])", [[past.id, past2.id]]);
-    for (const r of erased.rows) expect(r).toMatchObject({ name: "Erased client", phone: null, answers: [], guests: [], whatsapp_opt_in_at: null });
+    const erased = await pool.query("select name, email, phone, answers, guests::text[] as guests, whatsapp_opt_in_at, sms_opt_in_at, sms_code, manage_token from invitees where booking_id = any($1::uuid[])", [[past.id, past2.id]]);
+    for (const r of erased.rows) expect(r).toMatchObject({ name: "Erased client", phone: null, answers: [], guests: [], whatsapp_opt_in_at: null, sms_opt_in_at: null, sms_code: null });
     expect(erased.rows[0].email).toMatch(/^erased-.*@erased\.invalid$/);
     expect(erased.rows.map((r) => r.manage_token)).not.toContain(past.invitee.manageToken);
     expect(await store.getBookingByManageToken(past.invitee.manageToken)).toBeNull();

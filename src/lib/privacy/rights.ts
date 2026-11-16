@@ -200,7 +200,7 @@ export async function eraseClient(pool: Pick<pg.Pool, "connect">, hostId: string
 
     // Bookings stay (the host's history, and what payments and invoices point at), with no one identifiable in them.
     await client.query(
-      `update invitees set name = $3, email = $4, phone = null, answers = '[]', guests = '{}', utm = '{}', whatsapp_opt_in_at = null,
+      `update invitees set name = $3, email = $4, phone = null, answers = '[]', guests = '{}', utm = '{}', whatsapp_opt_in_at = null, sms_opt_in_at = null, sms_code = null,
          running_late_minutes = null, running_late_at = null, manage_token = encode(gen_random_bytes(24), 'hex'), updated_at = $5
        where host_id = $1 and email = $2`, [hostId, email, ERASED_NAME, placeholder, now]);
     await client.query("update bookings set cancel_reason = null, location_value = null where id = any($1::uuid[]) and host_id = $2", [bookingIds, hostId]);
