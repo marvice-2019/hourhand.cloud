@@ -3,6 +3,9 @@ import { datesInRange } from "../availability";
 import { kickJobs } from "../jobs/kick";
 import { closeAccount, purgeClosedAccounts } from "./account-lifecycle";
 import { queueBookingNotifications } from "./notifications";
+import { insertConsent } from "../privacy/consent";
+import { seal, tokenKey, unseal } from "../crypto/seal";
+import { bookingNoteAad, clientNoteAad } from "../privacy/notes";
 import { pollHolds } from "../polls/holds";
 import { PackageUnavailableError, takeCredits } from "../packages/packages";
 import { hashLinkToken, newLinkToken } from "../links";
@@ -47,7 +50,7 @@ const toEventType = (r: Row): EventType => ({
 
 const BOOKING = `select b.id, b.event_type_id, b.host_id, b.start_at, b.end_at, b.buffered_start, b.buffered_end, b.status, b.hold_expires_at, b.location_kind, b.join_url, b.idempotency_key,
   b.cancelled_at, b.cancelled_by, b.cancel_reason, b.rescheduled_from_id, b.series_id, b.series_index, b.class_key, b.created_at,
-  i.id as invitee_id, i.name as invitee_name, i.email as invitee_email, i.timezone as invitee_timezone, i.phone as invitee_phone, i.answers, i.manage_token, i.no_show_at, i.running_late_minutes, i.running_late_at, i.guests::text[] as guests, i.locale as invitee_locale, i.whatsapp_opt_in_at is not null as whatsapp_opt_in
+  i.id as invitee_id, i.name as invitee_name, i.email as invitee_email, i.timezone as invitee_timezone, i.phone as invitee_phone, i.answers, i.manage_token, i.no_show_at, i.running_late_minutes, i.running_late_at, i.guests::text[] as guests, i.locale as invitee_locale, i.whatsapp_opt_in_at is not null as whatsapp_opt_in, i.sms_opt_in_at is not null as sms_opt_in
   from bookings b join invitees i on i.booking_id = b.id`;
 const toBooking = (r: Row): BookingWithInvitee => ({
   id: r.id as string, eventTypeId: r.event_type_id as string, hostId: r.host_id as string, startAt: r.start_at as Date, endAt: r.end_at as Date,
@@ -61,7 +64,7 @@ const toBooking = (r: Row): BookingWithInvitee => ({
     id: r.invitee_id as string, bookingId: r.id as string, hostId: r.host_id as string, name: r.invitee_name as string, email: r.invitee_email as string,
     timezone: r.invitee_timezone as string, phone: r.invitee_phone as string | null, answers: r.answers as BookingWithInvitee["invitee"]["answers"], manageToken: r.manage_token as string,
     noShowAt: (r.no_show_at as Date | null) ?? null,
-    runningLateMinutes: (r.running_late_minutes as number | null) ?? null, runningLateAt: (r.running_late_at as Date | null) ?? null, guests: (r.guests as string[] | null) ?? [], locale: (r.invitee_locale as string | null) ?? "en", whatsappOptIn: r.whatsapp_opt_in === true,
+    runningLateMinutes: (r.running_late_minutes as number | null) ?? null, runningLateAt: (r.running_late_at as Date | null) ?? null, guests: (r.guests as string[] | null) ?? [], locale: (r.invitee_locale as string | null) ?? "en", whatsappOptIn: r.whatsapp_opt_in === true, smsOptIn: r.sms_opt_in === true,
   },
 });
 
@@ -85,7 +88,9 @@ const toLink = (r: Row, now: Date): BookingLink => {
 const code = (error: unknown) => (error as { code?: string }).code;
 
 /** Postgres implementation of DataStore. Every read or write of host data filters by the user id it is given. */
-export function createPgStore(pool: pg.Pool): DataStore {
+export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = {}): DataStore {
+  // Notes are sealed with TOKEN_ENCRYPTION_KEY; tests pass their own key.
+  const noteKey = opts.noteKey ?? tokenKey;
   async function tx<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     const client = await pool.connect();
     try {
@@ -138,10 +143,12 @@ export function createPgStore(pool: pg.Pool): DataStore {
         et.location_kind, input.idempotencyKey, movingId, input.holdUntil ? "pending_payment" : "confirmed", input.holdUntil ?? null, linkId, classKey]);
     const id = inserted.rows[0].id as string;
     const i = input.invitee;
-    await client.query(
-      `insert into invitees (booking_id, host_id, name, email, timezone, phone, answers, guests, locale, whatsapp_opt_in_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8::citext[],$9, case when $10::boolean then now() end)`,
-      [id, et.user_id, i.name, i.email, i.timezone, i.phone, JSON.stringify(i.answers), i.guests ?? [], i.locale ?? "en", i.whatsappOptIn === true && i.phone !== null]);
+    const { rows: [invitee] } = await client.query(
+      `insert into invitees (booking_id, host_id, name, email, timezone, phone, answers, guests, locale, whatsapp_opt_in_at, sms_opt_in_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8::citext[],$9, case when $10::boolean then now() end, case when $11::boolean then now() end) returning id`,
+      [id, et.user_id, i.name, i.email, i.timezone, i.phone, JSON.stringify(i.answers), i.guests ?? [], i.locale ?? "en", i.whatsappOptIn === true && i.phone !== null, i.smsOptIn === true && i.phone !== null]);
+    // The consent log commits with the booking or not at all.
+    if (i.consent) await insertConsent(client, { hostId: et.user_id, bookingId: id, inviteeId: invitee.id, email: i.email, locale: i.locale ?? "en" }, i.consent);
     return id;
   }
 
@@ -434,10 +441,10 @@ export function createPgStore(pool: pg.Pool): DataStore {
           // Cancel first: the exclusion constraint only covers confirmed rows, so the new slot may overlap the old one.
           // Both statements commit together or not at all.
           await client.query("update bookings set status = 'cancelled', cancelled_at = now(), cancelled_by = $2, cancel_reason = 'Rescheduled' where id = $1", [bookingId, by]);
-          const { name, email, timezone, phone, answers, guests, locale, whatsappOptIn } = invitee;
+          const { name, email, timezone, phone, answers, guests, locale, whatsappOptIn, smsOptIn } = invitee;
           // The move keeps the booking's single-use link, so the link shows the current time.
           const linkId = (await client.query("select booking_link_id from bookings where id = $1", [bookingId])).rows[0].booking_link_id as string | null;
-          const newId = await insertBooking(client, { eventTypeId, startAt, idempotencyKey, invitee: { name, email, timezone, phone, answers, guests, locale, whatsappOptIn } }, bookingId, linkId);
+          const newId = await insertBooking(client, { eventTypeId, startAt, idempotencyKey, invitee: { name, email, timezone, phone, answers, guests, locale, whatsappOptIn, smsOptIn } }, bookingId, linkId);
           // A moved week stays its series' week: same series, same place in it. A package session stays paid for by its
           // package (or its credit would come back while still booked), and can't move past the package's end date.
           await client.query(
@@ -449,7 +456,7 @@ export function createPgStore(pool: pg.Pool): DataStore {
           // Nothing more goes out about the old time; the new booking gets its own emails and reminders.
           // A calendar write already running for the old booking is left to finish; the move waits for it and then moves its event.
           await client.query(
-            "update notifications set status = 'skipped', last_error = 'booking rescheduled', updated_at = now() where booking_id = $1 and status = 'queued' and not (channel = 'calendar' and locked_until > now())",
+            "update notifications set status = 'skipped', last_error = 'booking rescheduled', updated_at = now() where booking_id = $1 and status = 'queued' and not (channel in ('calendar', 'video') and locked_until > now())",
             [bookingId]);
           await queueBookingNotifications(client, newId, "rescheduled", new Date());
           await queueWaitlistFor(client, bookingId, new Date()); // the old time is free now
@@ -505,15 +512,39 @@ export function createPgStore(pool: pg.Pool): DataStore {
     },
     async getClientNote(hostId, email) {
       if (!isId(hostId)) return "";
-      const { rows: [r] } = await pool.query("select note from client_notes where host_id = $1 and email = $2", [hostId, email]);
-      return (r?.note as string | undefined) ?? "";
+      const { rows: [r] } = await pool.query("select note, note_sealed from client_notes where host_id = $1 and email = $2", [hostId, email]);
+      if (!r) return "";
+      if (r.note_sealed) return unseal<string>(noteKey(), r.note_sealed as Buffer, clientNoteAad(hostId, email));
+      // Written before notes were sealed: seal it now, so the plaintext doesn't stay in the table.
+      const plain = r.note as string;
+      if (plain) await pool.query("update client_notes set note = '', note_sealed = $3 where host_id = $1 and email = $2 and note = $4 and note_sealed is null",
+        [hostId, email, seal(noteKey(), plain, clientNoteAad(hostId, email)), plain]);
+      return plain;
     },
     async saveClientNote(hostId, email, note) {
       if (!isId(hostId)) throw new NotFoundError("User");
       if (note.trim() === "") await pool.query("delete from client_notes where host_id = $1 and email = $2", [hostId, email]);
       else await pool.query(
-        `insert into client_notes (host_id, email, note) values ($1, $2, $3)
-         on conflict (host_id, email) do update set note = $3, updated_at = now()`, [hostId, email, note]);
+        `insert into client_notes (host_id, email, note, note_sealed) values ($1, $2, '', $3)
+         on conflict (host_id, email) do update set note = '', note_sealed = $3, updated_at = now()`, [hostId, email, seal(noteKey(), note, clientNoteAad(hostId, email))]);
+    },
+    async getBookingNote(hostId, bookingId) {
+      if (!isId(hostId) || !isId(bookingId)) return "";
+      const { rows: [r] } = await pool.query("select note_sealed from booking_notes where booking_id = $1 and host_id = $2", [bookingId, hostId]);
+      return r ? unseal<string>(noteKey(), r.note_sealed as Buffer, bookingNoteAad(bookingId)) : "";
+    },
+    async saveBookingNote(hostId, bookingId, note) {
+      if (!isId(hostId) || !isId(bookingId)) throw new NotFoundError("Booking");
+      if (note.trim() === "") {
+        await pool.query("delete from booking_notes where booking_id = $1 and host_id = $2", [bookingId, hostId]);
+        return;
+      }
+      // Only on the host's own booking: the insert selects it by both ids, so anyone else's booking writes nothing.
+      const { rowCount } = await pool.query(
+        `insert into booking_notes (booking_id, host_id, note_sealed) select id, host_id, $3 from bookings where id = $1 and host_id = $2
+         on conflict (booking_id) do update set note_sealed = excluded.note_sealed, updated_at = now() where booking_notes.host_id = $2`,
+        [bookingId, hostId, seal(noteKey(), note, bookingNoteAad(bookingId))]);
+      if (!rowCount) throw new NotFoundError("Booking");
     },
     async markRunningLate(manageToken, minutes, now) {
       return tx(async (client) => {
