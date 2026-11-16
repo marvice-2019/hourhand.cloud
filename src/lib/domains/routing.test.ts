@@ -41,6 +41,8 @@ describe("routeRequest on a host's own domain", () => {
     expect(await route("book.priya.in", "/_next/static/chunks/a.js")).toEqual({ kind: "next" });
     expect(await route("book.priya.in", "/api/slots")).toEqual({ kind: "next" });
     expect(await route("book.priya.in", "/api/bookings")).toEqual({ kind: "next" });
+    // The booking page's own analytics beacon: a redirect would drop it, since sendBeacon doesn't follow to another origin.
+    expect(await route("book.priya.in", "/api/events")).toEqual({ kind: "next" });
     expect(await route("book.priya.in", "/api/photo/priya")).toEqual({ kind: "next" });
   });
 

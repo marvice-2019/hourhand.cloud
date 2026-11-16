@@ -1,6 +1,7 @@
 // Turns imported event types into drafts through the same checks the editor uses, with slugs made unique.
 import type { EventTypeDraft, QuestionDraft } from "../data/types";
 import { NEW_EVENT_TYPE_FORM, slugify, validateEventType, validateQuestions, type EventTypeForm } from "../event-types";
+import { IMPORT_MESSAGES, importMessage } from "./messages";
 import type { ImportedEventType } from "./types";
 
 /** `base`, or base-2, base-3 … the first one not in `taken`, within the 60-character limit. */
@@ -45,13 +46,13 @@ export function planImport(items: readonly ImportedEventType[], existingSlugs: r
     const details = validateEventType(toImportForm(et, slug), [...taken]);
     const questions = validateQuestions(et.questions.map((q) => ({ id: null, ...q })));
     if (!details.ok) {
-      return { ok: false, sourceId: et.sourceId, name: et.name, error: Object.values(details.errors).filter(Boolean).join(" ") || "It didn't pass Hourhand's checks." };
+      return { ok: false, sourceId: et.sourceId, name: et.name, error: Object.values(details.errors).filter(Boolean).join(" ") || IMPORT_MESSAGES.notValid };
     }
     if (!questions.ok) {
-      return { ok: false, sourceId: et.sourceId, name: et.name, error: "One of its questions didn't pass Hourhand's checks." };
+      return { ok: false, sourceId: et.sourceId, name: et.name, error: IMPORT_MESSAGES.questionInvalid };
     }
     taken.add(details.value.slug);
-    const notes = slug === slugify(et.slug) || !et.slug ? et.notes : [...et.notes, `The link ${slugify(et.slug) || et.slug} was taken, so it is ${slug}.`];
+    const notes = slug === slugify(et.slug) || !et.slug ? et.notes : [...et.notes, importMessage("slugMoved", { from: slugify(et.slug) || et.slug, to: slug })];
     return { ok: true, sourceId: et.sourceId, draft: details.value, questions: questions.value, notes };
   });
 }

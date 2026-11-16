@@ -32,14 +32,25 @@ export interface PlanLimits {
   whatsappBooking: boolean;
   /** Booking texts (SMS) a host's guests can get per calendar month (IST). Over it, email still goes. */
   smsPerMonth: number;
+  /** Booking analytics: how many days back the host can see, and whether they can download it as CSV. */
+  analyticsDays: number;
+  analyticsExport: boolean;
+  /** Monthly memberships sold to clients through the host's own payment account. */
+  memberships: boolean;
+  /** Named availability schedules a host can keep, the default included. */
+  schedules: number;
+  /** Coupons, first-session discounts, sliding-scale prices and campaigns on paid event types and packages. */
+  offers: boolean;
+  /** Private video rooms on the owner's own Jitsi server (the "Hourhand video" location). */
+  hourhandVideo: boolean;
   /** A short AI prep brief before each session (after the host turns it on). */
   sessionPrep: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, sessionPrep: false },
-  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, sessionPrep: true },
-  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, sessionPrep: true },
+  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, memberships: false, schedules: 1, offers: false, hourhandVideo: false, analyticsDays: 7, analyticsExport: false, sessionPrep: false },
+  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true, analyticsDays: 90, analyticsExport: true, sessionPrep: true },
+  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true, analyticsDays: 90, analyticsExport: true, sessionPrep: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {
@@ -87,6 +98,12 @@ export function formatMoney(minor: number, currency: Currency): string {
   const major = minor / 100;
   const digits = Number.isInteger(major) ? 0 : 2;
   return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", { style: "currency", currency, minimumFractionDigits: digits, maximumFractionDigits: 2 }).format(major);
+}
+
+/** The amounts behind a price line, in minor units: the GST-inclusive total only for INR. */
+export function priceParts(plan: PaidPlan, interval: BillingInterval, currency: Currency): { base: number; total: number | null } {
+  const base = PRICES[plan][interval][currency];
+  return { base, total: currency === "USD" ? null : Math.round(base * (1 + GST_RATE)) };
 }
 
 /** The price line shown for a plan: "₹399 + 18% GST = ₹470.82 a month" or "$7 a month". */

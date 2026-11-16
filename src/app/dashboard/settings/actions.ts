@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { requireOwnAccount } from "@/lib/auth/session";
 import { store } from "@/lib/data";
 import { isLocale } from "@/lib/i18n/guest";
+import { isHostLocale } from "@/lib/i18n/host";
 import { authEnabled } from "@/lib/auth/auth";
 import { hostPlan } from "@/lib/billing/account";
 import { LIMITS } from "@/lib/billing/plans";
@@ -31,4 +32,14 @@ export async function setSessionPrep(form: FormData): Promise<void> {
   if (on && !LIMITS[await hostPlan(pool, user.id)].sessionPrep) redirect("/dashboard/settings?error=prep_plan#session-prep");
   await setPrep(pool, user.id, on, new Date());
   redirect(`/dashboard/settings?saved=${on ? "prep_on" : "prep_off"}#session-prep`);
+}
+
+/** The language of the host's own dashboard and the emails Hourhand sends them. Takes effect on the next page. */
+export async function setDashboardLanguage(form: FormData): Promise<void> {
+  const user = await requireOwnAccount();
+  const locale = form.get("hostLocale");
+  if (!isHostLocale(locale)) redirect("/dashboard/settings");
+  await store.setUserHostLocale(user.id, locale);
+  revalidatePath("/dashboard", "layout");
+  redirect("/dashboard/settings?saved=dashboard-language");
 }
