@@ -25,7 +25,7 @@ const nextConfig: NextConfig = {
     };
   },
   async headers() {
-    const framing = ["/", "/dashboard/:path*", "/sign-in/:path*", "/login/:path*", "/onboarding/:path*", "/api/:path*", "/privacy", "/terms",
+    const framing = ["/", "/dashboard/:path*", "/sign-in/:path*", "/login/:path*", "/onboarding/:path*", "/api/:path*", "/:slug/portal/:path*", "/privacy", "/terms",
       ...SITE_PAGES.map((page) => `/${page}`)]
       .map((source) => ({ source, headers: NO_FRAMING }));
     return [
