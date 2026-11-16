@@ -484,7 +484,7 @@ async function renderEarnings(pool: pg.Pool, c: Claimed, baseUrl: string, now: D
   const locale = hostLocaleOf({ hostLocale: u?.host_locale });
   const monthLabel = hostMonth(new Date(`${e.month}-01T00:00:00Z`), locale);
   return renderEarningsMail({ currency: e.currency, monthLabel, hostLocale: locale, netMinor: e.netMinor, bookingsMinor: e.bookingsMinor, packagesMinor: e.packagesMinor, refundsMinor: e.refundsMinor,
-    sessionsHeld: e.sessions.held, noShows: e.sessions.noShows, url: `${baseUrl}/dashboard/earnings?month=${e.month}` });
+    sessionsHeld: e.sessions.held, noShows: e.sessions.noShows, otherCurrencies: e.otherCurrencies, url: `${baseUrl}/dashboard/earnings?month=${e.month}` });
 }
 
 /** A Duo owner's invitation to their second person; skipped if it was withdrawn, moved to someone else, or accepted. */

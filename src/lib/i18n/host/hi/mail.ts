@@ -64,6 +64,7 @@ export const mail: Record<keyof typeof en, string> = {
   "mail.rBookings": "बुकिंग",
   "mail.rPackages": "पैकेज",
   "mail.rRefunds": "रिफ़ंड",
+  "mail.rAlsoIn": "{currency} में भी मिले",
   "mail.rHeld": "हुए सेशन",
   "mail.rNoShows": "नो-शो",
   "mail.lFullReport": "पूरी रिपोर्ट देखें",
