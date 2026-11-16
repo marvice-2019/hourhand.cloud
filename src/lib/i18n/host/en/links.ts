@@ -65,4 +65,9 @@ export const links = {
   "links.errTimesCount": "Offer 1 to {n} times.",
   "links.errTimesFuture": "Every time must be in the future.",
   "links.errTimesOnce": "Each time can be offered once.",
+  // Hourhand video (3.11)
+  "links.locHourhandVideo": "Hourhand video (no Zoom or Meet account needed)",
+  "links.videoReady": "Your guest gets a private video room. You join as host and let them in from the lobby. Calls aren't recorded.",
+  "links.videoNeedsPlan": "Hourhand video needs the Solo or Duo plan.",
+  "links.videoNotSetUp": "Hourhand video isn't set up on this server yet.",
 } as const;

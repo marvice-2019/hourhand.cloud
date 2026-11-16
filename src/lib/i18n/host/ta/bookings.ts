@@ -102,4 +102,10 @@ export const bookings: Record<keyof typeof en, string> = {
   "bookings.undoNoShow": "'வரவில்லை' குறியை நீக்கு",
   "bookings.markNoShow": "'வரவில்லை' எனக் குறி",
   "bookings.back": "புக்கிங்குகளுக்குத் திரும்பு",
+  // Hourhand video (3.11)
+  "bookings.videoTitle": "Hourhand video",
+  "bookings.videoStart": "காலைத் தொடங்குங்கள்",
+  "bookings.videoHintGuest": "தொடங்குவதற்கு 15 நிமிடங்கள் முன்பு திறக்கும். நீங்கள் ஹோஸ்ட்டாகச் சேர்ந்து, உங்கள் விருந்தினரை லாபியிலிருந்து உள்ளே அனுமதிப்பீர்கள்.",
+  "bookings.videoHintClass": "தொடங்குவதற்கு 15 நிமிடங்கள் முன்பு திறக்கும். நீங்கள் ஹோஸ்ட்டாகச் சேர்ந்து, உங்கள் வகுப்பை லாபியிலிருந்து உள்ளே அனுமதிப்பீர்கள்.",
+  "bookings.videoBack": "புக்கிங்குக்குத் திரும்பு",
 };

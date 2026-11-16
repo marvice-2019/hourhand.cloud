@@ -18,7 +18,7 @@ const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1
 /** The Unicode block each language is written in, to catch a line left in English or pasted from the wrong language. */
 const SCRIPT: Record<(typeof NEW)[number], RegExp> = { mr: /[ऀ-ॿ]/, bn: /[ঀ-৿]/, ml: /[ഀ-ൿ]/, gu: /[઀-૿]/ };
 /** Lines that are brand or product names, the same in every language. */
-const SAME_EVERYWHERE = new Set(["locGoogleMeet", "locZoom", "locTeams"]);
+const SAME_EVERYWHERE = new Set(["locGoogleMeet", "locZoom", "locTeams", "locHourhandVideo"]);
 
 describe("every language has every line", () => {
   for (const [name, catalogs] of [["guest", CATALOGS], ["mail", MAIL_CATALOGS]] as const) {

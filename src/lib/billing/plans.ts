@@ -38,12 +38,14 @@ export interface PlanLimits {
   schedules: number;
   /** Coupons, first-session discounts, sliding-scale prices and campaigns on paid event types and packages. */
   offers: boolean;
+  /** Private video rooms on the owner's own Jitsi server (the "Hourhand video" location). */
+  hourhandVideo: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, memberships: false, schedules: 1, offers: false },
-  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, memberships: true, schedules: Infinity, offers: true },
-  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, memberships: true, schedules: Infinity, offers: true },
+  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, memberships: false, schedules: 1, offers: false, hourhandVideo: false },
+  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true },
+  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {
