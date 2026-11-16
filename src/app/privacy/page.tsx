@@ -56,6 +56,9 @@ export default function PrivacyPage() {
           <li>Your time zone, so times show correctly for you.</li>
           <li>A record of what you agreed to when you booked (for example WhatsApp updates, or a consent question the host asked), with the words you saw, the version of this notice, and when.</li>
           <li>Any private notes the host writes about you or your sessions. These are encrypted before they are stored and only the host can read them.</li>
+          <li>
+            Anonymous visit counts on booking pages, so a host can see which channels bring their bookings: the page, the step reached (viewed, picked a time, booked), the day, the link&apos;s campaign tags and the referring website&apos;s domain. We count this ourselves, with no cookies and no third parties. We don&apos;t store your IP address or browser details. To avoid counting the same visit twice in a day, we keep a scrambled code made with a key that is deleted at the end of that day, after which the code can&apos;t be linked to you. If your browser sends Do Not Track or Global Privacy Control, we don&apos;t count your visit at all. Raw counts are kept 90 days, daily totals 2 years.
+          </li>
         </ul>
 
         <h2 className={h2}>Why we use it</h2>
