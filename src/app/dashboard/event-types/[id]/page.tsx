@@ -5,17 +5,20 @@ import { store } from "@/lib/data";
 import { toForm } from "@/lib/event-types";
 import { requireHost } from "@/lib/auth/session";
 import { authEnabled } from "@/lib/auth/auth";
+import { FollowUpSettingsForm } from "@/components/FollowUpSettingsForm";
 import { getPool } from "@/lib/data/pg-store";
+import { getFollowUpSettings } from "@/lib/follow-ups/follow-ups";
 import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
+import { getProfile } from "@/lib/profile";
 
 export const dynamic = "force-dynamic";
 
 export default async function EventTypePage({ params, searchParams }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ saved?: string; followups?: string }>;
 }) {
   const { id } = await params;
-  const { saved } = await searchParams;
+  const { saved, followups } = await searchParams;
   const user = await requireHost();
   const eventType = await store.getEventType(user.id, id);
   if (!eventType) notFound();
@@ -27,6 +30,9 @@ export default async function EventTypePage({ params, searchParams }: {
   // Saved in another currency (the host switched payment providers): saving again re-prices it, so say so.
   const otherCurrency = eventType.currency !== null && eventType.currency !== currency ? eventType.currency : null;
   const ordered = [...questions].sort((a, b) => a.position - b.position);
+  // Follow-ups need Postgres (the outbox and the feedback table); the demo store has neither.
+  const db = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
+  const [followUps, profile] = db ? await Promise.all([getFollowUpSettings(db, user.id, id), getProfile(db, user.id)]) : [null, null];
 
   return (
     <div>
@@ -49,6 +55,10 @@ export default async function EventTypePage({ params, searchParams }: {
         currency={currency}
         provider={account?.provider ?? null}
       />
+      {followUps && (
+        <FollowUpSettingsForm eventTypeId={eventType.id} settings={followUps} hasReviewLink={Boolean(profile?.reviewsUrl)}
+          notice={followups === "saved" ? "Follow-ups saved." : followups === "bad_delay" ? "Pick 1, 2 or 24 hours." : null} />
+      )}
     </div>
   );
 }
