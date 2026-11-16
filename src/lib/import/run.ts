@@ -1,6 +1,7 @@
 // Saves the ticked event types for one host. Each comes in switched off, so nothing is bookable until the host has
 // looked it over (availability and integrations never come across).
 import { isNamedError, type DataStore } from "../data/types";
+import { IMPORT_MESSAGES } from "./messages";
 import { planImport } from "./plan";
 import type { ImportedEventType } from "./types";
 
@@ -31,7 +32,7 @@ export async function importEventTypes(store: DataStore, userId: string, items: 
       } catch (e) {
         if (!isNamedError(e, "SlugTakenError")) throw e;
         slugs.splice(0, slugs.length, ...(await store.listEventTypes(userId)).map((x) => x.slug));
-        if (attempt === 2) outcome.failed.push({ name: et.name, error: "Couldn't find a free link for it. Try again." });
+        if (attempt === 2) outcome.failed.push({ name: et.name, error: IMPORT_MESSAGES.noFreeLink });
       }
     }
   }

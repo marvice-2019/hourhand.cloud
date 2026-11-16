@@ -1,0 +1,69 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "take_message",
+    "description": "Leaves a message for the practice, who will call back. Use when the caller asks for a person, asks something you can't answer, when a tool says handoff, or when you are unsure what they want.",
+    "response_timeout_secs": 15,
+    "api_schema": {
+      "url": "https://hourhand.cloud/api/voice/tools/take_message",
+      "method": "POST",
+      "request_headers": {
+        "Authorization": {
+          "secret_id": "<SECRET_ID: Hourhand tool key for this host>"
+        }
+      },
+      "request_body_schema": {
+        "type": "object",
+        "description": "Arguments for take_message.",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "dynamic_variable": "system__conversation_id"
+          },
+          "caller_phone": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en",
+              "hi"
+            ],
+            "description": "The language the caller is speaking: en or hi."
+          },
+          "name": {
+            "type": "string",
+            "description": "The caller's name."
+          },
+          "phone": {
+            "type": "string",
+            "description": "A number to call back on, with country code. Empty to use the number they are calling from."
+          },
+          "message": {
+            "type": "string",
+            "description": "What the caller wants, in their words, in one to three sentences."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "handoff",
+              "out_of_scope",
+              "payment_issue",
+              "low_confidence",
+              "other"
+            ],
+            "description": "Why you are taking a message."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "name",
+          "message",
+          "reason"
+        ]
+      }
+    }
+  }
+}

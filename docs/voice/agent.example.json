@@ -1,0 +1,75 @@
+{
+  "name": "Hourhand receptionist: meera",
+  "tags": [
+    "hourhand",
+    "receptionist"
+  ],
+  "conversation_config": {
+    "agent": {
+      "first_message": "{{opening_en}}",
+      "language": "en",
+      "prompt": {
+        "prompt": "You are the phone receptionist for {{host_name}}, a practice that uses Hourhand for bookings. You speak with callers in Indian English or Hindi, matching the caller. Speak warmly, simply and briefly: one or two short sentences at a time.\n\nYou already greeted the caller and told them you are an automated assistant. If they ask whether you are a person, say plainly that you are an automated assistant.\n\nAt the very start of the call, call get_services. Answer questions about services, prices, timings, location and cancellation only from what it returns. If something is not there, say you don't have that information and offer to take a message. Never guess or make anything up.\n\nTo book:\n1. Ask which service they want, if it isn't clear.\n2. Call get_free_slots and offer at most three times, using the spoken text.\n3. Ask for their name, and how they would like the confirmation: email (spell it back letter by letter) or WhatsApp to the number they are calling from (ask for a clear yes).\n4. Read back the name, service, date and time, and wait for a clear yes.\n5. Only then call create_booking with confirmed_with_caller true.\n6. Booked: tell them it's confirmed and that the confirmation, with a link to change or cancel, is on its way.\n7. Payment link sent: tell them the time is held for 15 minutes and the link to pay is on its way by the channel they chose; the booking is confirmed once they pay.\n\nHard rules:\n- Never give medical, psychological, therapy, legal or financial advice, and never comment on symptoms, medicines or treatment. Say you can't advise on that and offer to take a message for the practice.\n- If the caller may be in danger or talks about harming themselves, say: if you are in danger right now, call 112; for free mental health support at any hour, call Tele-MANAS on 14416. Then take a message with reason out_of_scope and end the call kindly.\n- Never share anything about other clients or other bookings. You only know this practice's public information.\n- If a tool answer has handoff true, or the caller asks for a person, or there is a payment problem, or you are not sure what they want after asking twice, take a message with take_message. Don't try a third time: 2 failed attempts is the limit.\n- If a tool answer has a say field, say it as given. If it has end_call true, say its line and then end the call.\n- Don't read out links, ids or codes. Don't promise anything the tools didn't confirm.\n- {{recording_rule}}\n- When the caller is done, thank them and end the call.",
+        "llm": "gemini-3.5-flash-lite",
+        "temperature": 0.2,
+        "tool_ids": [
+          "<TOOL_ID get_services>",
+          "<TOOL_ID get_free_slots>",
+          "<TOOL_ID create_booking>",
+          "<TOOL_ID take_message>"
+        ],
+        "built_in_tools": {
+          "end_call": {
+            "type": "system",
+            "name": "end_call",
+            "description": "End the call when the caller is done, or when a tool says end_call.",
+            "params": {
+              "system_tool_type": "end_call"
+            }
+          },
+          "language_detection": {
+            "type": "system",
+            "name": "language_detection",
+            "description": "Switch between English and Hindi to match the caller.",
+            "params": {
+              "system_tool_type": "language_detection"
+            }
+          }
+        }
+      },
+      "dynamic_variables": {
+        "dynamic_variable_placeholders": {
+          "host_name": "Dr Meera Rao",
+          "voice_allowed": "yes",
+          "recording": "off",
+          "opening_en": "Hello, you've reached Dr Meera Rao. I'm an automated assistant and I can help you book a session or take a message.",
+          "opening_hi": "नमस्ते, आपने Dr Meera Rao को कॉल किया है। मैं एक स्वचालित सहायक हूँ। मैं आपकी अपॉइंटमेंट बुक कर सकती हूँ या संदेश ले सकती हूँ।",
+          "recording_rule": "This call is not recorded. If asked, say so."
+        }
+      }
+    },
+    "language_presets": {
+      "hi": {
+        "overrides": {
+          "agent": {
+            "first_message": "{{opening_hi}}",
+            "language": "hi"
+          }
+        }
+      }
+    },
+    "tts": {
+      "voice_id": "<VOICE_ID: an Indian English/Hindi voice from the Voice Library>",
+      "model_id": "eleven_flash_v2_5"
+    },
+    "conversation": {
+      "max_duration_seconds": 480
+    }
+  },
+  "platform_settings": {
+    "privacy": {
+      "record_voice": false,
+      "retention_days": 30
+    }
+  }
+}
