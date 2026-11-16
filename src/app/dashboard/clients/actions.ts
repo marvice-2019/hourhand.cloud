@@ -2,15 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireHost } from "@/lib/auth/session";
+import { requireOwnAccount } from "@/lib/auth/session";
 import { clientKey } from "@/lib/clients";
 import { store } from "@/lib/data";
+import { MAX_NOTE } from "@/lib/privacy/notes";
 
-const MAX_NOTE = 5000;
-
-/** Saves the signed-in host's note about one of their own clients (someone who has booked them). */
+/**
+ * Saves the account owner's note about one of their own clients (someone who has booked them). Notes are the owner's
+ * alone: a Duo second person managing the account is sent away by requireOwnAccount.
+ */
 export async function saveClientNoteAction(form: FormData): Promise<void> {
-  const user = await requireHost();
+  const user = await requireOwnAccount();
   const key = String(form.get("key") ?? "");
   const note = String(form.get("note") ?? "");
   // The email comes from the host's own bookings, never from the form, so a note can only be about their own client.

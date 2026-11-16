@@ -67,7 +67,7 @@ export interface BookingMailContext {
   locale?: string;
 }
 
-export interface RenderedMail { subject: string; text: string; html: string; attachments?: Attachment[]; replyTo?: string }
+export interface RenderedMail { subject: string; text: string; html: string; attachments?: Attachment[]; replyTo?: string; headers?: Record<string, string> }
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -285,6 +285,17 @@ export function renderCalendarAlert(a: { accountEmail: string; disconnected: boo
   });
 }
 
+/** Zoom stopped letting Hourhand make meetings: the grant was revoked, expired, or the app was removed in Zoom. */
+export function renderZoomAlert(a: { accountEmail: string; lastError: string | null; integrationsUrl: string }): RenderedMail {
+  return render("Reconnect Zoom to keep sending meeting links", {
+    heading: "Your Zoom is disconnected",
+    intro: `Zoom no longer lets Hourhand create meetings for ${a.accountEmail}. Bookings you already have keep their Zoom links. New Zoom bookings are still taken, but get no link until you reconnect.`,
+    rows: a.lastError ? [["Last error", a.lastError.slice(0, 200)]] : [],
+    link: { label: "Reconnect Zoom", url: a.integrationsUrl },
+    footer: "Sent by Hourhand about your booking page.",
+  });
+}
+
 export function renderRenewalReminder(a: { planName: string; price: string; renewsOn: Date; timezone: string; planUrl: string }): RenderedMail {
   const on = formatDate(a.renewsOn, a.timezone);
   return render(`Your Hourhand ${a.planName} plan renews on ${on}`, {
@@ -351,6 +362,22 @@ export function renderSeatInviteMail(c: { ownerName: string; ownerEmail: string;
   }, { replyTo: c.ownerEmail });
 }
 
+/**
+ * To the host: one of their clients asked, from their booking's manage link, for a copy or deletion of their data. It
+ * carries no details of the client; the host opens the dashboard to see who and act.
+ */
+export function renderDataRequestMail(c: { kind: "access" | "erasure"; dueAt: Date; timezone: string; url: string }): RenderedMail {
+  const what = c.kind === "access" ? "a copy of the data you hold about them" : "deletion of the data you hold about them";
+  return render(c.kind === "access" ? "A client asked for a copy of their data" : "A client asked you to delete their data", {
+    heading: "A client made a data request", intro: `One of your clients asked, from their booking link, for ${what}.`,
+    rows: [["Respond by", when(c.dueAt, c.timezone, "12h")]], link: { label: "Open the request", url: c.url },
+    note: c.kind === "access"
+      ? "Download their export from the client's page and send it to them, then mark the request done. Leave out your private notes unless you mean to share them."
+      : "Erase the client from their page once nothing is upcoming or still being paid. Bookings and invoices stay as the law requires, without their details.",
+    footer: "Sent by Hourhand. You are responsible for answering your clients' data requests; Hourhand gives you the tools.",
+  });
+}
+
 export function renderWaitlistMail(c: { guestName: string; hostName: string; eventName: string; start: Date; timezone: string; url: string }): RenderedMail {
   return render(`A time opened up with ${c.hostName}`, {
     heading: "A time opened up", intro: `Hi ${c.guestName}, a ${c.eventName} time with ${c.hostName} just became free on the day you asked about.`,
@@ -389,4 +416,51 @@ export function renderPollClosedMail(c: { title: string; hostTimezone: string; h
     note: c.options.length === 0 ? "All the proposed times have passed. Make a new poll to find another time." : "The times are no longer held. Confirming checks your calendar again first.",
     footer: "Sent by Hourhand.",
   });
+}
+
+export interface MembershipMailContext {
+  what: "joined" | "renewed" | "payment_failed" | "halted" | "cancel_requested" | "ended";
+  hostName: string; hostEmail: string; guestName: string; guestEmail: string; planName: string; sessions: number; priceMinor: number;
+  creditsLeft: number; paidThrough: Date | null; timezone: string; memberUrl: string; dashboardUrl: string;
+}
+
+/** A membership's life to its client (sessions added, a payment failed, cancelled) and to the host (new member, failures, ends). */
+export function renderMembershipMail(to: "guest" | "host", c: MembershipMailContext): RenderedMail {
+  const until = c.paidThrough ? formatDate(c.paidThrough, c.timezone) : null;
+  const price = `${formatMoney(c.priceMinor, "INR")} a month`;
+  const rows: Row[] = [["Membership", c.planName], ["Each month", `${c.sessions} sessions for ${price}`], ...(until ? [["Paid until", until] as Row] : [])];
+  if (to === "guest") {
+    const sign = { footer: `Sent by Hourhand for ${c.hostName}. Reply to this email to reach them.` };
+    const link = { label: "Book your sessions", url: c.memberUrl };
+    const mail = (subject: string, heading: string, intro: string, note?: string) =>
+      render(subject, { heading, intro, rows: [...rows, ["Sessions left", String(c.creditsLeft)]], link, ...(note ? { note } : {}), ...sign }, { replyTo: c.hostEmail });
+    switch (c.what) {
+      case "joined": return mail(`Your ${c.planName} membership with ${c.hostName}`, "You're a member",
+        `Hi ${c.guestName}, your first payment went through and ${c.sessions} sessions are ready to book.`,
+        "Keep this email: the link is yours alone. It shows your sessions left and lets you cancel at any time; a cancelled membership runs to the end of the paid month.");
+      case "renewed": return mail(`${c.sessions} new sessions with ${c.hostName}`, "Your membership renewed",
+        `Hi ${c.guestName}, this month's payment went through and ${c.sessions} sessions were added.`);
+      case "payment_failed": return mail(`Payment failed for your ${c.planName} membership`, "Your payment didn't go through",
+        `Hi ${c.guestName}, this month's payment for ${c.planName} failed. Razorpay will try again over the next few days; check your card or UPI app has funds and the mandate is active.`,
+        until ? `Your sessions left stay bookable for sessions before ${until}. New sessions are added once a payment goes through.` : undefined);
+      case "halted": return mail(`Your ${c.planName} membership is on hold`, "Renewal stopped",
+        `Hi ${c.guestName}, Razorpay couldn't collect this month's payment after several tries, so your membership is on hold and no new sessions will be added.`,
+        `${until ? `Sessions you have left can still be booked for times before ${until}. ` : ""}Reply to this email to sort out the payment with ${c.hostName}.`);
+      case "cancel_requested": return mail(`You've cancelled ${c.planName}`, "Membership cancelled",
+        `Hi ${c.guestName}, your ${c.planName} membership won't renew and you won't be charged again.`,
+        until ? `You can still book the sessions you have left for times before ${until}.` : undefined);
+      case "ended": return mail(`Your ${c.planName} membership has ended`, "Membership ended",
+        `Hi ${c.guestName}, your ${c.planName} membership with ${c.hostName} has ended and won't be charged again. Thanks for being a member.`);
+    }
+  }
+  const host = (subject: string, heading: string, intro: string) =>
+    render(subject, { heading, intro, rows: [...rows, ["Member", `${c.guestName} <${c.guestEmail}>`]], link: { label: "Open in Hourhand", url: c.dashboardUrl }, footer: "Sent by Hourhand about your memberships." }, { replyTo: c.guestEmail });
+  switch (c.what) {
+    case "joined": return host(`New member: ${c.guestName}, ${c.planName}`, "You have a new member", `${c.guestName} joined ${c.planName}. The first month's payment went to your Razorpay account.`);
+    case "payment_failed": return host(`Payment failed: ${c.guestName}, ${c.planName}`, "A member's payment failed", `${c.guestName}'s renewal for ${c.planName} failed. Razorpay retries automatically; no new sessions are added until it goes through.`);
+    case "halted": return host(`Membership on hold: ${c.guestName}`, "A membership is on hold", `Razorpay stopped retrying ${c.guestName}'s payment for ${c.planName}. They've been told; sessions they have left stay bookable until the paid month ends.`);
+    case "cancel_requested": return host(`${c.guestName} cancelled ${c.planName}`, "A member cancelled", `${c.guestName} cancelled ${c.planName}. It won't renew; they keep their sessions until the paid month ends.`);
+    case "renewed": return host(`Membership renewed: ${c.guestName}`, "A membership renewed", `${c.guestName}'s ${c.planName} payment went through and ${c.sessions} sessions were added.`);
+    case "ended": return host(`Membership ended: ${c.guestName}`, "A membership ended", `${c.guestName}'s ${c.planName} membership has ended.`);
+  }
 }

@@ -15,7 +15,9 @@ import { LOCATION_KEYS, resolveLocale, t, tNodes } from "@/lib/i18n/guest";
 import { mt } from "@/lib/i18n/mail";
 import { AddToCalendar } from "@/components/AddToCalendar";
 import { authEnabled, resolveBaseUrl } from "@/lib/auth/auth";
+import { DataRequest } from "@/components/DataRequest";
 import { getPool } from "@/lib/data/pg-store";
+import { openRequestsForToken } from "@/lib/privacy/rights";
 import { paidShareFor, refundPreview } from "@/lib/payments/series";
 import { formatAmount } from "@/lib/money";
 import { pt } from "@/lib/i18n/portal";
@@ -46,6 +48,8 @@ export default async function ManageBookingPage({ params, searchParams }: { para
   const now = new Date();
   // Texts: only where SMS is set up and the booking has an Indian mobile on it.
   const textNumber = smsConfig() && process.env.DATABASE_URL ? smsNumber(booking.invitee.phone) : null;
+  // Requests already open with the host (a copy, deletion), so the guest sees the deadline instead of asking twice.
+  const openRequests = authEnabled() ? (await openRequestsForToken(getPool(process.env.DATABASE_URL as string), token)).map((r) => ({ kind: r.kind, dueAt: r.dueAt.toISOString() })) : null;
   const laterWeeks = series.filter((b) => (b.seriesIndex ?? 0) > (booking.seriesIndex ?? 0) && b.status === "confirmed" && b.startAt > now).length;
   // What cancelling gives back, when it's still allowed (inside the cutoff the guest can't cancel online at all).
   const canCancel = booking.status === "confirmed" && booking.startAt.getTime() - now.getTime() >= eventType.cancelCutoffMinutes * 60_000;
@@ -102,6 +106,7 @@ export default async function ManageBookingPage({ params, searchParams }: { para
           <Link href={`/${host.slug}/portal${q}`} target="_top" className="font-semibold text-accent underline">{pt(locale, "openPortal", { host: host.name })}</Link>
         </p>
       )}
+      {openRequests && <DataRequest token={token} hostName={host.name} tz={tz} open={openRequests} locale={locale} />}
     </main>
   );
 }

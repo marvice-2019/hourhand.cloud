@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createMailer, MailError, resendMailer } from "./mailer";
+import { checkHeaders, createMailer, listUnsubscribeHeaders, MailError, resendMailer } from "./mailer";
 
 const KEY = "re_fake_for_tests";
 const mail = { to: "meera@example.com", subject: "Hi", html: "<p>Hi</p>", text: "Hi", idempotencyKey: "notification-1", replyTo: "priya@example.com",
@@ -26,6 +26,28 @@ describe("resendMailer", () => {
     const body = JSON.parse(f.calls[0].init.body as string);
     expect(body).toMatchObject({ from: "Hourhand <bookings@mail.example.com>", to: ["meera@example.com"], subject: "Hi", reply_to: "priya@example.com" });
     expect(body.attachments).toEqual([{ filename: "booking.ics", content: "QkVHSU4=", content_type: "text/calendar" }]);
+  });
+
+  it("passes extra headers (List-Unsubscribe) through to Resend, and sends no headers field without them", async () => {
+    const f = fakeFetch(200, { id: "re_124" });
+    await resendMailer(KEY, "a@b.c", f.impl).send({ ...mail, headers: listUnsubscribeHeaders("https://hourhand.test/api/follow-ups/stop/o.tok") });
+    expect(JSON.parse(f.calls[0].init.body as string).headers).toEqual({
+      "List-Unsubscribe": "<https://hourhand.test/api/follow-ups/stop/o.tok>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+    const g = fakeFetch(200, { id: "re_125" });
+    await resendMailer(KEY, "a@b.c", g.impl).send(mail);
+    expect(JSON.parse(g.calls[0].init.body as string)).not.toHaveProperty("headers");
+  });
+
+  it("refuses a header that could inject others or override the envelope, without calling Resend", async () => {
+    const f = fakeFetch(200, { id: "re_126" });
+    for (const headers of <Record<string, string>[]>[{ "List-Unsubscribe": "<https://x>\r\nBcc: victim@example.com" }, { "X-Ok": "a\nb" }, { "Bad Name": "x" }, { Bcc: "x@example.com" }, { "reply-to": "x@example.com" }]) {
+      const err = await resendMailer(KEY, "a@b.c", f.impl).send({ ...mail, headers }).catch((e) => e);
+      expect(err).toBeInstanceOf(MailError);
+      expect(err.retryable).toBe(false);
+    }
+    expect(f.calls).toHaveLength(0);
+    expect(checkHeaders({})).toBeUndefined();
   });
 
   it.each([[429, "rate_limit_exceeded", true], [500, "application_error", true], [503, "service_unavailable", true],

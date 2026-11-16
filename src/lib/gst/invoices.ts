@@ -69,7 +69,7 @@ async function nextSeq(db: Db, hostId: string, series: "invoice" | "credit_note"
   return r.last as number;
 }
 
-interface Sale { hostId: string; totalMinor: number; buyerName: string; buyerEmail: string; description: string; paymentId?: string; purchaseId?: string }
+interface Sale { hostId: string; totalMinor: number; buyerName: string; buyerEmail: string; description: string; paymentId?: string; purchaseId?: string; membershipGrantId?: string }
 
 async function issue(db: Db, sale: Sale, now: Date): Promise<string | null> {
   const profile = await getTaxProfile(db, sale.hostId);
@@ -80,11 +80,11 @@ async function issue(db: Db, sale: Sale, now: Date): Promise<string | null> {
   const split = splitInclusive(sale.totalMinor, profile.rateBp, pos !== profile.stateCode);
   const { rows: [r] } = await db.query(
     `insert into invoices (host_id, kind, number, fy, seq, issued_at, payment_id, package_purchase_id, buyer_name, buyer_email, supplier, place_of_supply,
-       description, sac, rate_bp, taxable_minor, cgst_minor, sgst_minor, igst_minor, total_minor)
-     values ($1, 'invoice', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning id`,
+       description, sac, rate_bp, taxable_minor, cgst_minor, sgst_minor, igst_minor, total_minor, membership_grant_id)
+     values ($1, 'invoice', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning id`,
     [sale.hostId, invoiceNumber(profile.invoicePrefix, fy, seq), fy, seq, now, sale.paymentId ?? null, sale.purchaseId ?? null, sale.buyerName, sale.buyerEmail,
       JSON.stringify({ legalName: profile.legalName, address: profile.address, gstin: profile.gstin, stateCode: profile.stateCode }), pos,
-      sale.description, profile.sac, profile.rateBp, split.taxableMinor, split.cgstMinor, split.sgstMinor, split.igstMinor, split.totalMinor]);
+      sale.description, profile.sac, profile.rateBp, split.taxableMinor, split.cgstMinor, split.sgstMinor, split.igstMinor, split.totalMinor, sale.membershipGrantId ?? null]);
   await queueInvoiceEmail(db, sale.hostId, r.id, sale.buyerEmail, now);
   return r.id as string;
 }
@@ -131,6 +131,19 @@ export async function invoiceForPurchase(db: Db, purchaseId: string, now: Date):
   return issue(db, {
     hostId: p.host_id, totalMinor: p.price_minor, buyerName: p.guest_name, buyerEmail: p.guest_email, purchaseId,
     description: `${p.package_name}: ${p.sessions} × ${p.event_name}`,
+  }, now);
+}
+
+/** A tax invoice for one month of a membership, issued with the charge that paid for it. At most one per charge. */
+export async function invoiceForMembershipGrant(db: Db, grantId: string, now: Date): Promise<string | null> {
+  const { rows: [g] } = await db.query(
+    `select g.host_id, g.amount_minor, g.credits, g.period_start, g.period_end, m.guest_name, m.guest_email, p.name as plan_name,
+       exists (select 1 from invoices v where v.membership_grant_id = g.id and v.kind = 'invoice') as done
+     from membership_grants g join memberships m on m.id = g.membership_id join membership_plans p on p.id = m.plan_id where g.id = $1`, [grantId]);
+  if (!g || g.done) return null;
+  return issue(db, {
+    hostId: g.host_id, totalMinor: g.amount_minor, buyerName: g.guest_name, buyerEmail: g.guest_email, membershipGrantId: grantId,
+    description: `${g.plan_name}: ${g.credits} sessions, ${istDate(new Date(g.period_start))} to ${istDate(new Date(g.period_end))}`,
   }, now);
 }
 

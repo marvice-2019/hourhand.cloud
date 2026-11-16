@@ -3,26 +3,34 @@ import { accessTokenFor } from "../calendar/connections";
 import type { GoogleClient } from "../calendar/google";
 import { CalendarApiError, PROVIDER_NAMES, type CalendarProvider, type CalendarProviderId, type CalendarProviders } from "../calendar/provider";
 import { recordConnectionFailure } from "../calendar/sync";
-import type { BookingEmailKind, CalendarJobKind, NotificationKind } from "../data/notifications";
+import type { BookingEmailKind, CalendarJobKind, NotificationKind, VideoJobKind } from "../data/notifications";
 import type { InviteeAnswer, LocationKind } from "../data/types";
 import type { HourCycle } from "../format";
 import { GUEST_LOCATION_LABELS } from "../location-labels";
 import { MailError, type Mailer } from "../mail/mailer";
 import { invoiceById } from "../gst/invoices";
 import { monthlyEarnings } from "../earnings";
+import { requestForEmail } from "../privacy/rights";
 import { paymentAccount, priceCurrency } from "../payments/host-payments";
-import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderRenewalReminder, renderPollClosedMail, renderPollVoterMail, renderSeatInviteMail, renderWaitlistMail, type BookingMailContext, type RenderedMail } from "../mail/templates";
+import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderRenewalReminder, renderPollClosedMail, renderPollVoterMail, renderSeatInviteMail, renderWaitlistMail, renderDataRequestMail, renderZoomAlert, type BookingMailContext, type RenderedMail } from "../mail/templates";
 import { PLAN_NAMES, PRICES, priceLine, type BillingInterval, type PaidPlan } from "../billing/plans";
 import { freeSlots } from "../booking";
 import { pollMailData } from "../polls/polls";
 import { createPgStore } from "../data/pg-store";
 import { hostPlan } from "../billing/account";
+import { buildFollowUp, FOLLOW_UP_KIND } from "../follow-ups/follow-ups";
+import { linkKey } from "../follow-ups/tokens";
 import { isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
+import { ZoomApiError, type ZoomMeetingInput } from "../zoom/client";
+import { withZoomToken, type ZoomDeps } from "../zoom/connection";
+import { ZOOM_READY_SQL } from "../zoom/sql";
 import type { SmsConfig } from "../sms/config";
 import { queueSmsFallback, sendBookingSms, smsSkipReason } from "../sms/outbox";
 import { SmsError } from "../sms/provider";
+import { renderMembership } from "../memberships/mail";
 
-// Runs due rows of the notifications queue: emails, and writes to the host's calendar (Google or Microsoft). Several workers can run
+// Runs due rows of the notifications queue: emails, writes to the host's calendar (Google, Microsoft, iCloud) and to
+// their Zoom (a meeting per booking). Several workers can run
 // at once: each claims rows with FOR UPDATE SKIP LOCKED and a lease (locked_until), so a row is never run by two
 // workers, and a worker that dies mid-run frees its rows when the lease ends. Re-running a row is harmless: the
 // notification id is Resend's idempotency key, and a calendar event's id is fixed per booking.
@@ -33,9 +41,10 @@ export const RETRY_DELAYS_MINUTES = [1, 5, 30, 120] as const;
 const LEASE_MINUTES = 5;
 /** Rows claimed per run. Each row's lease is renewed before it runs, so a slow batch can't outlive its lease. */
 export const BATCH_SIZE = 10;
-/** How long a guest's confirmation may wait for its video link (Google Meet or Teams) before it goes without it. */
+/** How long a guest's confirmation may wait for its video link (Google Meet, Teams or Zoom) before it goes without it. */
 export const MEET_LINK_WAIT_SECONDS = 180;
 const VIDEO_LINK_WAIT = "waiting for the video link";
+const ZOOM_LINK_WAIT = "waiting for the Zoom link";
 const DEFER_SECONDS = 20;
 const MIN = 60_000;
 
@@ -52,7 +61,7 @@ export async function claimDue(pool: pg.Pool, now: Date, limit: number): Promise
   const { rows } = await pool.query(
     `update notifications n set locked_until = $1::timestamptz + make_interval(mins => $3), attempts = n.attempts + 1, updated_at = $1
      from (select id from notifications
-           where status = 'queued' and channel in ('email', 'calendar', 'whatsapp', 'sms') and send_at <= $1 and (locked_until is null or locked_until < $1)
+           where status = 'queued' and channel in ('email', 'calendar', 'whatsapp', 'sms', 'video') and send_at <= $1 and (locked_until is null or locked_until < $1)
            order by send_at limit $2 for update skip locked) due
      where n.id = due.id
      returning n.id, n.booking_id, n.user_id, n.kind, n.channel, n.recipient, n.attempts, n.locked_until, n.dedupe_key`, [now, limit, LEASE_MINUTES]);
@@ -61,11 +70,11 @@ export async function claimDue(pool: pg.Pool, now: Date, limit: number): Promise
 
 const CONTEXT = `
   select n.id as notification_id, n.created_at as queued_at, n.dedupe_key, b.id, b.host_id, b.series_id, b.status, b.start_at, b.end_at, b.cancelled_by, b.cancel_reason,
-    b.location_kind as booking_location_kind, b.external_event_id, b.external_calendar_id,
+    b.location_kind as booking_location_kind, b.external_event_id, b.external_calendar_id, b.zoom_meeting_id, b.class_key,
     -- seats of one group class or confirmed poll share one calendar event, so its video link is on whichever seat holds it
     coalesce(b.join_url, (select m.join_url from bookings m where b.class_key is not null and m.class_key = b.class_key and m.join_url is not null limit 1)) as join_url,
     prev.start_at as previous_start_at, prev.external_event_id as previous_event_id, prev.external_calendar_id as previous_calendar_id,
-    prev.join_url as previous_join_url, prev.cancelled_by as previous_cancelled_by,
+    prev.join_url as previous_join_url, prev.cancelled_by as previous_cancelled_by, prev.zoom_meeting_id as previous_zoom_meeting_id, prev.class_key as previous_class_key,
     i.name as guest_name, i.email as guest_email, i.timezone as guest_timezone, i.locale as guest_locale, i.answers, i.manage_token, i.reminders_opt_out, i.running_late_minutes,
     e.name as event_name, e.slug as event_slug, e.kind as event_kind, e.active as event_active, b.event_type_id, u.slug as host_slug,
     (select p.amount_minor from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
@@ -90,7 +99,12 @@ const CONTEXT = `
             and cj.channel = 'calendar' and cj.kind <> 'calendar_delete'
             and cj.status = 'queued' and (cj.attempts = 0 or cj.locked_until > $2)) as calendar_write_pending,
     exists (select 1 from notifications cj where cj.booking_id in (b.id, b.rescheduled_from_id) and cj.id <> n.id and cj.channel = 'calendar'
-            and cj.status = 'queued' and cj.locked_until > $2) as calendar_write_in_flight
+            and cj.status = 'queued' and cj.locked_until > $2) as calendar_write_in_flight,
+    -- the same two for Zoom: a meeting being made for this booking, and another Zoom write running for it right now
+    exists (select 1 from notifications vj where vj.booking_id = b.id and vj.channel = 'video' and vj.kind <> 'zoom_delete'
+            and vj.status = 'queued' and (vj.attempts = 0 or vj.locked_until > $2)) as video_write_pending,
+    exists (select 1 from notifications vj where vj.booking_id in (b.id, b.rescheduled_from_id) and vj.id <> n.id and vj.channel = 'video'
+            and vj.status = 'queued' and vj.locked_until > $2) as video_write_in_flight
   from notifications n
   left join bookings b on b.id = n.booking_id
   left join invitees i on i.booking_id = b.id
@@ -208,6 +222,7 @@ async function rebookSuggestions(pool: pg.Pool, r: ContextRow, baseUrl: string):
 }
 
 const isCalendarJob = (kind: NotificationKind): kind is CalendarJobKind => kind.startsWith("calendar_") && kind !== "calendar_alert_host";
+const isVideoJob = (kind: NotificationKind): kind is VideoJobKind => kind === "zoom_create" || kind === "zoom_move" || kind === "zoom_delete";
 
 /** Why a claimed row should not run any more, or null to run it. */
 /** Why a WhatsApp row shouldn't go (checked as it sends), or null: set up here, not opted out, within the host's plan. */
@@ -227,9 +242,11 @@ async function whatsappSkipReason(pool: pg.Pool, c: Claimed, cfg: WhatsAppConfig
 export function skipReason(kind: NotificationKind, r: ContextRow, now: Date): string | null {
   const start = new Date(r.start_at as Date);
   // Cancellation emails and removing the calendar event are the only things that still make sense for a cancelled booking.
-  const forCancelled = kind === "cancelled_guest" || kind === "cancelled_host" || kind === "calendar_delete";
+  const forCancelled = kind === "cancelled_guest" || kind === "cancelled_host" || kind === "calendar_delete" || kind === "zoom_delete";
   if (!forCancelled && r.status !== "confirmed") return "booking cancelled";
-  if (kind === "calendar_delete") return null;
+  if (kind === "calendar_delete" || kind === "zoom_delete") return null;
+  // Sent after the session by design; buildFollowUp checks everything else when it renders.
+  if (kind === FOLLOW_UP_KIND) return null;
   if (kind === "reminder_guest") {
     if (r.reminders_opt_out) return "guest opted out of reminders";
     if (start <= now) return "booking already started";
@@ -243,17 +260,22 @@ export function skipReason(kind: NotificationKind, r: ContextRow, now: Date): st
 }
 
 /** Why a claimed row should wait a little before running, or null to run it now. */
-export function deferReason(kind: NotificationKind, r: ContextRow, now: Date, calendarOn = true): string | null {
+export function deferReason(kind: NotificationKind, r: ContextRow, now: Date, calendarOn = true, zoomOn = false): string | null {
   // The guest's confirmation carries the video link, which exists once the host's calendar event is written. A Teams
   // link only comes from a Microsoft calendar that allows Teams meetings; otherwise there is none to wait for.
-  const linkComing = r.booking_location_kind === "google_meet"
-    || (r.booking_location_kind === "teams" && r.add_to_provider === "microsoft" && r.add_to_can_teams !== false);
-  if (calendarOn && (kind === "booked_guest" || kind === "rescheduled_guest") && linkComing && !r.join_url && r.calendar_write_pending
-      && now.getTime() - new Date(r.queued_at as Date).getTime() < MEET_LINK_WAIT_SECONDS * 1000) {
+  const calendarLinkComing = calendarOn && r.calendar_write_pending && (r.booking_location_kind === "google_meet"
+    || (r.booking_location_kind === "teams" && r.add_to_provider === "microsoft" && r.add_to_can_teams !== false));
+  // A Zoom link comes from the host's own Zoom, made by a Zoom job queued only while their Zoom is connected.
+  const zoomLinkComing = zoomOn && r.booking_location_kind === "zoom" && r.video_write_pending;
+  const withinWait = now.getTime() - new Date(r.queued_at as Date).getTime() < MEET_LINK_WAIT_SECONDS * 1000;
+  if ((kind === "booked_guest" || kind === "rescheduled_guest") && (calendarLinkComing || zoomLinkComing) && !r.join_url && withinWait) {
     return VIDEO_LINK_WAIT;
   }
+  // The host's calendar event carries the Zoom link too, so its creation gets the same bounded wait.
+  if (kind === "calendar_create" && zoomLinkComing && !r.join_url && withinWait) return ZOOM_LINK_WAIT;
   // Never delete or move an event while another worker may still be creating it.
   if ((kind === "calendar_delete" || kind === "calendar_move") && r.calendar_write_in_flight) return "another calendar write is running";
+  if ((kind === "zoom_delete" || kind === "zoom_move") && r.video_write_in_flight) return "another Zoom write is running";
   return null;
 }
 
@@ -274,8 +296,9 @@ async function runCalendarJob(pool: pg.Pool, deps: CalendarDeps, c: Claimed, r: 
     deps.providers[cal.providerId] ?? { skip: `${PROVIDER_NAMES[cal.providerId] ?? cal.providerId} calendars are not configured on this server` };
   const kind = c.kind as CalendarJobKind;
   const ctx = toContext(r, baseUrl);
-  const where = ctx.location && ctx.location.kind !== "google_meet" && ctx.location.kind !== "teams"
-    ? (ctx.location.value ? `${GUEST_LOCATION_LABELS[ctx.location.kind]}: ${ctx.location.value}` : GUEST_LOCATION_LABELS[ctx.location.kind]) : null;
+  const placeOf = (joinUrl: string | null) => !ctx.location || ctx.location.kind === "google_meet" || ctx.location.kind === "teams" ? null
+    : joinUrl ? `${GUEST_LOCATION_LABELS[ctx.location.kind]}: ${joinUrl}`
+    : ctx.location.value ? `${GUEST_LOCATION_LABELS[ctx.location.kind]}: ${ctx.location.value}` : GUEST_LOCATION_LABELS[ctx.location.kind];
   const summary = `${ctx.eventName} with ${ctx.guestName}`;
 
   let connectionId: string | null = null;
@@ -298,8 +321,9 @@ async function runCalendarJob(pool: pg.Pool, deps: CalendarDeps, c: Claimed, r: 
         if ("skip" in provider) return provider;
         const token = await accessTokenFor(pool, deps.providers, deps.key, cal.connectionId, now);
         const moved = await provider.moveEvent(token, cal.externalId, r.previous_event_id as string, ctx.startAt, ctx.endAt, ctx.hostTimezone, summary);
-        await pool.query("update bookings set external_event_id = $2, external_calendar_id = $3, join_url = $4, updated_at = now() where id = $1",
-          [r.id, moved.id, r.previous_calendar_id, moved.joinUrl ?? r.previous_join_url ?? null]);
+        // A Zoom move may have given this booking a new link already; it is never replaced by the old booking's.
+        await pool.query("update bookings set external_event_id = $2, external_calendar_id = $3, join_url = coalesce($4, join_url, $5), updated_at = now() where id = $1",
+          [r.id, moved.id, r.previous_calendar_id, moved.joinUrl, r.previous_join_url ?? null]);
         return { eventId: moved.id };
       }
     }
@@ -318,8 +342,10 @@ async function runCalendarJob(pool: pg.Pool, deps: CalendarDeps, c: Claimed, r: 
     ].join("\n");
     // Only a calendar that allows Teams meetings can make one; asking any other (e.g. a personal Outlook account) can fail the whole write.
     const conference = r.booking_location_kind === "google_meet" ? "google_meet" : r.booking_location_kind === "teams" && cal.canTeams ? "teams" : null;
+    // A Zoom link made since this batch was read goes in the event's location.
+    const zoomUrl = ctx.location?.kind === "zoom" ? ((await pool.query("select join_url from bookings where id = $1", [r.id])).rows[0]?.join_url as string | null) ?? null : null;
     let event = await provider.insertEvent(token, cal.externalId, {
-      summary, description, start: ctx.startAt, end: ctx.endAt, timeZone: ctx.hostTimezone, location: where,
+      summary, description, start: ctx.startAt, end: ctx.endAt, timeZone: ctx.hostTimezone, location: placeOf(zoomUrl),
       attendee: { email: ctx.guestEmail, name: ctx.guestName }, conference, bookingId: ctx.bookingId,
     });
     // Meet and Teams links can be created asynchronously; give the provider a moment so the guest's confirmation can carry the link.
@@ -335,6 +361,118 @@ async function runCalendarJob(pool: pg.Pool, deps: CalendarDeps, c: Claimed, r: 
     if (connectionId && error instanceof CalendarApiError && error.revoked) await recordConnectionFailure(pool, connectionId, error, now);
     throw error;
   }
+}
+
+const LIVE = "('confirmed', 'pending_payment')";
+
+/**
+ * Makes, moves or deletes the booking's meeting in the host's own Zoom. Returns the meeting id, or a reason to skip.
+ * Seats of one group class share one meeting: the first seat's job makes it (under a per-class lock) and gives it to
+ * every seat; a meeting is deleted only once no live booking uses it. A host whose Zoom is disconnected keeps the links
+ * their bookings already have.
+ */
+async function runZoomJob(pool: pg.Pool, deps: ZoomDeps, c: Claimed, r: ContextRow, now: Date): Promise<{ eventId: string } | { skip: string }> {
+  const kind = c.kind as VideoJobKind;
+  const hostId = r.host_id as string;
+  const bookingId = r.id as string;
+  const classKey = (r.class_key as string | null) ?? null;
+  const start = new Date(r.start_at as Date);
+  const meeting: ZoomMeetingInput = {
+    topic: classKey ? (r.event_name as string) : `${r.event_name as string} with ${r.guest_name as string}`,
+    start, durationMinutes: Math.round((new Date(r.end_at as Date).getTime() - start.getTime()) / MIN), timeZone: r.host_timezone as string,
+    agenda: "Booked through Hourhand.",
+  };
+  const connected = async () => (await pool.query(`select ${ZOOM_READY_SQL("$1::uuid")} as ok`, [hostId])).rows[0].ok as boolean;
+  const inUse = async (meetingId: string) =>
+    Boolean((await pool.query(`select 1 from bookings where zoom_meeting_id = $1 and host_id = $2 and status in ${LIVE} limit 1`, [meetingId, hostId])).rowCount);
+  const zoom = <T>(fn: (token: string) => Promise<T>) => withZoomToken(pool, deps, hostId, now, fn);
+  // Read fresh: a job that finished moments ago (a create for this booking, or a class mate's) may have just written it.
+  const current = async () => (await pool.query("select zoom_meeting_id from bookings where id = $1", [bookingId])).rows[0]?.zoom_meeting_id as string | null;
+
+  if (kind === "zoom_delete") {
+    const id = await current();
+    if (!id) return { skip: "no Zoom meeting to remove" };
+    if (await inUse(id)) return { skip: "another booking still uses this Zoom meeting" };
+    if (!(await connected())) return { skip: "Zoom is not connected; the meeting stays in the host's Zoom" };
+    await zoom((t) => deps.client.deleteMeeting(t, id));
+    return { eventId: id };
+  }
+
+  const already = await current();
+  if (already) return { eventId: already }; // a retry after the write landed, or a class mate shared its meeting
+  const isZoom = r.booking_location_kind === "zoom";
+  const previousId = kind === "zoom_move" ? (r.previous_zoom_meeting_id as string | null) : null;
+
+  // A one-to-one move keeps its meeting: same id and link, at the new time.
+  if (previousId && !classKey && !r.previous_class_key) {
+    if (!(await connected())) {
+      if (isZoom) await pool.query("update bookings set zoom_meeting_id = $2, join_url = coalesce(join_url, $3), updated_at = now() where id = $1", [bookingId, previousId, r.previous_join_url]);
+      return { skip: "Zoom is not connected; the booking keeps its link" };
+    }
+    if (isZoom) {
+      if (await zoom((t) => deps.client.updateMeeting(t, previousId, meeting))) {
+        await pool.query("update bookings set zoom_meeting_id = $2, join_url = coalesce($3, join_url), updated_at = now() where id = $1", [bookingId, previousId, r.previous_join_url]);
+        return { eventId: previousId };
+      }
+      // The host deleted it in Zoom: make a new one below.
+    }
+  }
+  if (!isZoom) {
+    if (previousId && !(await inUse(previousId)) && (await connected())) await zoom((t) => deps.client.deleteMeeting(t, previousId));
+    return { skip: "not a Zoom booking" };
+  }
+  if (!(await connected())) return { skip: "Zoom is not connected" };
+
+  const id = await createOrShare(pool, deps, hostId, bookingId, classKey, meeting, zoom);
+  // A class seat that moved leaves its old class's meeting to the seats still in it; the last one out deletes it.
+  if (previousId && previousId !== id && !(await inUse(previousId))) {
+    await zoom((t) => deps.client.deleteMeeting(t, previousId)).catch((error) => console.warn(`[jobs] old Zoom meeting not removed: ${(error as Error).message}`));
+  }
+  return { eventId: id };
+}
+
+/** Under a per-class (or per-booking) lock: a class mate's meeting if there is one, else a new meeting for every seat still without one. */
+async function createOrShare(
+  pool: pg.Pool, deps: ZoomDeps, hostId: string, bookingId: string, classKey: string | null, meeting: ZoomMeetingInput,
+  zoom: <T>(fn: (token: string) => Promise<T>) => Promise<T>,
+): Promise<string> {
+  const lock = `zoom-meeting:${classKey ?? bookingId}`;
+  const client = await pool.connect();
+  let unlockError: Error | undefined;
+  try {
+    await client.query("select pg_advisory_lock(hashtext($1))", [lock]);
+    try {
+      const { rows: [mine] } = await client.query("select zoom_meeting_id from bookings where id = $1", [bookingId]);
+      if (mine?.zoom_meeting_id) return mine.zoom_meeting_id as string;
+      if (classKey) {
+        const { rows: [mate] } = await client.query(
+          `select zoom_meeting_id, join_url from bookings where class_key = $1 and host_id = $2 and zoom_meeting_id is not null and status in ${LIVE} limit 1`, [classKey, hostId]);
+        if (mate) {
+          await client.query("update bookings set zoom_meeting_id = $2, join_url = $3, updated_at = now() where id = $1", [bookingId, mate.zoom_meeting_id, mate.join_url]);
+          return mate.zoom_meeting_id as string;
+        }
+      }
+      const made = await zoom((t) => deps.client.createMeeting(t, meeting));
+      await client.query(
+        `update bookings set zoom_meeting_id = $2, join_url = $3, updated_at = now()
+         where (id = $1 or ($4::text is not null and class_key = $4 and host_id = $5 and status in ${LIVE})) and zoom_meeting_id is null`,
+        [bookingId, made.id, made.joinUrl, classKey, hostId]);
+      return made.id;
+    } finally {
+      await client.query("select pg_advisory_unlock(hashtext($1))", [lock]).catch((e: Error) => { unlockError = e; });
+    }
+  } finally {
+    client.release(unlockError);
+  }
+}
+
+/** The host's one email about a Zoom connection that stopped working; skipped once they've reconnected or removed it. */
+async function renderZoomAlertMail(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
+  const id = /^zoom:([0-9a-f-]{36}):alert:/.exec(c.dedupe_key)?.[1];
+  const { rows: [z] } = id ? await pool.query("select account_email, status, last_error from integrations where id = $1", [id]) : { rows: [] };
+  if (!z) return { skip: "Zoom connection removed" };
+  if (z.status === "ok") return { skip: "Zoom reconnected" };
+  return renderZoomAlert({ accountEmail: z.account_email ?? "your Zoom account", lastError: z.last_error, integrationsUrl: `${baseUrl}/dashboard/integrations` });
 }
 
 async function renderAlert(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
@@ -380,6 +518,15 @@ async function renderSeatInvite(pool: pg.Pool, c: Claimed, baseUrl: string): Pro
      where s.owner_id = $1 and s.member_email = $2 and s.accepted_at is null and u.deleted_at is null`, [c.user_id, c.recipient]);
   if (!s) return { skip: "invitation withdrawn or already accepted" };
   return renderSeatInviteMail({ ownerName: s.name, ownerEmail: s.email, url: `${baseUrl}/sign-in` });
+}
+
+/** A client's data request, to their host. Skipped once the host has dealt with it. */
+async function renderDataRequest(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
+  const m = /^data_request:([0-9a-f-]{36})$/.exec(c.dedupe_key);
+  const r = m ? await requestForEmail(pool, m[1]) : null;
+  if (!r) return { skip: "request already dealt with" };
+  const { rows: [u] } = await pool.query("select timezone from users where id = $1", [c.user_id]);
+  return renderDataRequestMail({ kind: r.kind, dueAt: r.dueAt, timezone: u?.timezone ?? "Asia/Kolkata", url: `${baseUrl}/dashboard/clients/requests` });
 }
 
 const isPollKind = (kind: NotificationKind) => kind === "poll_voter_link" || kind === "poll_host_closed";
@@ -431,8 +578,13 @@ async function renderPackage(pool: pg.Pool, c: Claimed, baseUrl: string): Promis
   });
 }
 
+/** The follow-up links' signing key, or null when TOKEN_ENCRYPTION_KEY isn't set (follow-ups are then skipped, saying why). */
+function followUpLinkKey(): Buffer | null {
+  try { return linkKey(); } catch { return null; }
+}
+
 export async function processDueNotifications(
-  pool: pg.Pool, mailer: Mailer, opts: { baseUrl: string; now?: Date; limit?: number; calendar?: CalendarDeps | null; whatsapp?: WhatsAppConfig | null; sms?: SmsConfig | null; fetch?: typeof fetch },
+  pool: pg.Pool, mailer: Mailer, opts: { baseUrl: string; now?: Date; limit?: number; calendar?: CalendarDeps | null; zoom?: ZoomDeps | null; whatsapp?: WhatsAppConfig | null; sms?: SmsConfig | null; fetch?: typeof fetch },
 ): Promise<WorkerResult> {
   const now = opts.now ?? new Date();
   const claimed = await claimDue(pool, now, opts.limit ?? BATCH_SIZE);
@@ -453,14 +605,16 @@ export async function processDueNotifications(
     await finish(c, "skipped", { error: reason });
     result.skipped++;
   };
-  // Once a calendar write has run, whatever the outcome, a guest confirmation waiting for its video link goes at once:
-  // with the link if the write worked, without it if not. It never waits on a calendar that may take hours to recover.
+  // Once a calendar or Zoom write has run, whatever the outcome, a guest confirmation waiting for its video link goes at
+  // once: with the link if the write worked, without it if not. It never waits on a service that may take hours to
+  // recover. A Zoom write also wakes the calendar event waiting to carry its link, and every seat of a class it served.
   const release = async (c: Claimed) => {
-    if (c.kind !== "calendar_create" && c.kind !== "calendar_move") return;
+    const zoomJob = c.kind === "zoom_create" || c.kind === "zoom_move";
+    if (c.kind !== "calendar_create" && c.kind !== "calendar_move" && !zoomJob) return;
     const woken = await pool.query(
-      `update notifications set send_at = $2, last_error = null where status = 'queued' and kind in ('booked_guest', 'rescheduled_guest') and send_at > $2
+      `update notifications set send_at = $2, last_error = null where status = 'queued' and send_at > $2 and kind = any($3::text[])
          and (booking_id = $1 or booking_id in (select m.id from bookings m join bookings s on s.id = $1 where s.class_key is not null and m.class_key = s.class_key))`,
-      [c.booking_id, now]);
+      [c.booking_id, now, zoomJob ? ["booked_guest", "rescheduled_guest", "calendar_create"] : ["booked_guest", "rescheduled_guest"]]);
     result.released += woken.rowCount ?? 0;
   };
 
@@ -472,23 +626,26 @@ export async function processDueNotifications(
       continue;
     }
     // Host emails about their account rather than a booking.
-    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind);
+    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind) || c.kind === "data_request_host" || c.kind === "membership_guest" || c.kind === "membership_host";
     if (!isAccountMail) {
       if (!r?.id) { await skip(c, "booking no longer exists"); continue; }
       const why = skipReason(c.kind, r, now);
       if (why) { await skip(c, why); continue; }
       // WhatsApp and SMS templates carry no video link, so they never wait for one.
-      let wait = c.channel === "whatsapp" || c.channel === "sms" ? null : deferReason(c.kind, r, now, Boolean(opts.calendar));
-      if (wait === VIDEO_LINK_WAIT) {
-        // The calendar write may have finished earlier in this same batch: look again before waiting.
+      let wait = c.channel === "whatsapp" || c.channel === "sms" ? null : deferReason(c.kind, r, now, Boolean(opts.calendar), Boolean(opts.zoom));
+      if (wait === VIDEO_LINK_WAIT || wait === ZOOM_LINK_WAIT) {
+        // The calendar or Zoom write may have finished earlier in this same batch: look again before waiting.
         const { rows: [fresh] } = await pool.query(
           `select coalesce(b.join_url, (select m.join_url from bookings m where b.class_key is not null and m.class_key = b.class_key and m.join_url is not null limit 1)) as join_url,
              exists (select 1 from notifications cj where (cj.booking_id = b.id or cj.booking_id in (select m.id from bookings m where b.class_key is not null and m.class_key = b.class_key))
-               and cj.channel = 'calendar' and cj.kind <> 'calendar_delete' and cj.status = 'queued' and (cj.attempts = 0 or cj.locked_until > $2)) as pending
+               and cj.channel = 'calendar' and cj.kind <> 'calendar_delete' and cj.status = 'queued' and (cj.attempts = 0 or cj.locked_until > $2)) as pending,
+             exists (select 1 from notifications vj where vj.booking_id = b.id and vj.channel = 'video'
+             and vj.kind <> 'zoom_delete' and vj.status = 'queued' and (vj.attempts = 0 or vj.locked_until > $2)) as video_pending
            from bookings b where b.id = $1`, [r.id, now]);
         r.join_url = fresh.join_url;
         r.calendar_write_pending = fresh.pending;
-        wait = deferReason(c.kind, r, now, Boolean(opts.calendar));
+        r.video_write_pending = fresh.video_pending;
+        wait = deferReason(c.kind, r, now, Boolean(opts.calendar), Boolean(opts.zoom));
       }
       if (wait) {
         // Not an attempt: hand the row back for a little later.
@@ -507,6 +664,7 @@ export async function processDueNotifications(
       if (why) { await skip(c, why); continue; }
     }
     if (isCalendarJob(c.kind) && !opts.calendar) { await skip(c, `${new Intl.ListFormat("en").format(Object.values(PROVIDER_NAMES))} calendars are not configured on this server`); await release(c); continue; }
+    if (isVideoJob(c.kind) && !opts.zoom) { await skip(c, "Zoom is not configured on this server"); await release(c); continue; }
 
     // Renew the lease for this row only, right before running it. If another worker took the row over, leave it to them.
     const renewed = await pool.query(
@@ -527,6 +685,10 @@ export async function processDueNotifications(
           } : {}),
         }, c.recipient);
         ({ id: providerId } = await sendWhatsApp(opts.whatsapp!, message, opts.fetch));
+      } else if (isVideoJob(c.kind)) {
+        const out = await runZoomJob(pool, opts.zoom!, c, r, now);
+        if ("skip" in out) { await skip(c, out.skip); await release(c); continue; }
+        providerId = out.eventId;
       } else if (c.channel === "sms") {
         providerId = await sendBookingSms(pool, opts.sms!, c, {
           guestName: r.guest_name as string, hostName: r.host_name as string, eventName: r.event_name as string, startAt: new Date(r.start_at as Date),
@@ -538,13 +700,17 @@ export async function processDueNotifications(
         providerId = out.eventId;
       } else {
         const mail = c.kind === "calendar_alert_host" ? await renderAlert(pool, c, opts.baseUrl)
+          : c.kind === "zoom_alert_host" ? await renderZoomAlertMail(pool, c, opts.baseUrl)
           : c.kind === "renewal_reminder_host" ? await renderRenewal(pool, c, opts.baseUrl)
           : c.kind === "package_guest" || c.kind === "package_host" ? await renderPackage(pool, c, opts.baseUrl)
           : c.kind === "invoice_guest" ? await renderInvoice(pool, c, opts.baseUrl)
           : c.kind === "earnings_host" ? await renderEarnings(pool, c, opts.baseUrl, now)
           : c.kind === "waitlist_guest" ? await renderWaitlist(pool, c, opts.baseUrl, now)
           : c.kind === "seat_invite" ? await renderSeatInvite(pool, c, opts.baseUrl)
+          : c.kind === "data_request_host" ? await renderDataRequest(pool, c, opts.baseUrl)
+          : c.kind === FOLLOW_UP_KIND ? await buildFollowUp(pool, c, opts.baseUrl, now, followUpLinkKey())
           : isPollKind(c.kind) ? await renderPoll(pool, c, opts.baseUrl, now)
+          : c.kind === "membership_guest" || c.kind === "membership_host" ? await renderMembership(pool, c, opts.baseUrl, now)
           : renderBookingMail(c.kind as BookingEmailKind, {
             ...toContext(r, opts.baseUrl),
             extraGuest: c.recipient.toLowerCase() !== String(r.guest_email).toLowerCase() && c.kind.endsWith("_guest"),
@@ -556,7 +722,7 @@ export async function processDueNotifications(
         ({ id: providerId } = await mailer.send({ ...mail, to: c.recipient, idempotencyKey: `notification-${c.id}` }));
       }
     } catch (error) {
-      const retryable = error instanceof MailError || error instanceof CalendarApiError || error instanceof WhatsAppError || error instanceof SmsError ? error.retryable : true;
+      const retryable = error instanceof MailError || error instanceof CalendarApiError || error instanceof WhatsAppError || error instanceof SmsError || error instanceof ZoomApiError ? error.retryable : true;
       const message = (error as Error).message.slice(0, 500);
       if (!retryable || c.attempts >= MAX_ATTEMPTS) {
         await finish(c, "failed", { error: message });
