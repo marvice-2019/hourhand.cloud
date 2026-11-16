@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { formatMoney } from "./billing/plans";
+import { formatAmount } from "./money";
 import { formatDate, formatTime, zoneName } from "./format";
 
 // Automatic WhatsApp (D7): approved utility templates sent from Hourhand's own number through Meta's Cloud API. One
@@ -71,6 +71,8 @@ export interface WhatsAppBookingContext {
   manageToken: string;
   /** For a cancellation: what it refunds the guest (paise, INR), the same amount as the cancellation email; null when nothing. */
   refundMinor?: number | null;
+  /** The refund's currency (the payment's); INR when not given. */
+  refundCurrency?: string | null;
 }
 
 /** WhatsApp refuses template variables with line breaks, tabs or long runs of spaces; names are also kept short. */
@@ -84,7 +86,7 @@ export function templateMessage(kind: WhatsAppKind, c: WhatsAppBookingContext, t
   const lang: TemplateLang = c.locale === "hi" ? "hi" : "en";
   const first = c.guestName.trim().split(/\s+/)[0] || c.guestName;
   const when = `${formatDate(c.startAt, c.guestTimezone, lang)}, ${formatTime(c.startAt, c.guestTimezone, "12h", lang)} ${zoneName(c.guestTimezone)}`;
-  const fourth = kind === "cancelled_guest" ? (c.refundMinor ? CHANGE[lang].refunded(formatMoney(c.refundMinor, "INR")) : CHANGE[lang].cancelled) : kind === "rescheduled_guest" ? CHANGE[lang].moved(when) : when;
+  const fourth = kind === "cancelled_guest" ? (c.refundMinor ? CHANGE[lang].refunded(formatAmount(c.refundMinor, c.refundCurrency ?? "INR")) : CHANGE[lang].cancelled) : kind === "rescheduled_guest" ? CHANGE[lang].moved(when) : when;
   return {
     messaging_product: "whatsapp",
     recipient_type: "individual",

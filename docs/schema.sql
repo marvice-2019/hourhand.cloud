@@ -187,8 +187,8 @@ create table event_types (
   description text,
   color text not null default '#b4410e',
   duration_minutes int not null check (duration_minutes between 5 and 720),
-  duration_options int[] not null default '{}',   -- lengths the guest picks from; empty = duration_minutes only (0029)
-  duration_prices int[] not null default '{}',    -- each option's own price (paise), null = price_minor (0029)
+  duration_options int[] not null default '{}',   -- lengths the guest picks from; empty = duration_minutes only (0040)
+  duration_prices int[] not null default '{}',    -- each option's own price (paise), null = price_minor (0040)
   min_notice_minutes int not null default 240 check (min_notice_minutes >= 0),
   booking_window_days int not null default 60 check (booking_window_days between 1 and 730),
   start_increment_minutes int not null default 30 check (start_increment_minutes in (5,10,15,20,30,45,60)),
@@ -304,15 +304,15 @@ create table payments (
   currency text not null,
   status text not null check (status in ('pending','paid','failed','refunded')),
   refunded_minor int not null default 0 check (refunded_minor >= 0),
-  sessions int not null default 1,                -- weeks a paid series covers; amount_minor / sessions each (0031)
-  refund_due_minor int not null default 0,        -- queued for refund, not yet refunded: cancelled weeks of a series (0031)
+  sessions int not null default 1,                -- weeks a paid series covers; amount_minor / sessions each (0041)
+  refund_due_minor int not null default 0,        -- queued for refund, not yet refunded: cancelled weeks of a series (0041)
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create index on payments (booking_id);
 create index on payments (host_id, created_at);
 
--- Partial refunds (some weeks of a paid series), dated for earnings. A refund completing the payment is on payments. (0031)
+-- Partial refunds (some weeks of a paid series), dated for earnings. A refund completing the payment is on payments. (0041)
 create table payment_refunds (
   id uuid primary key default gen_random_uuid(),
   payment_id uuid not null references payments(id) on delete cascade,

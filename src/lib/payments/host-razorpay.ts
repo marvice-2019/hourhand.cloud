@@ -21,7 +21,7 @@ export type RazorpayMode = "test" | "live";
 
 const KEY_ID = /^rzp_(test|live)_[A-Za-z0-9]{8,32}$/;
 
-export type RazorpayKeyProblem = "format" | "rejected" | "unreachable" | "busy";
+export type RazorpayKeyProblem = "format" | "rejected" | "unreachable" | "busy" | "other_provider";
 
 /** Why a key pair wasn't saved. `rejected`: Razorpay said the pair is wrong; `unreachable`: try again later. */
 export class RazorpayKeyError extends Error {
@@ -73,6 +73,9 @@ export async function saveRazorpayKeys(db: Db, key: Buffer, userId: string, keyI
   const m = KEY_ID.exec(keyId);
   if (!m) throw new RazorpayKeyError("format", "That doesn't look like a Razorpay key id (it starts with rzp_test_ or rzp_live_).");
   if (!keySecret || keySecret.length > 128) throw new RazorpayKeyError("format", "Paste the key secret that Razorpay showed with this key id.");
+  // One payment provider at a time: a host on Stripe disconnects it first (refused while a guest's payment is in flight).
+  const otherProvider = () => new RazorpayKeyError("other_provider", "Stripe is connected. Disconnect it before connecting Razorpay.");
+  if ((await db.query("select 1 from integrations where user_id = $1 and provider = 'stripe'", [userId])).rows.length) throw otherProvider();
   try {
     await verify(keyPairAuth(keyId, keySecret));
   } catch (error) {
@@ -87,7 +90,10 @@ export async function saveRazorpayKeys(db: Db, key: Buffer, userId: string, keyI
      values ($1, 'razorpay', $2, $3, $4, 'ok')
      on conflict (user_id, provider) do update
        set credentials_encrypted = excluded.credentials_encrypted, public_id = excluded.public_id, mode = excluded.mode, status = 'ok', updated_at = now()`,
-    [userId, seal(key, { keyId, keySecret }, aad(userId, keyId)), keyId, mode]);
+    [userId, seal(key, { keyId, keySecret }, aad(userId, keyId)), keyId, mode]).catch((error: { code?: string }) => {
+    // The one-provider index: Stripe was connected in the meantime.
+    throw error.code === "23505" ? otherProvider() : error;
+  });
   return { mode };
 }
 

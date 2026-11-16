@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { focusRing } from "@/components/ui/focus";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
-import { formatMoney } from "@/lib/billing/plans";
+import { formatAmount } from "@/lib/money";
 import { t, tNodes, type GuestKey, type Locale } from "@/lib/i18n/guest";
 import { zoneCheck } from "@/lib/tz-confirm";
 import { LocalTime } from "./LocalTime";
@@ -23,7 +23,7 @@ interface Props {
   bookingWindowDays: number;
   questions: FlowQuestion[];
   /** For a priced event: the price as shown ("₹499") and the names Checkout shows the guest. */
-  paid?: { price: string; hostName: string; eventName: string; deposit?: boolean; /** Paise, for the total of a weekly series. */ priceMinor?: number } | null;
+  paid?: { price: string; hostName: string; eventName: string; deposit?: boolean; /** Minor units and currency, for the total of a weekly series. */ priceMinor?: number; currency?: string | null } | null;
   /** Booking through a single-use link: times and the booking go through the link, which is used up by the booking. */
   linkToken?: string;
   /** Open the picker on this suggested time's day. */
@@ -155,7 +155,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
   const [weeksTaken, setWeeksTaken] = useState<string[] | null>(null);
   const [packageRefused, setPackageRefused] = useState<string | null>(null);
   // A priced weekly series is paid in one go: the button shows the total for every week.
-  const seriesPrice = paid && !paid.deposit && weeks > 1 && paid.priceMinor ? formatMoney(paid.priceMinor * weeks, "INR") : paid?.price ?? "";
+  const seriesPrice = paid && !paid.deposit && weeks > 1 && paid.priceMinor ? formatAmount(paid.priceMinor * weeks, paid.currency) : paid?.price ?? "";
   const [showGuests, setShowGuests] = useState(false);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -171,6 +171,15 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
         body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(duration ? { duration } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), locale }),
       });
       const body = await res.json();
+      if ((res.status === 201 || res.status === 200) && body.payment?.provider === "stripe" && typeof body.payment.url === "string") {
+        // Stripe Checkout on the host's account. It can't run inside a frame, so an embedded booking page opens it in a new tab
+        // and shows the held booking here; Stripe brings the guest back to the booked page, which checks the payment.
+        if (window.top !== window.self) {
+          window.open(body.payment.url, "_blank", "noopener");
+          router.push(`/${slug}/${event}/booked/${body.bookingId}${langQuery}`);
+        } else window.location.assign(body.payment.url);
+        return;
+      }
       if ((res.status === 201 || res.status === 200) && body.payment) {
         setBusy(false);
         const prefill = { name: String(data.get("name") ?? ""), email: String(data.get("email") ?? ""), ...(data.get("phone") ? { contact: String(data.get("phone")) } : {}) };
@@ -317,7 +326,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
             {t(locale, checkoutFailed ? "checkoutFailed" : notPaid ? "notPaid" : "notPaidYet")}{" "}
             {tNodes(locale, "heldUntil", { time: <LocalTime date={held.payment.holdExpiresAt} tz={tz} locale={locale} /> })}
           </p>
-          <Button type="button" loading={busy} onClick={() => { const h = held; setHeld(null); void pay(h); }}>{t(locale, "pay", { price: formatMoney(held.payment.amount, "INR") })}</Button>
+          <Button type="button" loading={busy} onClick={() => { const h = held; setHeld(null); void pay(h); }}>{t(locale, "pay", { price: formatAmount(held.payment.amount, held.payment.currency) })}</Button>
         </div>
       ) : (
         <Button type="submit" loading={busy}>{busy ? t(locale, "booking") : paid ? t(locale, paid.deposit ? "continuePayDeposit" : "continuePay", { price: seriesPrice }) : packageToken ? (weeks > 1 ? t(locale, "bookSessions", { n: weeks }) : t(locale, "bookWithPackage")) : t(locale, "bookThisTime")}</Button>

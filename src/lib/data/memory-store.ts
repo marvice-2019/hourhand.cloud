@@ -224,6 +224,10 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
     async listOneOffTimes(eventTypeId) {
       return [...(oneOffTimes.get(eventTypeId) ?? [])];
     },
+    // Meeting polls need Postgres; memory mode has none, so nothing is held.
+    async listPollHolds() {
+      return [];
+    },
     async rescheduleBooking(hostId, bookingId, startAt, idempotencyKey, by = "guest") {
       const repeat = db.bookings.find((b) => b.idempotencyKey === idempotencyKey);
       if (repeat) {

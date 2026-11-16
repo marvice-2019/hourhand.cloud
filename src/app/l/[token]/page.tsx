@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { BookingFlow } from "@/components/BookingFlow";
 import { BookingFooter } from "@/components/BookingFooter";
-import { formatMoney } from "@/lib/billing/plans";
+import { formatAmount } from "@/lib/money";
 import { store } from "@/lib/data";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
 import { guestDurations, lengthsLabel, priceRange } from "@/lib/durations";
@@ -39,14 +39,14 @@ export default async function LinkPage({ params }: { params: Promise<{ token: st
       <p className="text-sm font-semibold text-text-muted">{host.name}</p>
       <h1 className="font-display text-xl text-text">{eventType.name}</h1>
       <p className="mt-2 text-text-muted">
-        {lengthsLabel(eventType)} min{eventType.priceMinor !== null && ` · ${priceRange(eventType, (m) => formatMoney(m, "INR"))}`}
+        {lengthsLabel(eventType)} min{eventType.priceMinor !== null && ` · ${priceRange(eventType, (m) => formatAmount(m, eventType.currency))}`}
         {eventType.kind === "one_off" ? " · pick one of the times offered" : " · this link works for one booking"}
       </p>
       {eventType.description && <p className="mt-2 text-text">{eventType.description}</p>}
       <BookingFlow
-        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} linkToken={token} durations={guestDurations(eventType, (m) => formatMoney(m, "INR"))} bookingWindowDays={eventType.bookingWindowDays} questions={questions} whatsapp={await whatsappOffered(host.id)}
-        paid={eventType.priceMinor !== null ? { price: formatMoney(eventType.priceMinor, "INR"), priceMinor: eventType.priceMinor, hostName: host.name, eventName: eventType.name }
-          : eventType.depositMinor !== null ? { price: formatMoney(eventType.depositMinor, "INR"), hostName: host.name, eventName: eventType.name, deposit: true } : null}
+        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} linkToken={token} durations={guestDurations(eventType, (m) => formatAmount(m, eventType.currency))} bookingWindowDays={eventType.bookingWindowDays} questions={questions} whatsapp={await whatsappOffered(host.id)}
+        paid={eventType.priceMinor !== null ? { price: formatAmount(eventType.priceMinor, eventType.currency), priceMinor: eventType.priceMinor, currency: eventType.currency, hostName: host.name, eventName: eventType.name }
+          : eventType.depositMinor !== null ? { price: formatAmount(eventType.depositMinor, eventType.currency), hostName: host.name, eventName: eventType.name, deposit: true } : null}
       />
       <BookingFooter hostId={host.id} />
     </main>
