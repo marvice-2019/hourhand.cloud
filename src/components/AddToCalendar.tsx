@@ -1,12 +1,13 @@
 import { focusRing } from "@/components/ui/focus";
 import { googleCalendarLink, outlookCalendarLink } from "@/lib/calendar-links";
 import { t, type Locale } from "@/lib/i18n/guest";
+import { mt } from "@/lib/i18n/mail";
 
-/** Google and Outlook open with the event filled in; Apple Calendar and the rest take the .ics file. */
+/** Google and Outlook open with the event filled in, in the page's language; Apple Calendar and the rest take the .ics file. */
 export function AddToCalendar({ token, title, start, end, location, manageUrl, locale }: {
   token: string; title: string; start: Date; end: Date; location: string | null; manageUrl: string; locale: Locale;
 }) {
-  const e = { title, details: `Change or cancel: ${manageUrl}`, location, start, end };
+  const e = { title, details: mt(locale, "calChange", { url: manageUrl }), location, start, end };
   const link = `inline-flex min-h-11 items-center rounded-md border border-border-input bg-card px-4 text-sm font-semibold text-text hover:bg-surface ${focusRing}`;
   return (
     <section aria-labelledby="add-cal" className="mt-4">
