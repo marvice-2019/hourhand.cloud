@@ -8,6 +8,8 @@ on:
   push:
     branches: [main]
     paths-ignore: ["docs/**"]
+  # "Run workflow" button in the Actions tab: checks and, on main, deploys without needing a new push.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -71,7 +73,7 @@ jobs:
   # deploy permission). Environment secrets reach a job only when it names that environment.
   deploy:
     needs: check
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     environment:
       name: Production
       url: https://hourhand.cloud
