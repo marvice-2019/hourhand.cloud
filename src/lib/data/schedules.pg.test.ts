@@ -1,5 +1,5 @@
 // Named availability schedules against real Postgres. Runs only with TEST_DATABASE_URL; uses its own database
-// (<that name>_schedules) so it can build the schema up to the migration before this feature and check the upgrade.
+// (<that name>_schedules) so it can build the schema without this feature's migration and check the upgrade.
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -44,12 +44,13 @@ describe.skipIf(!BASE)("named schedules in Postgres (TEST_DATABASE_URL)", () => 
     pool = new pg.Pool({ connectionString: url });
     store = createPgStore(pool);
 
-    // The schema as it was before named schedules, applied the way scripts/migrate does.
+    // Production as it stands before this feature: every other migration applied (later-numbered ones that merged
+    // first included), recorded the way scripts/migrate does. migrate() below then applies named schedules last.
     const files = (await readdir(DIR)).filter((f) => /^\d{4}_[a-z0-9_]+\.sql$/.test(f)).sort();
     const cut = files.findIndex((f) => f.endsWith("_named_schedules.sql"));
     expect(cut).toBeGreaterThan(0);
     await q("create table schema_migrations (version text primary key, applied_at timestamptz not null default now())");
-    for (const f of files.slice(0, cut)) {
+    for (const f of files.filter((_, i) => i !== cut)) {
       await q(await readFile(DIR + f, "utf8"));
       await q("insert into schema_migrations (version) values ($1)", [f.slice(0, -4)]);
     }
@@ -82,7 +83,7 @@ describe.skipIf(!BASE)("named schedules in Postgres (TEST_DATABASE_URL)", () => 
     const { rows: [{ n }] } = await q("select count(*)::int as n from availability_schedules where user_id = $1", [users.fresh.id]);
     expect(n).toBe(0);
 
-    expect(await migrate(url)).toContain(files[cut].slice(0, -4));
+    expect(await migrate(url)).toEqual([files[cut].slice(0, -4)]);
   });
 
   afterAll(async () => {
