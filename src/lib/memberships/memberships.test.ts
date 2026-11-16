@@ -19,7 +19,7 @@ import {
 import { parseRazorpayMembershipEvent, razorpayMembershipProvider } from "./provider";
 import { handleMembershipWebhook, webhookSecret } from "./webhook";
 import { eraseClient, exportClient } from "../privacy/rights";
-import { createCampaign, createCoupon } from "../offers/manage";
+import { createCampaign, createCoupon, validateCampaignForm, validateCouponForm } from "../offers/manage";
 import { couponUses } from "../offers/offers";
 import { saveTaxProfile } from "../gst/invoices";
 
@@ -68,6 +68,15 @@ describe("membership form", () => {
     expect(validatePlanForm({ ...form, rolloverCap: "" })).toMatchObject({ ok: false, errors: { rolloverCap: expect.any(String) } });
     expect(validatePlanForm({ ...form, rollover: "sometimes" })).toMatchObject({ ok: false, errors: { rollover: expect.any(String) } });
     expect(validatePlanForm({ ...form, eventTypeIds: [] })).toMatchObject({ ok: false, errors: { eventTypeIds: expect.any(String) } });
+  });
+
+  it("offer forms carry the membership plans ticked (and drop anything that isn't an id)", () => {
+    const id = "6f1c2d3e-0000-4000-8000-0000000000aa";
+    const lists = { eventTypeIds: [], packageIds: [], membershipPlanIds: [id, id, "nope"] };
+    expect(validateCouponForm({ code: "join20", kind: "percent", value: "20", expiresOn: "", maxUses: "", maxUsesPerEmail: "", ...lists }, "2026-11-16"))
+      .toMatchObject({ ok: true, value: { code: "JOIN20", membershipPlanIds: [id] } });
+    expect(validateCampaignForm({ name: "Diwali", banner: "20% off", kind: "percent", value: "20", startsOn: "2026-11-16", endsOn: "2026-11-20", ...lists }, "2026-11-16"))
+      .toMatchObject({ ok: true, value: { membershipPlanIds: [id] } });
   });
 
   it("is a Solo and Duo feature", () => {
