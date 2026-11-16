@@ -8,6 +8,8 @@ import { formatAmount } from "../money";
 import { buildIcs } from "./ics";
 import { LOCATION_KEYS, isLocale, t, type Locale } from "../i18n/guest";
 import { mt, type MailKey } from "../i18n/mail";
+import { offerLabel } from "../offers/labels";
+import type { AdjustmentKind } from "../offers/pricing";
 import { pt } from "../i18n/poll";
 import type { Attachment } from "./mailer";
 
@@ -39,6 +41,8 @@ export interface BookingMailContext {
   paidProvider?: "razorpay" | "stripe" | null;
   /** The payment was a refundable no-show deposit, not a price. */
   paidIsDeposit?: boolean;
+  /** The one offer the price got (src/lib/offers): explained next to what was paid. */
+  offer?: { kind: AdjustmentKind; label: string; code: string | null; listMinor: number; discountMinor: number } | null;
   /** For reschedules: when the booking used to be. */
   previousStartAt: Date | null;
   /** For a rescheduled booking: who moved it (who cancelled the old one). */
@@ -127,13 +131,23 @@ const seriesRow = (c: BookingMailContext, tz: string, cycle: HourCycle, locale: 
   ...(c.alsoCancelled?.length ? [[mt(locale, "rAlsoCancelled", { n: c.alsoCancelled.length }), c.alsoCancelled.map((d) => when(d, tz, cycle, locale)).join("\n")] as Row] : []),
 ];
 
+/** "₹944 (₹1,180 less ₹236, code DIWALI20)" when an offer took something off; otherwise just the amount. */
+function paidWithOffer(c: BookingMailContext, locale: Locale): string {
+  const money = (m: number) => formatAmount(m, c.paidCurrency);
+  const paid = money(c.paidMinor ?? 0);
+  const o = c.offer;
+  if (!o) return paid;
+  if (o.discountMinor <= 0) return `${paid} (${offerLabel(locale, o)})`;
+  return t(locale, "offerPaidLine", { price: paid, list: money(o.listMinor), amount: money(o.discountMinor), label: offerLabel(locale, o) });
+}
+
 function guestRows(c: BookingMailContext): Row[] {
   const l = lang(c);
   const rows: Row[] = [[g(c, "rWhat"), `${c.eventName} (${g(c, "minutes", { n: minutes(c) })})`], [g(c, "rWhen"), when(c.startAt, c.guestTimezone, "12h", l)],
     ...seriesRow(c, c.guestTimezone, "12h", l), [g(c, "rWith"), hostLabel(c)]];
   const w = where(c, l);
   if (w) rows.push([g(c, "rWhere"), w]);
-  if (c.paidMinor) rows.push(c.paidIsDeposit ? [g(c, "rDeposit"), g(c, "rDepositValue", { amount: formatAmount(c.paidMinor, c.paidCurrency) })] : [g(c, "rPaid"), formatAmount(c.paidMinor, c.paidCurrency)]);
+  if (c.paidMinor) rows.push(c.paidIsDeposit ? [g(c, "rDeposit"), g(c, "rDepositValue", { amount: formatAmount(c.paidMinor, c.paidCurrency) })] : [g(c, "rPaid"), paidWithOffer(c, l)]);
   return rows;
 }
 
@@ -145,7 +159,7 @@ function hostRows(c: BookingMailContext): Row[] {
   for (const a of c.answers) if (a.answer.trim()) rows.push([a.label, a.answer]);
   if (c.paidMinor) rows.push(c.paidIsDeposit
     ? ["Deposit", `${formatAmount(c.paidMinor, c.paidCurrency)} in your ${providerName(c)} account. Refunded a day after the session unless you mark a no-show.`]
-    : ["Paid", `${formatAmount(c.paidMinor, c.paidCurrency)} to your ${providerName(c)} account`]);
+    : ["Paid", `${paidWithOffer(c, "en")} to your ${providerName(c)} account`]);
   return rows;
 }
 

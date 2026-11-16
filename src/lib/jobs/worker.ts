@@ -81,6 +81,9 @@ const CONTEXT = `
       order by p.created_at desc limit 1) as paid_minor,
     (select p.kind from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
       order by p.created_at desc limit 1) as paid_kind,
+    (select json_build_object('kind', a.kind, 'label', a.label, 'code', oc.code, 'listMinor', a.list_minor, 'discountMinor', a.discount_minor)
+      from offer_applications a left join offer_coupons oc on oc.id = a.coupon_id
+      where a.item_kind = 'event_type' and a.host_id = b.host_id and a.idempotency_key = b.idempotency_key) as offer,
     (select p.currency from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
       order by p.created_at desc limit 1) as paid_currency,
     (select p.provider from payments p where p.booking_id = b.id and p.status in ('paid', 'refund_pending', 'refunded')
@@ -126,6 +129,7 @@ function toContext(r: ContextRow, baseUrl: string): BookingMailContext {
     answers: (r.answers as InviteeAnswer[]) ?? [],
     cancelledBy: (r.cancelled_by as BookingMailContext["cancelledBy"]) ?? null, cancelReason: (r.cancel_reason as string | null) ?? null,
     paidMinor: (r.paid_minor as number | null) ?? null, paidIsDeposit: r.paid_kind === "deposit",
+    offer: (r.offer as BookingMailContext["offer"]) ?? null,
     paidCurrency: (r.paid_currency as string | null) ?? null, paidProvider: (r.paid_provider as "razorpay" | "stripe" | null) ?? null,
     previousStartAt: r.previous_start_at ? new Date(r.previous_start_at as Date) : null,
     movedBy: (r.previous_cancelled_by as BookingMailContext["movedBy"]) ?? null,
