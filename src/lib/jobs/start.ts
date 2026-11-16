@@ -11,6 +11,7 @@ import { stripeCheckoutFromEnv, stripeDepsFor, type StripeDeps } from "../paymen
 import { systemResolver } from "../domains/dns";
 import { traefikFromEnv } from "../domains/traefik";
 import { startJobRunner, type JobRunner } from "./runner";
+import { zoomConfigError, zoomDeps } from "../zoom/connection";
 
 const shared = globalThis as typeof globalThis & { __hourhandJobs?: JobRunner };
 
@@ -23,6 +24,9 @@ export function startJobsFromEnv(env: Record<string, string | undefined> = proce
   // Calendars (Google, Microsoft) are optional; when one is configured, a missing or bad TOKEN_ENCRYPTION_KEY stops the server here.
   const configError = calendarConfigError(env);
   if (configError) throw new Error(configError);
+  const zoomError = zoomConfigError(env);
+  if (zoomError) throw new Error(zoomError);
+  const zoom = zoomDeps(env);
   const deps = calendarDeps(env);
   const calendar = deps && { ...deps, pushAddress: pushAddress(baseUrl, env) };
   const pool = getPool(env.DATABASE_URL);
@@ -39,6 +43,6 @@ export function startJobsFromEnv(env: Record<string, string | undefined> = proce
   }
   const traefik = traefikFromEnv(env);
   if (!traefik.ok) console.info(`[jobs] ${traefik.reason} Hosts see that on the Custom domain page.`);
-  shared.__hourhandJobs = startJobRunner({ pool, mailer, baseUrl, calendar, payments, stripe, domains: { resolver: systemResolver(), traefik } });
-  console.info(`[jobs] runner started (${env.RESEND_API_KEY ? "Resend" : "log only"}, calendars ${calendar ? `${Object.keys(calendar.providers).join(" + ")} on${calendar.providers.google ? `, Google ${calendar.pushAddress ? "instant" : "polling"}` : ""}` : "off"}, booking payments ${payments ? "on" : "off"}, Stripe ${stripe ? "on" : "off"})`);
+  shared.__hourhandJobs = startJobRunner({ pool, mailer, baseUrl, calendar, zoom, payments, stripe, domains: { resolver: systemResolver(), traefik } });
+  console.info(`[jobs] runner started (${env.RESEND_API_KEY ? "Resend" : "log only"}, calendars ${calendar ? `${Object.keys(calendar.providers).join(" + ")} on${calendar.providers.google ? `, Google ${calendar.pushAddress ? "instant" : "polling"}` : ""}` : "off"}, booking payments ${payments ? "on" : "off"}, Zoom ${zoom ? "on" : "off"}, Stripe ${stripe ? "on" : "off"})`);
 }

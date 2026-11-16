@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { focusRing } from "@/components/ui/focus";
 import { Input, Label } from "@/components/ui/Input";
@@ -11,7 +11,8 @@ import { getPool } from "@/lib/data/pg-store";
 import { maskKeyId, razorpayStatus } from "@/lib/payments/host-razorpay";
 import { APPLICATION_FEE_BP, maskAccountId, STRIPE_COUNTRIES, stripeConnectFromEnv, stripeStatus } from "@/lib/payments/stripe-connect";
 import { whatsappBookingOn } from "@/lib/whatsapp-booking";
-import { connectRazorpay, connectStripe, disconnectRazorpayAction, disconnectStripeAction } from "./actions";
+import { zoomDeps, zoomStatus } from "@/lib/zoom/connection";
+import { connectRazorpay, connectStripe, disconnectRazorpayAction, disconnectStripeAction, disconnectZoomAction } from "./actions";
 import { WhatsAppBookingCard } from "./WhatsAppBookingCard";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,17 @@ function encryptionReady(): boolean {
   }
 }
 
+const ZOOM_ERRORS: Record<string, string> = {
+  not_configured: "Zoom isn't set up on this server yet.",
+  demo: "The demo data can't connect Zoom.",
+  denied: "Zoom wasn't connected: the request was cancelled in Zoom.",
+  missing_permissions: "Zoom didn't grant the permission to create meetings. Connect again and allow it.",
+  expired: "That took too long. Connect again.",
+  state_mismatch: "That Zoom sign-in didn't match this browser. Connect again.",
+  wrong_user: "That Zoom sign-in was started by another Hourhand account. Connect again.",
+  zoom: "Couldn't connect Zoom. Try again in a minute.",
+};
+
 export default async function IntegrationsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requireOwnAccount();
   const params = await searchParams;
@@ -60,6 +72,8 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   const [status, plan, stripe] = pool ? await Promise.all([razorpayStatus(pool, user.id), hostPlan(pool, user.id), stripeStatus(pool, user.id)]) : [null, null, null];
   const canConnect = live && encryptionReady();
   const stripeServer = canConnect && stripeConnectFromEnv() !== null;
+  const zoomReady = live && zoomDeps() !== null;
+  const zoom = pool ? await zoomStatus(pool, user.id) : { state: "none" as const };
 
   return (
     <div>
@@ -73,6 +87,35 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
       {params.connected && <p role="status" className="mt-4 max-w-xl text-success">Razorpay connected. Guests&apos; payments now go to your account.</p>}
       {params.disconnected && <p role="status" className="mt-4 max-w-xl text-success">Razorpay disconnected. Your keys were removed from Hourhand.</p>}
       {params.error && <p role="alert" className="mt-4 max-w-xl text-danger">{(Object.hasOwn(ERRORS, params.error) && ERRORS[params.error]) || ERRORS.unreachable}</p>}
+
+      {params.zoom_connected && <p role="status" className="mt-4 max-w-xl text-success">Zoom connected. New Zoom bookings get their own meeting link.</p>}
+      {params.zoom_disconnected && <p role="status" className="mt-4 max-w-xl text-success">Zoom disconnected. Bookings you already have keep their links.</p>}
+      {params.zoom_error && <p role="alert" className="mt-4 max-w-xl text-danger">{(Object.hasOwn(ZOOM_ERRORS, params.zoom_error) && ZOOM_ERRORS[params.zoom_error]) || ZOOM_ERRORS.zoom}</p>}
+
+      <Card className="mt-6 max-w-2xl">
+        <h2 className="font-semibold text-text">Zoom · a meeting link for every booking</h2>
+        <p className="mt-1 text-text-muted">Event types set to Zoom get a new meeting in your own Zoom account for each booking. The link goes in the confirmation, the calendar invite and the booking page, moves when the booking moves, and is deleted when it&apos;s cancelled.</p>
+        {zoom.state === "connected" ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-text">{zoom.email}</span>
+              <span className="inline-flex items-center rounded-pill bg-success-bg px-3 py-1 text-xs text-success">Connected</span>
+            </div>
+            <form action={disconnectZoomAction}>
+              <Button type="submit" variant="secondary" size="sm">Disconnect</Button>
+            </form>
+          </div>
+        ) : zoomReady ? (
+          <div className="mt-4 grid gap-3">
+            {zoom.state === "disconnected" && (
+              <p className="text-sm text-danger">Zoom stopped letting Hourhand create meetings for {zoom.email}. Bookings you already have keep their links; reconnect so new ones get a link too.</p>
+            )}
+            <div><Link prefetch={false} href="/api/integrations/zoom/connect" className={buttonClasses()}>{zoom.state === "disconnected" ? "Reconnect Zoom" : "Connect Zoom"}</Link></div>
+          </div>
+        ) : (
+          <p className="mt-4 max-w-xl text-sm text-text-muted">{live ? ZOOM_ERRORS.not_configured : ZOOM_ERRORS.demo}</p>
+        )}
+      </Card>
 
       <Card className="mt-6 max-w-2xl">
         <h2 className="font-semibold text-text">Razorpay · take payments at booking</h2>

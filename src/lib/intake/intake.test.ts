@@ -280,6 +280,33 @@ describe("booking with intake questions (memory store)", () => {
     expect(res.status).toBe(409);
   });
 
+  it("logs consent only for tick boxes the guest was actually shown", async () => {
+    const store = createMemoryStore(buildSeed(now));
+    const saved = validateQuestions([
+      { id: "q_goal", label: "What would you like to work on?", kind: "long_text", required: true, choices: [] },
+      { id: null, label: "Had therapy before?", kind: "yes_no", required: true, choices: [] },
+      { id: null, label: "I agree my previous therapist may be contacted", kind: "consent", required: false, choices: [], showIf: { questionIndex: 1, values: ["yes"] } },
+      { id: null, label: "I understand this isn't an emergency service", kind: "consent", required: false, choices: [], firstBookingOnly: true },
+    ]);
+    if (!saved.ok) throw new Error("invalid setup");
+    const qs = await store.saveQuestions("usr_priya", "evt_coaching", saved.value);
+    const seen: { invitee: { consent?: { statement: string; granted: boolean }[] } }[] = [];
+    const create = store.createBooking.bind(store);
+    store.createBooking = (input) => { seen.push(input as (typeof seen)[number]); return create(input); };
+    const params = new URLSearchParams({ slug: "priya", event: "coaching", from: now.toISOString(), to: new Date(now.getTime() + 14 * DAY).toISOString() });
+    const slots = ((await handleGetSlots(store, params, now)).body as { slots: string[] }).slots;
+    const book = (start: string, key: string, answers: Record<string, string>) =>
+      handleCreateBooking(store, { slug: "priya", event: "coaching", start, name: "C", email: "consent.client@example.com", timezone: "Asia/Kolkata", answers, idempotencyKey: key }, now);
+    const hostLines = () => (seen.at(-1)!.invitee.consent ?? []).filter((l) => l.statement !== "" && qs.some((q) => q.label === l.statement)).map((l) => [l.statement, l.granted]);
+
+    // First booking, answered "no": the conditional tick box is hidden, so it isn't logged as declined.
+    expect((await book(slots[0], "consent-key-1", { [qs[0].id]: "Sleep", [qs[1].id]: "no", [qs[2].id]: "Yes", [qs[3].id]: "Yes" })).status).toBe(201);
+    expect(hostLines()).toEqual([["I understand this isn't an emergency service", true]]);
+    // A returning client isn't shown the first-booking tick box either.
+    expect((await book(slots[8], "consent-key-2", { [qs[0].id]: "Again", [qs[1].id]: "yes", [qs[2].id]: "Yes" })).status).toBe(201);
+    expect(hostLines()).toEqual([["I agree my previous therapist may be contacted", true]]);
+  });
+
   it("still refuses a badly formed answer up front", async () => {
     const { book, ids } = await setup();
     expect((await book("probe@example.com", { [ids.goal]: "Sleep", [ids.before]: "perhaps" }, "2026-10-10T04:07:00.000Z")).status).toBe(400);
