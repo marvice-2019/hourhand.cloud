@@ -188,7 +188,8 @@ create table event_types (
   description text,
   color text not null default '#b4410e',
   duration_minutes int not null check (duration_minutes between 5 and 720),
-  duration_options int[] not null default '{}',
+  duration_options int[] not null default '{}',   -- lengths the guest picks from; empty = duration_minutes only (0040)
+  duration_prices int[] not null default '{}',    -- each option's own price (paise), null = price_minor (0040)
   min_notice_minutes int not null default 240 check (min_notice_minutes >= 0),
   booking_window_days int not null default 60 check (booking_window_days between 1 and 730),
   start_increment_minutes int not null default 30 check (start_increment_minutes in (5,10,15,20,30,45,60)),

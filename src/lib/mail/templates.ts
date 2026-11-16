@@ -400,6 +400,18 @@ export function renderSeatInviteMail(c: { ownerName: string; ownerEmail: string;
   }, { replyTo: c.ownerEmail });
 }
 
+export function renderPracticeInviteMail(c: { practiceName: string; inviterName: string; replyTo: string; role: "admin" | "practitioner"; url: string }): RenderedMail {
+  return render(`${c.practiceName} invited you to Hourhand`, {
+    heading: `Join ${c.practiceName} on Hourhand`,
+    intro: `${c.inviterName} added you to ${c.practiceName} as ${c.role === "admin" ? "an admin" : "a practitioner"}. Sign in with this email address to accept.`,
+    rows: [], link: { label: "Sign in to accept", url: c.url },
+    note: c.role === "admin"
+      ? "As an admin you manage the practice's practitioners and see its bookings. Practitioners' client notes stay private to them. If you weren't expecting this, ignore it."
+      : "You keep your own Hourhand account: your calendars, hours, services and client notes stay yours, and you're listed on the practice's page. If you weren't expecting this, ignore it.",
+    footer: `Sent by Hourhand for ${c.practiceName}. Reply to reach them.`,
+  }, { replyTo: c.replyTo });
+}
+
 /**
  * To the host: one of their clients asked, from their booking's manage link, for a copy or deletion of their data. It
  * carries no details of the client; the host opens the dashboard to see who and act.
