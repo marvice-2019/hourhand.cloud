@@ -22,6 +22,7 @@ const ANSWER: Record<PollAnswer, HostKey> = { yes: "polls.answerYes", if_needed:
 const LOCATION: Record<LocationKind, HostKey> = {
   google_meet: "polls.locGoogleMeet", zoom: "polls.locZoom", teams: "polls.locTeams", phone_host_calls: "polls.locPhoneHostCallsGuest",
   phone_guest_calls: "polls.locPhoneGuestCallsGuest", in_person: "polls.locInPerson", custom: "polls.locCustomGuest", ask_guest: "polls.locAskGuest",
+  hourhand_video: "polls.locHourhandVideo",
 };
 
 export default async function PollPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ done?: string; error?: string }> }) {

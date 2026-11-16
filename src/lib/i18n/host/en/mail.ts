@@ -81,6 +81,7 @@ export const mail = {
   "mail.subjZoom": "Reconnect Zoom to keep sending meeting links",
   "mail.hZoom": "Your Zoom is disconnected",
   "mail.iZoom": "Zoom no longer lets Hourhand create meetings for {account}. Bookings you already have keep their Zoom links. New Zoom bookings are still taken, but get no link until you reconnect.",
+  "mail.iZoomNoAccount": "Zoom no longer lets Hourhand create meetings for you. Bookings you already have keep their Zoom links. New Zoom bookings are still taken, but get no link until you reconnect.",
   "mail.lReconnectZoom": "Reconnect Zoom",
   "mail.subjDataAccess": "A client asked for a copy of their data",
   "mail.subjDataErasure": "A client asked you to delete their data",

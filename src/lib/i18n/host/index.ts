@@ -2,6 +2,7 @@
 // (../guest.ts). English is the source of truth. Each page (namespace) has its own file in ./en, so features add
 // strings without touching each other's files; keys carry the namespace: "bookings.title". See docs/i18n-host.md.
 import { Fragment, createElement, type ReactNode } from "react";
+import { analytics } from "./en/analytics";
 import { availability } from "./en/availability";
 import { bookings } from "./en/bookings";
 import { calendars } from "./en/calendars";
@@ -26,12 +27,13 @@ import { profile } from "./en/profile";
 import { referrals } from "./en/referrals";
 import { seat } from "./en/seat";
 import { settings } from "./en/settings";
+import { voice } from "./en/voice";
 import { hi } from "./hi";
 import { ta } from "./ta";
 
 const en = {
   ...common, ...nav, ...bookings, ...clients, ...profile, ...eventTypes, ...links, ...packages, ...earnings, ...invoices,
-  ...availability, ...calendars, ...integrations, ...domain, ...plan, ...seat, ...settings, ...mail, ...polls, ...getBooked, ...memberships, ...feedback, ...offers, ...referrals,
+  ...availability, ...calendars, ...integrations, ...domain, ...plan, ...seat, ...settings, ...mail, ...polls, ...getBooked, ...memberships, ...feedback, ...offers, ...analytics, ...voice, ...referrals,
 };
 
 export type HostKey = keyof typeof en;

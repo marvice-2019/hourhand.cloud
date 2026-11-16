@@ -15,20 +15,23 @@ import { hostPlan } from "@/lib/billing/account";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
 import { smsOffered } from "@/lib/sms/offer";
 import { razorpayStatus } from "@/lib/payments/host-razorpay";
+import { countPageView } from "@/lib/analytics/page-view";
 import { pagePricing } from "@/lib/offers/offers";
 import { discountText } from "@/lib/offers/labels";
 import { CampaignBanner } from "@/components/CampaignBanner";
 import { rebookPrefill } from "@/lib/follow-ups/follow-ups";
 import { linkKey } from "@/lib/follow-ups/tokens";
 
-export default async function PublicEventPage({ params, searchParams }: { params: Promise<{ slug: string; event: string }>; searchParams: Promise<{ at?: string; lang?: string; name?: string; email?: string; rebook?: string }> }) {
+export default async function PublicEventPage({ params, searchParams }: { params: Promise<{ slug: string; event: string }>; searchParams: Promise<{ at?: string; lang?: string; name?: string; email?: string; rebook?: string } & Record<string, string | string[] | undefined>> }) {
   const { slug, event } = await params;
-  const { at, lang, name: prefillName, email: prefillEmail, rebook } = await searchParams;
+  const query = await searchParams;
+  const { at, lang, name: prefillName, email: prefillEmail, rebook } = query;
   // ?name= and ?email= fill the form in, e.g. from a host's own site or CRM; the guest can still change them.
   let prefill = { name: typeof prefillName === "string" ? prefillName.slice(0, 100) : "", email: typeof prefillEmail === "string" ? prefillEmail.slice(0, 254) : "" };
   const found = await store.getPublicEventType(slug, event);
   if (!found) notFound();
   const { host, eventType } = found;
+  const source = await countPageView(host.id, eventType.id, query);
   // ?rebook= is a follow-up email's signed link: the guest's details come from their earlier booking with this host.
   // A link that doesn't check out just leaves the form as it is.
   if (typeof rebook === "string" && authEnabled()) {
@@ -95,7 +98,7 @@ export default async function PublicEventPage({ params, searchParams }: { params
         </ul>
       )}
       <BookingFlow
-        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)}
+        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)} source={source}
         offers={pricing && eventType.priceMinor !== null ? {
           listMinor: eventType.priceMinor, currency, campaign: pricing.campaign && { name: pricing.campaign.name, chargeMinor: pricing.campaign.chargeMinor },
           sliding: pricing.sliding, coupons: pricing.coupons, firstSession: pricing.firstSession && discountText(pricing.firstSession),

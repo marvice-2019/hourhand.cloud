@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { freeSlots } from "@/lib/booking";
 import { store } from "@/lib/data";
 import { clientKey, sessionNumber } from "@/lib/clients";
+import { briefFor } from "@/lib/session-prep/prep";
 import { authEnabled } from "@/lib/auth/auth";
 import { getHostContext, requireHost } from "@/lib/auth/session";
 import { MAX_NOTE } from "@/lib/privacy/notes";
@@ -18,6 +19,7 @@ import type { HostKey } from "@/lib/i18n/host";
 import type { HostI18n } from "@/lib/i18n/host/format";
 import { getHostI18n } from "@/lib/i18n/host/server";
 import { GUEST_LOCATION_LABELS } from "@/lib/location-labels";
+import { videoJoinUrl } from "@/lib/video/links";
 import { waLink, waNumber, whatsappMessage, type WhatsAppKind } from "@/lib/whatsapp";
 import { feedbackForBooking } from "@/lib/follow-ups/follow-ups";
 import { cancelAsHost, rescheduleAsHost, saveSessionNote, setNoShow } from "./actions";
@@ -90,6 +92,8 @@ export default async function BookingDetailPage({ params, searchParams }: { para
   // Private notes are decrypted for the account owner only, never for a Duo second person managing the account.
   const owner = !(await getHostContext())?.acting;
   const [clientNote, sessionNote] = owner ? await Promise.all([store.getClientNote(user.id, booking.invitee.email), store.getBookingNote(user.id, booking.id)]) : ["", ""];
+  const prepPool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
+  const brief = prepPool ? await briefFor(prepPool, user.id, booking.id) : null;
   // Everyone holding a live seat in the same group class, this guest included.
   const classmates = booking.classKey ? allBookings.filter((b) => b.classKey === booking.classKey && (b.status === "confirmed" || b.status === "pending_payment")) : [];
   const seatLimit = booking.classKey ? (await store.getEventType(user.id, booking.eventTypeId))?.seatLimit ?? null : null;
@@ -136,6 +140,15 @@ export default async function BookingDetailPage({ params, searchParams }: { para
             </dd>
           </div>
         )}
+        {confirmed && booking.locationKind === "hourhand_video" && (
+          <div>
+            <dt className="text-sm text-text-muted">{t("bookings.videoTitle")}</dt>
+            <dd className="text-text">
+              <a href={`/dashboard/bookings/${booking.id}/video`} className="font-semibold text-accent underline" rel="noopener noreferrer" target="_blank">{t("bookings.videoStart")}</a>
+              <span className="block text-sm text-text-muted">{t(booking.classKey ? "bookings.videoHintClass" : "bookings.videoHintGuest")}</span>
+            </dd>
+          </div>
+        )}
         <div><dt className="text-sm text-text-muted">{t("bookings.email")}</dt><dd className="text-text">{booking.invitee.email}</dd></div>
         {booking.invitee.guests.length > 0 && <div><dt className="text-sm text-text-muted">{t("bookings.alsoInvited")}</dt><dd className="text-text">{booking.invitee.guests.join(", ")}</dd></div>}
         {payment && (
@@ -157,6 +170,13 @@ export default async function BookingDetailPage({ params, searchParams }: { para
           <div key={a.questionId}><dt className="text-sm text-text-muted">{a.label}</dt><dd className="whitespace-pre-line text-text">{a.answer}</dd></div>
         ))}
       </dl>
+      {brief?.status === "ready" && (
+        <section aria-labelledby="prep" className="mt-6 max-w-xl rounded-md border border-border bg-card p-4">
+          <h2 id="prep" className="font-display text-lg text-text">{t("bookings.prepTitle")}</h2>
+          <p className="mt-1 whitespace-pre-line text-text">{brief.text}</p>
+          <p className="mt-2 text-xs text-text-muted">{t("bookings.prepNote", { name: booking.invitee.name.split(" ")[0] })}</p>
+        </section>
+      )}
       {upcoming && (
         <section aria-labelledby="whatsapp" className="mt-6 grid max-w-xl gap-2">
           <h2 id="whatsapp" className="font-display text-lg text-text">{t("bookings.whatsappTitle")}</h2>
@@ -307,7 +327,9 @@ async function whatsappLinks(
   const value = locations.find((l) => l.kind === kind)?.value ?? null;
   const locale = isLocale(booking.invitee.locale) ? booking.invitee.locale : "en";
   const label = kind ? (locale === "en" ? GUEST_LOCATION_LABELS[kind] : guestT(locale, LOCATION_KEYS[kind])) : null;
-  const where = label ? `${label}${booking.joinUrl ? `: ${booking.joinUrl}` : value ? `: ${value}` : ""}` : null;
+  // A WhatsApp message to the guest: the guest's own join link for Hourhand video.
+  const joinUrl = booking.joinUrl ?? videoJoinUrl(origin.replace(/\/+$/, ""), kind, booking.invitee.manageToken);
+  const where = label ? `${label}${joinUrl ? `: ${joinUrl}` : value ? `: ${value}` : ""}` : null;
   const ctx = {
     guestName: booking.invitee.name, hostName: user.name, eventName: eventType?.name ?? "booking", startAt: booking.startAt,
     guestTimezone: booking.invitee.timezone, where, locale, manageUrl: `${origin.replace(/\/+$/, "")}/b/${booking.invitee.manageToken}`,

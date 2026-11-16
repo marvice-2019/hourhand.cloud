@@ -11,6 +11,8 @@ import { hostPlan } from "@/lib/billing/account";
 import { getPool } from "@/lib/data/pg-store";
 import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
 import { getHostI18n } from "@/lib/i18n/host/server";
+import { videoGateError } from "@/lib/video/gate";
+import { videoAvailabilityFor } from "@/lib/video/server";
 
 export type SaveResult =
   | { ok: true; id: string; slug: string }
@@ -63,6 +65,15 @@ export async function saveEventType(id: string | null, form: EventTypeForm, ques
   // A deposit is a payment too: same plan and payment-account requirement.
   const depositGate = await priceError(user.id, details.value.depositMinor);
   if (depositGate) return { ok: false, errors: { deposit: depositGate }, questionErrors: [] };
+  // Hourhand video needs the Jitsi settings on this server and a Solo or Duo plan.
+  if (details.value.location?.kind === "hourhand_video") {
+    const before = id ? await store.listEventLocations(user.id, id) : [];
+    const videoGate = videoGateError({ chosen: true, alreadyChosen: before[0]?.kind === "hourhand_video", availability: await videoAvailabilityFor(user.id) });
+    if (videoGate) {
+      const { t } = await getHostI18n();
+      return { ok: false, errors: { locationKind: t(videoGate === "plan" ? "eventTypes.videoNeedsPlan" : "eventTypes.videoNotSetUp") }, questionErrors: [] };
+    }
+  }
   if (details.value.priceMinor !== null || details.value.depositMinor !== null) details.value.currency = await hostCurrency(user.id);
   try {
     const saved = id ? await store.updateEventType(user.id, id, details.value) : await store.createEventType(user.id, details.value);

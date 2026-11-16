@@ -102,4 +102,12 @@ export const bookings: Record<keyof typeof en, string> = {
   "bookings.undoNoShow": "नो-शो हटाएँ",
   "bookings.markNoShow": "नो-शो मार्क करें",
   "bookings.back": "बुकिंग पर वापस जाएँ",
+  // Hourhand video (3.11)
+  "bookings.videoTitle": "Hourhand video",
+  "bookings.videoStart": "कॉल शुरू करें",
+  "bookings.videoHintGuest": "शुरू होने से 15 मिनट पहले खुलता है। आप होस्ट के रूप में जुड़ते हैं और अपने गेस्ट को लॉबी से अंदर लाते हैं।",
+  "bookings.videoHintClass": "शुरू होने से 15 मिनट पहले खुलता है। आप होस्ट के रूप में जुड़ते हैं और अपनी क्लास को लॉबी से अंदर लाते हैं।",
+  "bookings.videoBack": "बुकिंग पर वापस जाएँ",
+  "bookings.prepTitle": "सेशन की तैयारी",
+  "bookings.prepNote": "{name} के बुकिंग जवाबों और सेशन इतिहास से AI ने लिखा। ज़रूरी बातें ख़ुद जाँच लें।",
 };
