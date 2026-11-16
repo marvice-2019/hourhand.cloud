@@ -22,6 +22,12 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
   const linkOfBooking = new Map<string, string>(); // booking id -> booking link id (bookings.booking_link_id)
   const bookingNotes = new Map<string, string>(); // booking id -> the host's session note (booking_notes)
   const clientNotes = new Map<string, string>(); // "<host id>:<lowercased email>" -> the host's note (client_notes)
+  // Note edit history (note_revisions) and who keeps version texts (note_settings.keep_versions).
+  type RevisionRow = { id: string; hostId: string; email: string | null; bookingId: string | null; actorId: string | null; action: "saved" | "cleared"; text: string | null; at: Date };
+  const noteRevisions: RevisionRow[] = []; // oldest first
+  const keepVersions = new Set<string>();
+  const revise = (hostId: string, actorId: string, subject: { email: string | null; bookingId: string | null }, text: string | null) =>
+    noteRevisions.push({ id: randomUUID(), hostId, ...subject, actorId, action: text === null ? "cleared" : "saved", text: text !== null && keepVersions.has(hostId) ? text : null, at: new Date() });
   const oneOffTimes = new Map<string, Date[]>(); // one_off event type id -> offered start times, earliest first
 
   /** Same derived rule as Postgres. `ignoreKey`: a retried request whose own booking shouldn't count as another use. */
@@ -327,18 +333,44 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
     async getClientNote(hostId, email) {
       return clientNotes.get(`${hostId}:${email.toLowerCase()}`) ?? "";
     },
-    async saveClientNote(hostId, email, note) {
+    async saveClientNote(hostId, email, note, actorId = hostId) {
       const key = `${hostId}:${email.toLowerCase()}`;
-      if (note.trim() === "") clientNotes.delete(key);
+      const before = clientNotes.get(key) ?? "";
+      const clearing = note.trim() === "";
+      if (clearing ? before === "" : note === before) return;
+      if (clearing) clientNotes.delete(key);
       else clientNotes.set(key, note);
+      revise(hostId, actorId, { email: email.toLowerCase(), bookingId: null }, clearing ? null : note);
     },
     async getBookingNote(hostId, bookingId) {
       return db.bookings.some((b) => b.id === bookingId && b.hostId === hostId) ? bookingNotes.get(bookingId) ?? "" : "";
     },
-    async saveBookingNote(hostId, bookingId, note) {
+    async listBookingNotes(hostId, bookingIds) {
+      const mine = new Set(db.bookings.filter((b) => b.hostId === hostId).map((b) => b.id));
+      return Object.fromEntries(bookingIds.filter((id) => mine.has(id) && bookingNotes.has(id)).map((id) => [id, bookingNotes.get(id)!]));
+    },
+    async saveBookingNote(hostId, bookingId, note, actorId = hostId) {
       if (!db.bookings.some((b) => b.id === bookingId && b.hostId === hostId)) throw new NotFoundError("Booking");
-      if (note.trim() === "") bookingNotes.delete(bookingId);
+      const before = bookingNotes.get(bookingId) ?? "";
+      const clearing = note.trim() === "";
+      if (clearing ? before === "" : note === before) return;
+      if (clearing) bookingNotes.delete(bookingId);
       else bookingNotes.set(bookingId, note);
+      revise(hostId, actorId, { email: null, bookingId }, clearing ? null : note);
+    },
+    async listNoteRevisions(hostId, subject) {
+      const rows = noteRevisions.filter((r) => r.hostId === hostId && ("email" in subject ? r.email === subject.email.toLowerCase() : r.bookingId !== null && subject.bookingIds.includes(r.bookingId)));
+      return rows.reverse().map((r) => ({ id: r.id, email: r.email, bookingId: r.bookingId, actorId: r.actorId, action: r.action, text: r.text, at: r.at, actorName: db.users.find((u) => u.id === r.actorId)?.name ?? null }));
+    },
+    async getKeepNoteVersions(hostId) {
+      return keepVersions.has(hostId);
+    },
+    async setKeepNoteVersions(hostId, on) {
+      if (on) keepVersions.add(hostId);
+      else {
+        keepVersions.delete(hostId);
+        for (const r of noteRevisions) if (r.hostId === hostId) r.text = null;
+      }
     },
     async markRunningLate(manageToken, minutes, now) {
       const booking = db.bookings.find((b) => b.invitee.manageToken === manageToken && b.status === "confirmed");

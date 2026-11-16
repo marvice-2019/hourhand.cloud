@@ -6,6 +6,7 @@ import { queueBookingNotifications } from "./notifications";
 import { insertConsent } from "../privacy/consent";
 import { seal, tokenKey, unseal } from "../crypto/seal";
 import { bookingNoteAad, clientNoteAad } from "../privacy/notes";
+import { getKeepVersions, listRevisions, recordRevision, setKeepVersions } from "../privacy/note-history";
 import { pollHolds } from "../polls/holds";
 import { PackageUnavailableError, takeCredits } from "../packages/packages";
 import { attachMembershipCredits, checkMovedMembershipCredit, isMembershipToken, takeMembershipCredits } from "../memberships/memberships";
@@ -630,30 +631,61 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
         [hostId, email, seal(noteKey(), plain, clientNoteAad(hostId, email)), plain]);
       return plain;
     },
-    async saveClientNote(hostId, email, note) {
+    async saveClientNote(hostId, email, note, actorId = hostId) {
       if (!isId(hostId)) throw new NotFoundError("User");
-      if (note.trim() === "") await pool.query("delete from client_notes where host_id = $1 and email = $2", [hostId, email]);
-      else await pool.query(
-        `insert into client_notes (host_id, email, note, note_sealed) values ($1, $2, '', $3)
-         on conflict (host_id, email) do update set note = '', note_sealed = $3, updated_at = now()`, [hostId, email, seal(noteKey(), note, clientNoteAad(hostId, email))]);
+      const aad = clientNoteAad(hostId, email);
+      await tx(async (client) => {
+        const { rows: [cur] } = await client.query("select note, note_sealed from client_notes where host_id = $1 and email = $2 for update", [hostId, email]);
+        const before = !cur ? "" : cur.note_sealed ? unseal<string>(noteKey(), cur.note_sealed as Buffer, aad) : (cur.note as string);
+        const clearing = note.trim() === "";
+        // Nothing changed (or nothing to clear): no write and no history line.
+        if (clearing ? before === "" : note === before) return;
+        if (clearing) await client.query("delete from client_notes where host_id = $1 and email = $2", [hostId, email]);
+        else await client.query(
+          `insert into client_notes (host_id, email, note, note_sealed) values ($1, $2, '', $3)
+           on conflict (host_id, email) do update set note = '', note_sealed = $3, updated_at = now()`, [hostId, email, seal(noteKey(), note, aad)]);
+        await recordRevision(client, noteKey(), { hostId, actorId, subject: { email }, text: clearing ? null : note });
+      });
     },
     async getBookingNote(hostId, bookingId) {
       if (!isId(hostId) || !isId(bookingId)) return "";
       const { rows: [r] } = await pool.query("select note_sealed from booking_notes where booking_id = $1 and host_id = $2", [bookingId, hostId]);
       return r ? unseal<string>(noteKey(), r.note_sealed as Buffer, bookingNoteAad(bookingId)) : "";
     },
-    async saveBookingNote(hostId, bookingId, note) {
+    async listBookingNotes(hostId, bookingIds) {
+      const ids = bookingIds.filter(isId);
+      if (!isId(hostId) || ids.length === 0) return {};
+      const { rows } = await pool.query("select booking_id, note_sealed from booking_notes where host_id = $1 and booking_id = any($2::uuid[])", [hostId, ids]);
+      return Object.fromEntries(rows.map((r) => [r.booking_id as string, unseal<string>(noteKey(), r.note_sealed as Buffer, bookingNoteAad(r.booking_id))]));
+    },
+    async saveBookingNote(hostId, bookingId, note, actorId = hostId) {
       if (!isId(hostId) || !isId(bookingId)) throw new NotFoundError("Booking");
-      if (note.trim() === "") {
-        await pool.query("delete from booking_notes where booking_id = $1 and host_id = $2", [bookingId, hostId]);
-        return;
-      }
-      // Only on the host's own booking: the insert selects it by both ids, so anyone else's booking writes nothing.
-      const { rowCount } = await pool.query(
-        `insert into booking_notes (booking_id, host_id, note_sealed) select id, host_id, $3 from bookings where id = $1 and host_id = $2
-         on conflict (booking_id) do update set note_sealed = excluded.note_sealed, updated_at = now() where booking_notes.host_id = $2`,
-        [bookingId, hostId, seal(noteKey(), note, bookingNoteAad(bookingId))]);
-      if (!rowCount) throw new NotFoundError("Booking");
+      await tx(async (client) => {
+        // Only the host's own booking: anyone else's is NotFound before anything is read or written.
+        const { rows: [own] } = await client.query("select id from bookings where id = $1 and host_id = $2 for update", [bookingId, hostId]);
+        if (!own) throw new NotFoundError("Booking");
+        const { rows: [cur] } = await client.query("select note_sealed from booking_notes where booking_id = $1 and host_id = $2", [bookingId, hostId]);
+        const before = cur ? unseal<string>(noteKey(), cur.note_sealed as Buffer, bookingNoteAad(bookingId)) : "";
+        const clearing = note.trim() === "";
+        if (clearing ? before === "" : note === before) return;
+        if (clearing) await client.query("delete from booking_notes where booking_id = $1 and host_id = $2", [bookingId, hostId]);
+        else await client.query(
+          `insert into booking_notes (booking_id, host_id, note_sealed) values ($1, $2, $3)
+           on conflict (booking_id) do update set note_sealed = excluded.note_sealed, updated_at = now() where booking_notes.host_id = $2`,
+          [bookingId, hostId, seal(noteKey(), note, bookingNoteAad(bookingId))]);
+        await recordRevision(client, noteKey(), { hostId, actorId, subject: { bookingId }, text: clearing ? null : note });
+      });
+    },
+    async listNoteRevisions(hostId, subject) {
+      if (!isId(hostId)) return [];
+      return listRevisions(pool, noteKey(), hostId, "bookingIds" in subject ? { bookingIds: subject.bookingIds.filter(isId) } : subject);
+    },
+    async getKeepNoteVersions(hostId) {
+      return isId(hostId) ? getKeepVersions(pool, hostId) : false;
+    },
+    async setKeepNoteVersions(hostId, on) {
+      if (!isId(hostId)) throw new NotFoundError("User");
+      await tx((client) => setKeepVersions(client, hostId, on));
     },
     async markRunningLate(manageToken, minutes, now) {
       return tx(async (client) => {
