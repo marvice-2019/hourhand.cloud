@@ -432,7 +432,8 @@ export async function processStripeRefunds(deps: StripeDeps, now: Date, limit = 
           { refundApplicationFee: row.application_fee_minor > 0, ref: bookingRef(row.booking_id), ...(whole ? {} : { amountMinor: target - done }) },
           whole ? `hh-refund-${row.id}` : `hh-refund-${row.id}-${target}`);
         refundId = refund.id;
-        total = done + refund.amount;
+        // A full refund (no amount asked) returns everything left on the payment, whatever figure comes back with it.
+        total = whole ? target : done + refund.amount;
       }
       await inTx(pool, async (client) => {
         const delta = await recordRefund(client, row, refundId, total, now);

@@ -1,0 +1,74 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "create_booking",
+    "description": "Books the chosen time. Only after you have read back the caller's name, the service, the date and the time, and the caller clearly said yes. For a paid service this sends a payment link and holds the time for 15 minutes.",
+    "response_timeout_secs": 15,
+    "api_schema": {
+      "url": "https://hourhand.cloud/api/voice/tools/create_booking",
+      "method": "POST",
+      "request_headers": {
+        "Authorization": {
+          "secret_id": "<SECRET_ID: Hourhand tool key for this host>"
+        }
+      },
+      "request_body_schema": {
+        "type": "object",
+        "description": "Arguments for create_booking.",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "dynamic_variable": "system__conversation_id"
+          },
+          "caller_phone": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en",
+              "hi"
+            ],
+            "description": "The language the caller is speaking: en or hi."
+          },
+          "service": {
+            "type": "string",
+            "description": "The service's `service` value from get_services."
+          },
+          "start": {
+            "type": "string",
+            "description": "The slot's `start` value exactly as get_free_slots returned it."
+          },
+          "name": {
+            "type": "string",
+            "description": "The caller's full name, as they confirmed it."
+          },
+          "email": {
+            "type": "string",
+            "description": "The caller's email address, spelled back and confirmed. Empty if they have none."
+          },
+          "phone": {
+            "type": "string",
+            "description": "A different number to reach them on, with country code. Empty to use the number they are calling from."
+          },
+          "whatsapp_ok": {
+            "type": "boolean",
+            "description": "True only if the caller said yes to getting the confirmation on WhatsApp."
+          },
+          "confirmed_with_caller": {
+            "type": "boolean",
+            "description": "True only after the read-back and a clear yes from the caller."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "service",
+          "start",
+          "name",
+          "confirmed_with_caller"
+        ]
+      }
+    }
+  }
+}

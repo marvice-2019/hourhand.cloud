@@ -343,7 +343,8 @@ export async function processRefunds(deps: PaymentCheckDeps & { pool: pg.Pool },
       const refund = await orders.refund(row.provider_payment_id, whole
         ? { receipt: `hh-${row.id}`, notes: { booking_id: row.booking_id } }
         : { amount: target - done, receipt: `r${row.id.replaceAll("-", "")}${target.toString(36)}`, notes: { booking_id: row.booking_id } });
-      await markRefunded(row, refund.id, done + refund.amount);
+      // A full refund (no amount asked) returns everything left on the payment, whatever figure comes back with it.
+      await markRefunded(row, refund.id, whole ? target : done + refund.amount);
     } catch (error) {
       // One host's failing account must not stop the others; the row stays due and is retried later.
       result.errors += 1;

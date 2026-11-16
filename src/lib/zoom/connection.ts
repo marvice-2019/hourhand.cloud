@@ -56,7 +56,8 @@ export async function saveZoomConnection(db: Db, key: Buffer, userId: string, us
   return row.id as string;
 }
 
-export type ZoomStatus = { state: "connected"; email: string } | { state: "disconnected"; email: string; lastError: string | null } | { state: "none" };
+/** A disconnected connection has no email: it is deleted with the rest of the Zoom user's data. */
+export type ZoomStatus = { state: "connected"; email: string } | { state: "disconnected"; email: string | null; lastError: string | null } | { state: "none" };
 
 /** What the dashboard shows. Never the tokens. */
 export async function zoomStatus(db: Db, userId: string): Promise<ZoomStatus> {
@@ -66,12 +67,14 @@ export async function zoomStatus(db: Db, userId: string): Promise<ZoomStatus> {
 }
 
 /**
- * Marks the connection disconnected (tokens wiped: they no longer work and Zoom asks apps to drop the user's data)
- * and queues one email to the host per outage.
+ * Marks the connection disconnected and queues one email to the host per outage. Everything Zoom gave us about the
+ * user goes with it (tokens, Zoom user ID, email, scopes): the grant no longer works, and Zoom asks apps to delete a
+ * user's data when they remove the app. Bookings keep their join links; those belong to the host's own bookings.
  */
 export async function markZoomDisconnected(db: Db, integrationId: string, reason: string, now: Date): Promise<void> {
   const { rows: [c] } = await db.query(
-    `update integrations set status = 'disconnected', credentials_encrypted = ''::bytea, last_error = $2, updated_at = $3
+    `update integrations set status = 'disconnected', credentials_encrypted = ''::bytea, public_id = null, account_email = null, granted_scopes = null,
+       last_error = $2, updated_at = $3
      where id = $1 and provider = 'zoom' returning user_id`, [integrationId, reason.slice(0, 500), now]);
   if (!c) return;
   // One alert per outage, claimed in one statement so a webhook and a failing job together send one email.

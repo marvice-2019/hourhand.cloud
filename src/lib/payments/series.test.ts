@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hostCancelRefundNote, refundPreview, refundTarget, seriesCharge, seriesPaymentNotes } from "./series";
+import { refundPreview, refundTarget, seriesCharge, seriesRefundState } from "./series";
 
 describe("what cancelling refunds", () => {
   it("nothing paid: nothing shown", () => {
@@ -29,30 +29,22 @@ describe("what cancelling refunds", () => {
 });
 
 describe("the host's booking page", () => {
-  const money = (m: number) => `₹${(m / 100).toLocaleString("en-IN")}`;
   const series = { amountMinor: 200_000, sessions: 4, status: "paid", refundedMinor: 0, refundDueMinor: 0 };
 
-  it("a series payment reads as its total, the count and the price each, with nothing about refunds yet", () => {
-    expect(seriesPaymentNotes(series, money)).toEqual({ what: "₹2,000 for 4 weekly sessions (₹500 each)", refunds: null });
+  it("a series with no refunds yet has nothing to report", () => {
+    expect(seriesRefundState(series)).toEqual({ due: 0, refunded: 0 });
   });
 
   it("shows what is being refunded and what already was", () => {
-    expect(seriesPaymentNotes({ ...series, refundDueMinor: 50_000 }, money).refunds).toBe("₹500 being refunded to the guest.");
-    expect(seriesPaymentNotes({ ...series, refundedMinor: 50_000, refundDueMinor: 100_000 }, money).refunds).toBe("₹1,000 being refunded to the guest; ₹500 refunded so far.");
+    expect(seriesRefundState({ ...series, refundDueMinor: 50_000 })).toEqual({ due: 50_000, refunded: 0 });
+    expect(seriesRefundState({ ...series, refundedMinor: 50_000, refundDueMinor: 100_000 })).toEqual({ due: 100_000, refunded: 50_000 });
     // Everything left is due: the rest of the payment, after what went back earlier.
-    expect(seriesPaymentNotes({ ...series, status: "refund_pending", refundedMinor: 50_000 }, money).refunds).toBe("₹1,500 being refunded to the guest; ₹500 refunded so far.");
+    expect(seriesRefundState({ ...series, status: "refund_pending", refundedMinor: 50_000 })).toEqual({ due: 150_000, refunded: 50_000 });
     // Fully refunded: the status already says so.
-    expect(seriesPaymentNotes({ ...series, status: "refunded", refundedMinor: 200_000 }, money).refunds).toBeNull();
+    expect(seriesRefundState({ ...series, status: "refunded", refundedMinor: 200_000 })).toEqual({ due: 0, refunded: 0 });
   });
 
-  it("a booking paid on its own keeps its existing wording", () => {
-    expect(seriesPaymentNotes({ ...series, sessions: 1 }, money)).toEqual({ what: null, refunds: null });
-  });
-
-  it("the cancel form says what the guest gets back, with and without the later weeks", () => {
-    expect(hostCancelRefundNote({ thisOnly: 50_000, withLater: 150_000 }, 2, money)).toBe("The guest gets ₹500 back (₹1,500 if you also cancel the later weeks), refunded from your Razorpay account.");
-    expect(hostCancelRefundNote({ thisOnly: 49_900, withLater: 49_900 }, 0, money)).toBe("The guest gets ₹499 back, refunded from your Razorpay account.");
-    expect(hostCancelRefundNote(null, 0, money)).toBeNull();
-    expect(hostCancelRefundNote({ thisOnly: 0, withLater: 0 }, 1, money)).toBeNull();
+  it("a booking paid on its own keeps its existing status line", () => {
+    expect(seriesRefundState({ ...series, sessions: 1 })).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 /** Re-renders the page every few seconds for a while, so a status that changes on the server (a payment confirming) shows up. */
+// i18n-ignore: the English fallback labels on the next line; dashboard and guest pages pass their own.
 export function AutoRefresh({ everyMs = 4000, forMs = 180_000, labels = { waiting: "This page updates by itself.", stopped: "Still waiting? Refresh this page in a minute." } }: { everyMs?: number; forMs?: number; labels?: { waiting: string; stopped: string } }) {
   const router = useRouter();
   const [stopped, setStopped] = useState(false);

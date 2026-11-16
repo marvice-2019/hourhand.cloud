@@ -1,0 +1,28 @@
+// Host dashboard words: earnings, Tamil. Draft: needs native-speaker review (see docs/i18n-host.md).
+import type { earnings as en } from "../en/earnings";
+export const earnings: Record<keyof typeof en, string> = {
+  "earnings.title": "வருமானம்",
+  "earnings.monthNav": "மாதம்",
+  "earnings.demo": "வருமானத்துக்கு பேமெண்ட் தேவை, அது இந்த டெமோ நகலில் இல்லை.",
+  "earnings.net": "நிகரமாகக் கிடைத்தது",
+  "earnings.netHint": "புக்கிங்குகள் + பேக்கேஜ்கள் + வைத்துக்கொண்ட டெபாசிட்டுகள் − ரீஃபண்டுகள்",
+  "earnings.bookings": "புக்கிங்குகள்",
+  "earnings.packages": "பேக்கேஜ்கள்",
+  "earnings.refunds": "ரீஃபண்டுகள்",
+  "earnings.depositsKept": "வைத்துக்கொண்ட டெபாசிட்டுகள்",
+  "earnings.depositsKeptHint": "வராதவர்களிடமிருந்து",
+  "earnings.gst": "இதில் GST",
+  "earnings.gstHint": "உங்கள் இன்வாய்ஸ்களிலிருந்து; அரசுக்குச் செலுத்த வேண்டியது",
+  "earnings.feeNote": "Razorpay-ன் வழக்கமான 2% + GST கணக்கில் அவர்களின் கட்டணம் சுமார் {fee}; சரியான தொகை உங்கள் செட்டில்மென்ட் அறிக்கையில் இருக்கும்.",
+  "earnings.depositsHeld": "அந்த செஷன்கள் முடியும் வரை {amount} டெபாசிட் நிறுத்தி வைக்கப்பட்டுள்ளது.",
+  "earnings.sessions": "செஷன்கள்",
+  "earnings.held": "நடந்தவை",
+  "earnings.upcoming": "வரவிருப்பவை",
+  "earnings.noShows": "வரவில்லை",
+  "earnings.cancelledByGuests": "விருந்தினர்கள் கேன்சல் செய்தவை",
+  "earnings.cancelledByYou": "நீங்கள் கேன்சல் செய்தவை",
+  "earnings.byEventType": "நிகழ்வு வகை வாரியாக",
+  "earnings.eventType": "நிகழ்வு வகை",
+  "earnings.download": "{month}-ஐ CSV ஆக டவுன்லோட் செய்",
+  "earnings.stripeNote": "தொகைகள் {currency} இல், Stripe கட்டணத்திற்கு முன்; சரியான பேஅவுட்கள் உங்கள் Stripe Dashboard இல் உள்ளன.",
+};

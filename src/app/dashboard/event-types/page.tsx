@@ -4,26 +4,29 @@ import { CopyLinkButton } from "@/components/CopyLinkButton";
 import { buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { focusRing } from "@/components/ui/focus";
-import { formatAmount } from "@/lib/money";
 import { lengthsLabel, priceRange } from "@/lib/durations";
 import { store, type LocationKind } from "@/lib/data";
 import { getHostContext, requireHost } from "@/lib/auth/session";
+import type { HostKey } from "@/lib/i18n/host";
+import { getHostI18n } from "@/lib/i18n/host/server";
 
-const locationLabel: Record<LocationKind, string> = {
-  google_meet: "Google Meet",
-  zoom: "Zoom",
-  teams: "Microsoft Teams",
-  phone_host_calls: "Phone call (you call them)",
-  phone_guest_calls: "Phone call (they call you)",
-  in_person: "In person",
-  custom: "Custom location",
-  ask_guest: "Guest picks the place",
+const locationLabel: Record<LocationKind, HostKey> = {
+  google_meet: "eventTypes.locGoogleMeet",
+  zoom: "eventTypes.locZoom",
+  teams: "eventTypes.locTeams",
+  phone_host_calls: "eventTypes.locPhoneHostCalls",
+  phone_guest_calls: "eventTypes.locPhoneGuestCalls",
+  in_person: "eventTypes.locInPerson",
+  custom: "eventTypes.locCustomShort",
+  ask_guest: "eventTypes.locAskGuest",
+  hourhand_video: "eventTypes.locHourhandVideoShort",
 };
 
 export const dynamic = "force-dynamic";
 
 export default async function EventTypesPage() {
   const user = await requireHost();
+  const { t, money } = await getHostI18n();
   // Importing uses the owner's own Calendly or Cal.com token, so a Duo second person doesn't get the link.
   const acting = (await getHostContext())?.acting === true;
   const eventTypes = [...(await store.listEventTypes(user.id))].sort((a, b) => a.position - b.position);
@@ -33,20 +36,20 @@ export default async function EventTypesPage() {
     <div>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-xl text-text">Event types</h1>
-          <p className="mt-2 text-text-muted">Each event type is a booking link people use to pick a time with you.</p>
+          <h1 className="font-display text-xl text-text">{t("eventTypes.title")}</h1>
+          <p className="mt-2 text-text-muted">{t("eventTypes.intro")}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {!acting && <Link href="/dashboard/event-types/import" className={buttonClasses({ variant: "secondary" })}>Import from Calendly / Cal.com</Link>}
-          <Link href="/dashboard/event-types/new" className={buttonClasses()}>New event type</Link>
+          {!acting && <Link href="/dashboard/event-types/import" className={buttonClasses({ variant: "secondary" })}>{t("eventTypes.importLink")}</Link>}
+          <Link href="/dashboard/event-types/new" className={buttonClasses()}>{t("eventTypes.new")}</Link>
         </div>
       </div>
 
       {eventTypes.length === 0 ? (
         <Card className="mt-6">
-          <h2 className="font-display text-lg text-text">Create your first booking link</h2>
-          <p className="mt-2 text-text-muted">Pick a length and where you meet. Then share the link and people book themselves in.</p>
-          <Link href="/dashboard/event-types/new" className={`mt-4 ${buttonClasses()}`}>Create a booking link</Link>
+          <h2 className="font-display text-lg text-text">{t("eventTypes.emptyTitle")}</h2>
+          <p className="mt-2 text-text-muted">{t("eventTypes.emptyBody")}</p>
+          <Link href="/dashboard/event-types/new" className={`mt-4 ${buttonClasses()}`}>{t("eventTypes.emptyCta")}</Link>
         </Card>
       ) : (
         <ul className="mt-6 grid gap-4 md:grid-cols-2">
@@ -62,7 +65,7 @@ export default async function EventTypesPage() {
                     </h2>
                     <ActiveSwitch id={et.id} name={et.name} active={et.active} />
                   </div>
-                  <p className="text-sm text-text-muted">{lengthsLabel(et)} min{et.priceMinor !== null && ` · ${priceRange(et, (m) => formatAmount(m, et.currency))}`} · {first ? locationLabel[first.kind] : "No location set"}</p>
+                  <p className="text-sm text-text-muted">{t("common.minutes", { n: lengthsLabel(et) })}{et.priceMinor !== null && ` · ${priceRange(et, (m) => money(m, et.currency))}`} · {first ? t(locationLabel[first.kind]) : t("eventTypes.noLocation")}</p>
                   <div className="mt-auto flex items-center justify-between gap-3">
                     <span className="truncate font-mono text-xs text-text-muted">{path}</span>
                     <CopyLinkButton path={path} />

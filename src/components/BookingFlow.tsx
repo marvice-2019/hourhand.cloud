@@ -8,12 +8,18 @@ import { focusRing } from "@/components/ui/focus";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
 import { formatAmount } from "@/lib/money";
 import { t, tNodes, type GuestKey, type Locale } from "@/lib/i18n/guest";
+import { offerLabel } from "@/lib/offers/labels";
+import type { AppliedOffer } from "@/lib/offers/offers";
 import { zoneCheck } from "@/lib/tz-confirm";
 import { LocalTime } from "./LocalTime";
 import { payWithRazorpay, type CheckoutPayment } from "./razorpay-checkout";
 import { SlotPicker, useDeviceZone } from "./SlotPicker";
 import { useTimeFormat } from "./useTimeFormat";
 import { WaitlistForm } from "./WaitlistForm";
+import { sendSlotClick } from "./analytics-beacon";
+import type { SourceInput } from "@/lib/analytics/source";
+
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export interface FlowQuestion { id: string; label: string; kind: string; required: boolean }
 
@@ -45,18 +51,41 @@ interface Props {
   whatsapp?: boolean;
   /** Offer booking texts (SMS) to an Indian mobile the guest gives. */
   sms?: boolean;
-  /** Lengths to pick from (2 or more), shortest first, each with its price as shown (null = free). Left out = one length. */
-  durations?: { minutes: number; price: string | null; priceMinor?: number | null }[];
+  /** Offers on a priced event: the price after today's campaign, a sliding scale, whether a code box is shown, the first-session line. */
+  offers?: FlowOffers | null;
+  /** Where this visit came from (public booking pages only): sent with the slot beacon and the booking for the host's analytics. */
+  source?: SourceInput;
+  /**
+   * Lengths to pick from (2 or more), shortest first: each with its price as shown (null = free), in minor units, and the
+   * price after today's campaign for that length. Left out = one length.
+   */
+  durations?: { minutes: number; price: string | null; priceMinor?: number | null; campaignMinor?: number | null }[];
+}
+
+export interface FlowOffers {
+  listMinor: number;
+  /** The price's ISO currency; amounts are shown in it. */
+  currency: string;
+  /** The price after today's best campaign, and its name. */
+  campaign: { name: string; chargeMinor: number } | null;
+  sliding: { minMinor: number; suggestedMinor: number; maxMinor: number; note: string | null } | null;
+  coupons: boolean;
+  /** "20%" or "₹200" when the host gives new clients a first-session discount. */
+  firstSession: string | null;
 }
 
 /** Public booking: pick a time, then fill in details. The picker stays mounted so "Pick another time" keeps the month and day. */
-export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = null, linkToken, initialAt, host, maxWeeks = 1, packageToken, waitlist = false, locale = "en", langQuery = "", prefill, whatsapp = false, sms = false, durations }: Props) {
+export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = null, linkToken, initialAt, host, maxWeeks = 1, packageToken, waitlist = false, locale = "en", langQuery = "", prefill, whatsapp = false, sms = false, source, offers = null, durations }: Props) {
   const [picked, setPicked] = useState<{ slot: string; tz: string } | null>(null);
   // Several lengths: the guest picks one first; times, the price and the booking all follow it.
   const choosing = durations !== undefined && durations.length > 1;
   const [duration, setDuration] = useState<number | null>(null);
   const chosen = choosing ? durations.find((d) => d.minutes === duration) ?? null : null;
   const shownPaid = paid && chosen?.price ? { ...paid, price: chosen.price, priceMinor: chosen.priceMinor ?? paid.priceMinor } : paid;
+  // Offers follow the chosen length: its list price, and today's campaign price for it (worked out on the server).
+  const shownOffers = offers && chosen && chosen.priceMinor != null
+    ? { ...offers, listMinor: chosen.priceMinor, campaign: offers.campaign && chosen.campaignMinor != null ? { ...offers.campaign, chargeMinor: chosen.campaignMinor } : offers.campaign }
+    : offers;
   return (
     <>
       <div hidden={picked !== null}>
@@ -74,13 +103,14 @@ export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = 
           </fieldset>
         )}
         {(!choosing || duration !== null) && (
-          <SlotPicker slug={slug} event={event} linkToken={linkToken} initialAt={initialAt} bookingWindowDays={bookingWindowDays} duration={choosing ? duration ?? undefined : undefined} locale={locale} onPick={(slot, tz) => setPicked({ slot, tz })} />
+          <SlotPicker slug={slug} event={event} linkToken={linkToken} initialAt={initialAt} bookingWindowDays={bookingWindowDays} duration={choosing ? duration ?? undefined : undefined} locale={locale} onPick={(slot, tz) => { if (source) sendSlotClick(slug, event, source); setPicked({ slot, tz }); }} />
         )}
         {waitlist && <WaitlistForm slug={slug} event={event} hostName={host.name} locale={locale} />}
       </div>
       {picked && (
         <DetailsForm
-          slug={slug} event={event} linkToken={linkToken} tz={picked.tz} slot={picked.slot} questions={questions} paid={packageToken ? null : shownPaid} duration={choosing ? duration ?? undefined : undefined} host={host} maxWeeks={maxWeeks} packageToken={packageToken} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={whatsapp} sms={sms}
+          slug={slug} event={event} linkToken={linkToken} tz={picked.tz} slot={picked.slot} questions={questions} paid={packageToken ? null : shownPaid} duration={choosing ? duration ?? undefined : undefined} host={host} maxWeeks={maxWeeks} packageToken={packageToken} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={whatsapp} sms={sms} source={source}
+          offers={packageToken || paid?.deposit ? null : shownOffers}
           onPick={(slot) => setPicked({ slot, tz: picked.tz })} onBack={() => setPicked(null)}
         />
       )}
@@ -90,11 +120,41 @@ export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = 
 
 interface FormProps {
   slug: string; event: string; linkToken?: string; tz: string; slot: string; questions: FlowQuestion[]; paid: Props["paid"]; host: Props["host"]; maxWeeks: number; packageToken?: string; locale: Locale; langQuery: string; prefill?: { name: string; email: string }; whatsapp: boolean; sms: boolean; duration?: number;
+  offers: FlowOffers | null;
+  source?: SourceInput;
   onPick: (slot: string) => void; onBack: () => void;
 }
 
-function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, maxWeeks, packageToken, locale, langQuery, prefill, whatsapp, sms, duration, onPick, onBack }: FormProps) {
+function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, maxWeeks, packageToken, locale, langQuery, prefill, whatsapp, sms, offers, source, duration, onPick, onBack }: FormProps) {
   const router = useRouter();
+  // Offers: the code the guest applied and what the server quoted for it, and a sliding-scale amount in rupees.
+  const [code, setCode] = useState("");
+  const [quote, setQuote] = useState<{ code: string; offer: AppliedOffer | null; chargeMinor: number; couponNotUsed: boolean } | null>(null);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [payRupees, setPayRupees] = useState(() => (offers?.sliding ? String(offers.sliding.suggestedMinor / 100) : ""));
+  const payMinor = offers?.sliding ? Math.round(Number(payRupees) * 100) : null;
+  const money = (m: number) => formatAmount(m, offers?.currency ?? "INR");
+  /** The price the button shows; the server works out the real one when the order is made. */
+  const unitMinor = paid && offers
+    ? (offers.sliding ? (Number.isFinite(payMinor) && payMinor! > 0 ? payMinor! : offers.sliding.suggestedMinor) : quote?.chargeMinor ?? offers.campaign?.chargeMinor ?? offers.listMinor)
+    : paid?.priceMinor ?? null;
+  const shownPrice = paid && offers && unitMinor !== null ? money(unitMinor) : paid?.price ?? "";
+
+  async function applyCode() {
+    const c = code.trim();
+    if (!c) return;
+    setApplying(true); setCodeError(null);
+    try {
+      const res = await fetch("/api/offers/quote", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slug, event, couponCode: c, ...(duration ? { duration } : {}) }) });
+      const body = await res.json();
+      if (res.ok) setQuote({ code: c, offer: body.offer ?? null, chargeMinor: body.chargeMinor, couponNotUsed: body.couponNotUsed === true });
+      else { setQuote(null); setCodeError(t(locale, res.status === 429 ? "rateLimited" : "offerCodeInvalid")); }
+    } catch {
+      setCodeError(t(locale, "offline"));
+    }
+    setApplying(false);
+  }
   // A new key starts a fresh attempt; it changes only after an attempt is over (payment couldn't start, or the hold ran out).
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const freshAttempt = () => setIdempotencyKey(crypto.randomUUID());
@@ -156,8 +216,8 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
   const [weeks, setWeeks] = useState(1);
   const [weeksTaken, setWeeksTaken] = useState<string[] | null>(null);
   const [packageRefused, setPackageRefused] = useState<string | null>(null);
-  // A priced weekly series is paid in one go: the button shows the total for every week.
-  const seriesPrice = paid && !paid.deposit && weeks > 1 && paid.priceMinor ? formatAmount(paid.priceMinor * weeks, paid.currency) : paid?.price ?? "";
+  // A priced weekly series is paid in one go: the button shows the per-session price (after any offer) for every week.
+  const seriesPrice = paid && !paid.deposit && weeks > 1 && unitMinor ? formatAmount(unitMinor * weeks, offers?.currency ?? paid.currency) : shownPrice;
   const [showGuests, setShowGuests] = useState(false);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -170,7 +230,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
     try {
       const res = await fetch("/api/bookings", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(duration ? { duration } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), ...(data.get("smsOptIn") ? { smsOptIn: true } : {}), locale }),
+        body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(duration ? { duration } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), ...(data.get("smsOptIn") ? { smsOptIn: true } : {}), ...(source ? { src: source } : {}), locale, ...(offers && code.trim() ? { couponCode: code.trim() } : {}), ...(offers?.sliding && payMinor ? { payMinor } : {}) }),
       });
       const body = await res.json();
       if ((res.status === 201 || res.status === 200) && body.payment?.provider === "stripe" && typeof body.payment.url === "string") {
@@ -200,9 +260,11 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
       else if (res.status === 409) { setTaken(body.nextSlots ?? []); setErrors({}); }
       else if (res.status === 400) {
         // Server messages are English; show ours for the fields it names.
-        const own: Record<string, GuestKey> = { name: "errName", email: "errEmail", phone: "errPhone", smsOptIn: "errSmsPhone", timezone: "errTimezone", guests: "errGuests" };
+        const own: Record<string, GuestKey> = { name: "errName", email: "errEmail", phone: "errPhone", smsOptIn: "errSmsPhone", timezone: "errTimezone", guests: "errGuests", couponCode: "offerCodeInvalid" };
         const fields = (body.fields ?? {}) as Record<string, string>;
-        setErrors(Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, own[k] ? t(locale, own[k]) : k.startsWith("answers.") ? t(locale, "errAnswer") : v])));
+        const range = offers?.sliding ? { min: money(offers.sliding.minMinor), max: money(offers.sliding.maxMinor) } : { min: "", max: "" };
+        setErrors(Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, k === "payMinor" ? t(locale, "errPay", range) : own[k] ? t(locale, own[k]) : k.startsWith("answers.") ? t(locale, "errAnswer") : v])));
+        if (fields.couponCode) { setQuote(null); setCodeError(t(locale, "offerCodeInvalid")); }
       }
       else if (res.status === 429) setLimited(true);
       else setFailed(true);
@@ -317,6 +379,40 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
           </div>
         );
       })}
+      {paid && offers?.sliding && (
+        <div>
+          <Label htmlFor="payMinor">{t(locale, "slidingLabel", { min: money(offers.sliding.minMinor), max: money(offers.sliding.maxMinor) })}</Label>
+          {offers.sliding.note && <p id="pay-note" className="mt-1 whitespace-pre-line text-sm text-text-muted">{offers.sliding.note}</p>}
+          <Input
+            id="payMinor" name="payMinor" inputMode="decimal" value={payRupees} onChange={(e) => setPayRupees(e.target.value)} error={errors.payMinor}
+            aria-describedby={offers.sliding.note ? "pay-note" : undefined} className="max-w-40"
+          />
+          <p className="mt-1 text-sm text-text-muted">{t(locale, "slidingSuggested", { price: money(offers.sliding.suggestedMinor) })}</p>
+        </div>
+      )}
+      {paid && offers && !offers.sliding && offers.firstSession && <p className="text-sm text-text-muted">{t(locale, "offerFirstSession", { amount: offers.firstSession })}</p>}
+      {paid && offers && !offers.sliding && offers.coupons && (
+        <div>
+          <Label htmlFor="couponCode">{t(locale, "offerCodeLabel")}</Label>
+          <div className="mt-1 flex gap-2">
+            <Input
+              id="couponCode" name="couponCode" autoComplete="off" autoCapitalize="characters" maxLength={32} value={code}
+              onChange={(e) => { setCode(e.target.value); setCodeError(null); if (quote && e.target.value.trim() !== quote.code) setQuote(null); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void applyCode(); } }}
+              aria-invalid={codeError ? true : undefined} aria-describedby={codeError ? "couponCode-error" : undefined} className="mt-0"
+            />
+            <Button type="button" variant="secondary" loading={applying} onClick={() => void applyCode()}>{t(locale, "offerApply")}</Button>
+          </div>
+          {codeError && <p id="couponCode-error" className="mt-1 text-sm text-danger">{codeError}</p>}
+          {quote?.offer && (
+            <p className="mt-1 text-sm text-success" role="status">
+              {quote.couponNotUsed
+                ? t(locale, "offerBetter", { label: offerLabel(locale, quote.offer), price: money(quote.chargeMinor) })
+                : capitalise(t(locale, "offerApplied", { label: offerLabel(locale, quote.offer), amount: money(quote.offer.discountMinor), price: money(quote.chargeMinor) }))}
+            </p>
+          )}
+        </div>
+      )}
       {linkGone && (
         <p className="text-danger" role="alert">
           {t(locale, linkGone === "link_used" ? "linkUsed" : "linkGone")}
@@ -337,7 +433,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
             {t(locale, checkoutFailed ? "checkoutFailed" : notPaid ? "notPaid" : "notPaidYet")}{" "}
             {tNodes(locale, "heldUntil", { time: <LocalTime date={held.payment.holdExpiresAt} tz={tz} locale={locale} /> })}
           </p>
-          <Button type="button" loading={busy} onClick={() => { const h = held; setHeld(null); void pay(h); }}>{t(locale, "pay", { price: formatAmount(held.payment.amount, held.payment.currency) })}</Button>
+          <Button type="button" loading={busy} onClick={() => { const h = held; setHeld(null); void pay(h); }}>{t(locale, "pay", { price: offers ? money(held.payment.amount) : paid?.price ?? "" })}</Button>
         </div>
       ) : (
         <Button type="submit" loading={busy}>{busy ? t(locale, "booking") : paid ? t(locale, paid.deposit ? "continuePayDeposit" : "continuePay", { price: seriesPrice }) : packageToken ? (weeks > 1 ? t(locale, "bookSessions", { n: weeks }) : t(locale, "bookWithPackage")) : t(locale, "bookThisTime")}</Button>
