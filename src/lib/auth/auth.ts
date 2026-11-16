@@ -9,7 +9,10 @@ import { rateLimiter, SIGN_IN_LIMITS, trustedProxies } from "@/lib/rate-limit";
 
 export { trustedProxies };
 import { deliverMagicLink } from "./outbox";
-import { isCanonicalPhone, isPhonePlaceholderEmail, otpSmsConfig, phoneEmail, sendOtpSms } from "./phone";
+import {
+  isCanonicalPhone, isPhonePlaceholderEmail, OTP_CHANNEL_HEADER, otpChannels, otpSmsConfig, phoneEmail, pickOtpChannel, sendOtpSms,
+  sendOtpWhatsApp, whatsappOtpConfig,
+} from "./phone";
 import { uniqueSlug } from "./slug";
 
 /** Sign-in needs the database. In HOURHAND_DATA=memory (the default for local work) there is no auth instance. */
@@ -26,9 +29,9 @@ export function microsoftEnabled(): boolean {
   return Boolean(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET);
 }
 
-/** Phone sign-in appears once MSG91 and its OTP template are set up (see lib/auth/phone.ts). */
+/** Phone sign-in appears once WhatsApp or SMS codes are set up (see lib/auth/phone.ts). */
 export function phoneEnabled(): boolean {
-  return otpSmsConfig() !== null;
+  return otpChannels().length > 0;
 }
 
 /**
@@ -186,7 +189,7 @@ function createAuth() {
           await deliverMagicLink(email, url);
         },
       }),
-      ...(otpSmsConfig() ? [phoneNumber({
+      ...(otpChannels().length > 0 ? [phoneNumber({
         otpLength: 6,
         expiresIn: 5 * 60,
         allowedAttempts: 3, // per code; with three codes per number per 10 minutes, at most 9 guesses at a 6-digit code
@@ -194,14 +197,17 @@ function createAuth() {
         phoneNumberValidator: (phone) => isCanonicalPhone(phone),
         signUpOnVerification: { getTempEmail: phoneEmail, getTempName: () => "" },
         schema: { user: { fields: { phoneNumber: "phone_number", phoneNumberVerified: "phone_number_verified" } } },
-        sendOTP: async ({ phoneNumber: phone, code }) => {
+        sendOTP: async ({ phoneNumber: phone, code }, ctx) => {
           // Both the sign-in page and direct calls to /api/auth reach here, so the per-number limit lives here. Each text costs money.
           if (!rateLimiter.take(`phone:${phone}`, SIGN_IN_LIMITS.perPhone)) {
             throw new APIError("TOO_MANY_REQUESTS", { message: "Too many sign-in codes for this number" });
           }
-          const cfg = otpSmsConfig();
-          if (!cfg) throw new APIError("NOT_IMPLEMENTED", { message: "Phone sign-in is not set up" });
-          await sendOtpSms(cfg, phone, code);
+          const requested = (ctx?.headers as Headers | undefined)?.get?.(OTP_CHANNEL_HEADER);
+          const channel = pickOtpChannel(requested, otpChannels());
+          const wa = whatsappOtpConfig(), sms = otpSmsConfig();
+          if (channel === "whatsapp" && wa) return void (await sendOtpWhatsApp(wa, phone, code));
+          if (channel === "sms" && sms) return void (await sendOtpSms(sms, phone, code));
+          throw new APIError("NOT_IMPLEMENTED", { message: "Phone sign-in is not set up" });
         },
       })] : []),
       nextCookies(), // must stay last

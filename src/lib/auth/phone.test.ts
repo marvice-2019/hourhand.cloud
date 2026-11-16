@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { refusePlaceholderAddresses, MailError } from "../mail/mailer";
 import { slugSource } from "./auth";
-import { formatPhone, isCanonicalPhone, isPhonePlaceholderEmail, normalizePhone, otpSmsConfig, phoneEmail, sendOtpSms } from "./phone";
+import {
+  formatPhone, isCanonicalPhone, isPhonePlaceholderEmail, normalizePhone, otpChannels, otpSmsConfig, phoneEmail, pickOtpChannel, sendOtpSms,
+  sendOtpWhatsApp, whatsappOtpConfig,
+} from "./phone";
 import { baseSlug } from "./slug";
 
 describe("phone numbers", () => {
@@ -80,5 +83,56 @@ describe("sign-in codes by SMS", () => {
   it("fails loudly when MSG91 refuses", async () => {
     const fetchFn = vi.fn(async () => Response.json({ type: "error", message: "bad" }, { status: 400 }));
     await expect(sendOtpSms(otpSmsConfig(env)!, "+919876543210", "123456", fetchFn as unknown as typeof fetch)).rejects.toMatchObject({ retryable: false });
+  });
+});
+
+describe("sign-in codes on WhatsApp", () => {
+  const wa = { WHATSAPP_PHONE_NUMBER_ID: "pnid", WHATSAPP_ACCESS_TOKEN: "tok", WHATSAPP_APP_SECRET: "as", WHATSAPP_VERIFY_TOKEN: "vt", NODE_ENV: "production" };
+  const sms = { SMS_PROVIDER: "msg91", MSG91_AUTH_KEY: "key", MSG91_TEMPLATE_OTP: "otp-template" };
+
+  it("is off unless WhatsApp is set up and the Authentication template is named", () => {
+    expect(whatsappOtpConfig(wa)).toBeNull();
+    expect(whatsappOtpConfig({ WHATSAPP_OTP_TEMPLATE: "hh_sign_in_code" })).toBeNull();
+    expect(whatsappOtpConfig({ ...wa, WHATSAPP_OTP_TEMPLATE: "hh_sign_in_code" })).toMatchObject({ template: "hh_sign_in_code", language: "en" });
+    expect(whatsappOtpConfig({ ...wa, WHATSAPP_OTP_TEMPLATE: "t", WHATSAPP_OTP_TEMPLATE_LANG: "en_US" })?.language).toBe("en_US");
+  });
+
+  it("offers WhatsApp first, then SMS, and only what is set up", () => {
+    expect(otpChannels({})).toEqual([]);
+    expect(otpChannels(sms)).toEqual(["sms"]);
+    expect(otpChannels({ ...wa, WHATSAPP_OTP_TEMPLATE: "t" })).toEqual(["whatsapp"]);
+    expect(otpChannels({ ...wa, ...sms, WHATSAPP_OTP_TEMPLATE: "t" })).toEqual(["whatsapp", "sms"]);
+  });
+
+  it("sends on the channel asked for when it is set up, otherwise the default", () => {
+    expect(pickOtpChannel("sms", ["whatsapp", "sms"])).toBe("sms");
+    expect(pickOtpChannel(null, ["whatsapp", "sms"])).toBe("whatsapp");
+    expect(pickOtpChannel("whatsapp", ["sms"])).toBe("sms");
+    expect(pickOtpChannel("carrier-pigeon", ["whatsapp"])).toBe("whatsapp");
+    expect(pickOtpChannel("sms", [])).toBeNull();
+  });
+
+  it("puts the code in the body and in the copy-code button, as Meta requires", async () => {
+    const fetchFn = vi.fn(async () => Response.json({ messages: [{ id: "wamid.1" }] }));
+    const cfg = whatsappOtpConfig({ ...wa, WHATSAPP_OTP_TEMPLATE: "hh_sign_in_code" })!;
+    await expect(sendOtpWhatsApp(cfg, "+919876543210", "123456", fetchFn as unknown as typeof fetch)).resolves.toEqual({ id: "wamid.1" });
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://graph.facebook.com/v23.0/pnid/messages");
+    expect(JSON.parse(init.body as string)).toEqual({
+      messaging_product: "whatsapp", recipient_type: "individual", to: "919876543210", type: "template",
+      template: {
+        name: "hh_sign_in_code", language: { code: "en" },
+        components: [
+          { type: "body", parameters: [{ type: "text", text: "123456" }] },
+          { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: "123456" }] },
+        ],
+      },
+    });
+  });
+
+  it("fails loudly when Meta refuses", async () => {
+    const fetchFn = vi.fn(async () => Response.json({ error: { code: 132001 } }, { status: 400 }));
+    const cfg = whatsappOtpConfig({ ...wa, WHATSAPP_OTP_TEMPLATE: "missing" })!;
+    await expect(sendOtpWhatsApp(cfg, "+919876543210", "123456", fetchFn as unknown as typeof fetch)).rejects.toMatchObject({ retryable: false, code: 132001 });
   });
 });

@@ -5,6 +5,7 @@ import { SignInForm } from "@/components/SignInForm";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { authEnabled, googleEnabled, microsoftEnabled, phoneEnabled } from "@/lib/auth/auth";
+import { otpChannels } from "@/lib/auth/phone";
 import { getSignedInUser } from "@/lib/auth/session";
 import { signInWithGoogle, signInWithMicrosoft } from "./actions";
 
@@ -56,7 +57,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
         )}
         {authEnabled() && phoneEnabled() && (
           <div className="mt-4 border-t border-border pt-4">
-            <PhoneSignInForm />
+            <PhoneSignInForm channels={otpChannels()} />
           </div>
         )}
       </Card>
