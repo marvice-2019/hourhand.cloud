@@ -20,6 +20,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
   type LinkRow = { id: string; userId: string; eventTypeId: string; tokenHash: string; label: string | null; expiresAt: Date | null; revokedAt: Date | null; createdAt: Date };
   const links: LinkRow[] = []; // newest last
   const linkOfBooking = new Map<string, string>(); // booking id -> booking link id (bookings.booking_link_id)
+  const bookingNotes = new Map<string, string>(); // booking id -> the host's session note (booking_notes)
   const clientNotes = new Map<string, string>(); // "<host id>:<lowercased email>" -> the host's note (client_notes)
   const oneOffTimes = new Map<string, Date[]>(); // one_off event type id -> offered start times, earliest first
 
@@ -272,6 +273,14 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       const key = `${hostId}:${email.toLowerCase()}`;
       if (note.trim() === "") clientNotes.delete(key);
       else clientNotes.set(key, note);
+    },
+    async getBookingNote(hostId, bookingId) {
+      return db.bookings.some((b) => b.id === bookingId && b.hostId === hostId) ? bookingNotes.get(bookingId) ?? "" : "";
+    },
+    async saveBookingNote(hostId, bookingId, note) {
+      if (!db.bookings.some((b) => b.id === bookingId && b.hostId === hostId)) throw new NotFoundError("Booking");
+      if (note.trim() === "") bookingNotes.delete(bookingId);
+      else bookingNotes.set(bookingId, note);
     },
     async markRunningLate(manageToken, minutes, now) {
       const booking = db.bookings.find((b) => b.invitee.manageToken === manageToken && b.status === "confirmed");

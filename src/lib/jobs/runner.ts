@@ -18,6 +18,7 @@ import { smsConfig } from "../sms/config";
 import type { Resolver } from "../domains/dns";
 import { recheckDomains } from "../domains/recheck";
 import type { TraefikSetup } from "../domains/traefik";
+import type { ZoomDeps } from "../zoom/connection";
 
 // The job loop: every few seconds (or at once when kicked) it syncs due calendars (Google, Microsoft), settles pending booking payments, then runs due queue rows
 // (email and calendar writes); once an hour it queues plan renewal reminders and purges closed accounts. All of it is safe on several servers at once.
@@ -26,7 +27,7 @@ const HOUR = 3_600_000;
 
 export interface JobRunner { tick(): Promise<void>; stop(): void }
 
-export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: string; calendar?: CalendarDeps | null; payments?: PaymentCheckDeps | null; stripe?: StripeDeps | null; domains?: { resolver: Resolver; traefik: TraefikSetup } | null; intervalMs?: number }): JobRunner {
+export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: string; calendar?: CalendarDeps | null; zoom?: ZoomDeps | null; payments?: PaymentCheckDeps | null; stripe?: StripeDeps | null; domains?: { resolver: Resolver; traefik: TraefikSetup } | null; intervalMs?: number }): JobRunner {
   let busy = false;
   let lastDomains = 0;
   let again = false;
@@ -81,7 +82,7 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
         if (prepClient) await prepareDueBriefs(opts.pool, prepClient, new Date()).catch((error) => console.error("[jobs] session prep failed", error));
         // A full batch means more may be due: keep going until a batch comes back short.
         for (;;) {
-          const r = await processDueNotifications(opts.pool, opts.mailer, { baseUrl: opts.baseUrl, calendar: opts.calendar, whatsapp: whatsappConfig(), sms: smsConfig() });
+          const r = await processDueNotifications(opts.pool, opts.mailer, { baseUrl: opts.baseUrl, calendar: opts.calendar, zoom: opts.zoom, whatsapp: whatsappConfig(), sms: smsConfig() });
           if (r.claimed < BATCH_SIZE && r.released === 0) break;
         }
         // Custom domains: DNS re-checks and the Traefik files, every 5 minutes, after the emails so slow DNS can't delay them. A failure here stops nothing else.
