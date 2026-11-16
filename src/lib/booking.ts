@@ -1,5 +1,6 @@
 import type pg from "pg";
 import type { PackageUnavailableError } from "./packages/packages";
+import { bookedMinutes, hasDurationChoice, priceFor, resolveDuration, withDuration } from "./durations";
 import { computeOneOffSlots, computeSlotSeats, isSyncStale } from "./slots";
 import { isNamedError, type Booking, type DataStore, type EventType, type LinkUnavailableError, type User } from "./data/types";
 import { isLocale, t } from "./i18n/guest";
@@ -133,6 +134,9 @@ export async function handleGetSlots(store: DataStore, params: URLSearchParams, 
     errors.to = `Must be after from, at most ${MAX_RANGE_DAYS} days later.`;
   }
   if (tz !== null && !isIanaTimeZone(tz)) errors.tz = "Must be an IANA time zone.";
+  const durationParam = params.get("duration");
+  const duration = durationParam ? (/^\d{1,3}$/.test(durationParam) ? Number(durationParam) : NaN) : null;
+  if (Number.isNaN(duration)) errors.duration = "Must be a length in minutes.";
   if (Object.keys(errors).length > 0 || !from || !to) return { status: 400, body: { error: "invalid_request", fields: errors } };
 
   const token = params.get("token");
@@ -143,7 +147,10 @@ export async function handleGetSlots(store: DataStore, params: URLSearchParams, 
   const found = own ?? await resolveTarget(store, slug, event, link, now);
   if (isResult(found)) return found;
   const movingId = moving && moving.status === "confirmed" && moving.hostId === found.host.id && moving.eventTypeId === found.eventType.id ? moving.id : null;
-  const slots = await freeSlotSeats(store, found.host, found.eventType, from, to, now, movingId);
+  // Times for the length asked for: a booking being moved keeps its own, otherwise the guest's pick (or the default).
+  const minutes = movingId && moving ? bookedMinutes(moving) : resolveDuration(found.eventType, duration);
+  if (minutes === null) return { status: 400, body: { error: "invalid_request", fields: { duration: "Pick one of the offered lengths." } } };
+  const slots = await freeSlotSeats(store, found.host, withDuration(found.eventType, minutes), from, to, now, movingId);
   // A group class also says how many seats each time has left.
   const seatsLeft = found.eventType.kind === "group" ? Object.fromEntries(slots.map((s) => [s.start.toISOString(), s.seatsLeft])) : undefined;
   return { status: 200, body: { timezone: tz ?? found.host.timezone, slots: slots.map((s) => s.start.toISOString()), ...(seatsLeft ? { seatsLeft } : {}) } };
@@ -169,6 +176,8 @@ export interface BookingRequest {
   weeks: number;
   /** Paid for with a session package: its buyer's token. */
   packageToken: string | null;
+  /** The length the guest picked, in minutes; null = the event type's own. */
+  durationMinutes: number | null;
   /** Extra guests' emails, deduplicated, without the booker's own. */
   guests: string[];
   /** The language of the page they booked on; anything unknown is English. */
@@ -211,6 +220,8 @@ export function validateBookingRequest(input: unknown): Validation {
   if (smsOptIn && !fields.phone && !smsNumber(phone)) fields.smsOptIn = "Text updates go to Indian mobile numbers only, like +91 98765 43210.";
   const weeks = body.weeks === undefined ? 1 : body.weeks;
   if (!Number.isInteger(weeks) || (weeks as number) < 1 || (weeks as number) > 12) fields.weeks = "Pick 1 to 12 weeks.";
+  const duration = body.duration === undefined || body.duration === null ? null : body.duration;
+  if (duration !== null && (!Number.isInteger(duration) || (duration as number) < 5 || (duration as number) > 720)) fields.duration = "Pick one of the offered lengths.";
   if (!idempotencyKey) fields.idempotencyKey = "Missing request key.";
   else if (idempotencyKey.length < 8 || idempotencyKey.length > 100) fields.idempotencyKey = "Request key must be 8–100 characters.";
 
@@ -246,7 +257,7 @@ export function validateBookingRequest(input: unknown): Validation {
   if (Object.keys(fields).length > 0 || !start) return { ok: false, fields };
   return {
     ok: true,
-    value: { slug: str("slug"), event: str("event"), linkToken: linkToken || null, start, name, email, timezone: body.timezone as string, phone: phone || null, answers, idempotencyKey, weeks: weeks as number, packageToken: packageToken || null, guests, locale: isLocale(body.locale) ? body.locale : "en", whatsappOptIn, smsOptIn },
+    value: { slug: str("slug"), event: str("event"), linkToken: linkToken || null, start, name, email, timezone: body.timezone as string, phone: phone || null, answers, idempotencyKey, weeks: weeks as number, packageToken: packageToken || null, durationMinutes: duration as number | null, guests, locale: isLocale(body.locale) ? body.locale : "en", whatsappOptIn, smsOptIn },
   };
 }
 
@@ -307,7 +318,11 @@ export async function handleCreateBooking(
 
   const found = await resolveTarget(store, req.slug, req.event, req.linkToken, now, req.idempotencyKey);
   if (isResult(found)) return found;
-  const { host, eventType } = found;
+  const { host } = found;
+  // The length the guest picked: the slot checks, buffers, limits and price below all use it.
+  const minutes = resolveDuration(found.eventType, req.durationMinutes);
+  if (minutes === null) return { status: 400, body: { error: "invalid_request", fields: { duration: "Pick one of the offered lengths." } } };
+  const eventType = withDuration(found.eventType, minutes);
   if (req.packageToken && found.linkToken) return { status: 400, body: { error: "invalid_request", fields: { packageToken: "Use your package link or the single-use link, not both." } } };
   // A package buyer may book their sessions weekly (up to what's left, checked in the write); otherwise the host's setting
   // rules, and a price or deposit holds one booking at a time.
@@ -323,12 +338,12 @@ export async function handleCreateBooking(
   // refundable no-show deposit, which offers never touch. Paid for with a package: nothing at booking.
   const priced = !req.packageToken && eventType.priceMinor !== null && payments
     ? await resolvePrice(payments.pool, {
-      hostId: host.id, plan: await payments.planFor(host.id), item: { kind: "event_type", id: eventType.id, listMinor: eventType.priceMinor, currency: eventType.currency ?? "INR" },
+      hostId: host.id, plan: await payments.planFor(host.id), item: { kind: "event_type", id: eventType.id, listMinor: priceFor(found.eventType, minutes) ?? eventType.priceMinor, currency: eventType.currency ?? "INR" },
       email: req.email, ...parseOfferInput(input), idempotencyKey: req.idempotencyKey, now, limit, reserve: true,
     })
     : null;
   if (priced && !priced.ok) return { status: priced.status, body: priced.body };
-  const priceMinor = req.packageToken ? null : priced?.chargeMinor ?? eventType.priceMinor ?? eventType.depositMinor;
+  const priceMinor = req.packageToken ? null : priced?.chargeMinor ?? priceFor(found.eventType, minutes) ?? eventType.depositMinor;
   const paymentKind = eventType.priceMinor === null ? "deposit" as const : "payment" as const;
   // A priced repeat goes through startPaidBooking below instead, so a still-held booking gets its payment details back.
   if (existing && !priceMinor) return { status: 200, body: { bookingId: existing.id, manageToken: existing.invitee.manageToken } };
@@ -354,6 +369,7 @@ export async function handleCreateBooking(
   const askedQuestions = questions.filter((q) => asked.has(q.id));
   const bookingInput = {
     eventTypeId: eventType.id, startAt: req.start, idempotencyKey: req.idempotencyKey, ...(req.weeks > 1 ? { weeks: req.weeks } : {}),
+    ...(hasDurationChoice(found.eventType) ? { durationMinutes: minutes } : {}),
     // Used up in the same write as the booking (or its payment hold), so two guests on one link can't both book.
     ...(found.linkToken ? { bookingLinkToken: found.linkToken, now } : {}),
     ...(req.packageToken ? { packageToken: req.packageToken } : {}),

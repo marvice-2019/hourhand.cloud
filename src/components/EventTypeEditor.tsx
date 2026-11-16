@@ -8,6 +8,7 @@ import { deleteEventType, saveEventType } from "@/app/dashboard/event-types/acti
 import type { LocationKind, QuestionDraft } from "@/lib/data/types";
 import { QuestionListEditor, editableToDrafts, toEditable, type EditableQuestion, type TemplateOption } from "./intake/QuestionListEditor";
 import { SaveAsTemplate } from "./intake/SaveAsTemplate";
+import { MAX_DURATION_OPTIONS } from "@/lib/durations";
 import type { VideoAvailability } from "@/lib/video/gate";
 import type { ZoomSetup } from "@/lib/zoom/connection";
 import { ZoomHint } from "./ZoomHint";
@@ -25,7 +26,7 @@ const TABS = [
 ] as const satisfies readonly { id: string; label: HostKey }[];
 type TabId = (typeof TABS)[number]["id"];
 
-const DETAIL_FIELDS: (keyof EventTypeForm)[] = ["name", "slug", "durationMinutes", "price", "deposit", "description", "locationKind", "locationValue"];
+const DETAIL_FIELDS: (keyof EventTypeForm)[] = ["name", "slug", "durationMinutes", "durations", "price", "deposit", "description", "locationKind", "locationValue"];
 const PRESET_DURATIONS = [15, 30, 45, 60];
 
 const LOCATIONS: { kind: LocationKind | ""; label: HostKey }[] = [
@@ -90,7 +91,12 @@ export function EventTypeEditor({ id, userSlug, bookingHost = "hourhand.cloud", 
   const [deleting, startDeleting] = useTransition();
   const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
 
-  const set = (key: Exclude<keyof EventTypeForm, "hidden">) => (value: string) => {
+  const durations = form.durations ?? [];
+  const setDurations = (rows: { minutes: string; price: string }[]) => {
+    setForm((f) => ({ ...f, durations: rows }));
+    setStatus("idle");
+  };
+  const set = (key: Exclude<keyof EventTypeForm, "hidden" | "durations">) => (value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
     setStatus("idle");
   };
@@ -149,7 +155,7 @@ export function EventTypeEditor({ id, userSlug, bookingHost = "hourhand.cloud", 
     });
   }
 
-  const numberField = (key: Exclude<keyof EventTypeForm, "hidden" | "redirectUrl" | "cancelPolicy">, label: string, unit: string, hint?: string) => (
+  const numberField = (key: Exclude<keyof EventTypeForm, "hidden" | "redirectUrl" | "cancelPolicy" | "durations">, label: string, unit: string, hint?: string) => (
     <div>
       <Label htmlFor={`f-${key}`}>{label}</Label>
       <div className="flex items-center gap-2">
@@ -212,6 +218,36 @@ export function EventTypeEditor({ id, userSlug, bookingHost = "hourhand.cloud", 
           {customDuration ? (
             <div className="mt-3">{numberField("durationMinutes", t("eventTypes.customLength"), t("eventTypes.unitMinutes"), t("eventTypes.customLengthHint"))}</div>
           ) : errors.durationMinutes && <p className="mt-1 text-sm text-danger">{errors.durationMinutes}</p>}
+        </fieldset>
+        <fieldset aria-describedby="f-durations-hint">
+          <legend className="text-sm font-semibold text-text">{t("eventTypes.otherLengths")}</legend>
+          <p id="f-durations-hint" className="mt-1 text-sm text-text-muted">
+            {t("eventTypes.otherLengthsHint")}
+          </p>
+          {durations.map((row, i) => (
+            <div key={i} className="mt-2 flex flex-wrap items-end gap-2">
+              <div>
+                <Label htmlFor={`f-dur-${i}`}>{t("eventTypes.lengthN", { n: i + 2 })}</Label>
+                <div className="flex items-center gap-2">
+                  <Input id={`f-dur-${i}`} inputMode="numeric" value={row.minutes} className="max-w-24" aria-invalid={errors.durations ? true : undefined}
+                    onChange={(e) => setDurations(durations.map((r, j) => (j === i ? { ...r, minutes: e.target.value } : r)))} />
+                  <span className="mt-1 text-sm text-text-muted">{t("eventTypes.unitMinutes")}</span>
+                </div>
+              </div>
+              <div>
+                <Label htmlFor={`f-dur-price-${i}`}>{t("eventTypes.price", { currency: currencyLabel(currency) })}</Label>
+                <Input id={`f-dur-price-${i}`} inputMode="decimal" value={row.price} className="max-w-32" placeholder={t("eventTypes.lengthPricePlaceholder")} aria-invalid={errors.durations ? true : undefined}
+                  onChange={(e) => setDurations(durations.map((r, j) => (j === i ? { ...r, price: e.target.value } : r)))} />
+              </div>
+              <button type="button" onClick={() => setDurations(durations.filter((_, j) => j !== i))}
+                className={`min-h-11 text-sm font-semibold text-accent underline ${focusRing}`}>{t("eventTypes.removeLength")}</button>
+            </div>
+          ))}
+          {durations.length + 1 < MAX_DURATION_OPTIONS && (
+            <button type="button" onClick={() => setDurations([...durations, { minutes: "", price: "" }])}
+              className={`mt-2 min-h-11 text-sm font-semibold text-accent underline ${focusRing}`}>{t("eventTypes.addLength")}</button>
+          )}
+          {errors.durations && <p className="mt-1 text-sm text-danger" role="alert">{errors.durations}</p>}
         </fieldset>
         <div>
           <Label htmlFor="f-price">{t("eventTypes.price", { currency: currencyLabel(currency) })}</Label>

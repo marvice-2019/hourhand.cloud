@@ -69,7 +69,15 @@ export interface EventType {
   weeklyLimit: number | null;
   /** The host's own words on cancelling, shown before booking and next to Cancel; null = none. */
   cancelPolicy: string | null;
+  /**
+   * Lengths the guest picks from (durationMinutes is one of them, the one picked first). Empty = only durationMinutes.
+   * Each may carry its own price; null uses priceMinor.
+   */
+  durationOptions: DurationOption[];
 }
+
+/** One length an event type offers, with its own price in paise (null = the event type's price). */
+export interface DurationOption { minutes: number; priceMinor: number | null }
 
 /** What the host enters for a one-off meeting. */
 export interface OneOffInput {
@@ -230,6 +238,8 @@ export interface CreateBookingInput {
   now?: Date;
   /** Book the same time this many weeks running (2+), all or none. The returned booking is the first week. */
   weeks?: number;
+  /** The length the guest picked (one of the event type's options); defaults to the event type's own. */
+  durationMinutes?: number;
   /** Pay with a session package (its buyer's token): one credit per booking, checked and used in the same write. Postgres only. */
   packageToken?: string;
   invitee: { name: string; email: string; timezone: string; phone: string | null; answers: InviteeAnswer[]; guests?: string[]; locale?: string; whatsappOptIn?: boolean; smsOptIn?: boolean;
@@ -431,6 +441,8 @@ export interface DataStore {
 export type EventTypeDraft = Pick<EventType,
   "name" | "slug" | "description" | "durationMinutes" | "minNoticeMinutes" | "bookingWindowDays" | "startIncrementMinutes" |
   "bufferBeforeMinutes" | "bufferAfterMinutes" | "dailyLimit" | "cancelCutoffMinutes" | "priceMinor" | "currency" | "hidden" | "maxRepeats" | "depositMinor" | "redirectUrl" | "weeklyLimit" | "cancelPolicy" | "seatLimit"> & {
+  /** Left out = only durationMinutes (no choice). */
+  durationOptions?: DurationOption[];
   location: { kind: LocationKind; value: string | null } | null;
 };
 

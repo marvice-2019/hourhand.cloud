@@ -58,6 +58,11 @@ interface Props {
   offers?: FlowOffers | null;
   /** Where this visit came from (public booking pages only): sent with the slot beacon and the booking for the host's analytics. */
   source?: SourceInput;
+  /**
+   * Lengths to pick from (2 or more), shortest first: each with its price as shown (null = free), in minor units, and the
+   * price after today's campaign for that length. Left out = one length.
+   */
+  durations?: { minutes: number; price: string | null; priceMinor?: number | null; campaignMinor?: number | null }[];
 }
 
 export interface FlowOffers {
@@ -73,18 +78,42 @@ export interface FlowOffers {
 }
 
 /** Public booking: pick a time, then fill in details. The picker stays mounted so "Pick another time" keeps the month and day. */
-export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = null, linkToken, initialAt, host, maxWeeks = 1, packageToken, waitlist = false, locale = "en", langQuery = "", prefill, whatsapp = false, sms = false, source, offers = null }: Props) {
+export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = null, linkToken, initialAt, host, maxWeeks = 1, packageToken, waitlist = false, locale = "en", langQuery = "", prefill, whatsapp = false, sms = false, source, offers = null, durations }: Props) {
   const [picked, setPicked] = useState<{ slot: string; tz: string } | null>(null);
+  // Several lengths: the guest picks one first; times, the price and the booking all follow it.
+  const choosing = durations !== undefined && durations.length > 1;
+  const [duration, setDuration] = useState<number | null>(null);
+  const chosen = choosing ? durations.find((d) => d.minutes === duration) ?? null : null;
+  const shownPaid = paid && chosen?.price ? { ...paid, price: chosen.price } : paid;
+  // Offers follow the chosen length: its list price, and today's campaign price for it (worked out on the server).
+  const shownOffers = offers && chosen && chosen.priceMinor != null
+    ? { ...offers, listMinor: chosen.priceMinor, campaign: offers.campaign && chosen.campaignMinor != null ? { ...offers.campaign, chargeMinor: chosen.campaignMinor } : offers.campaign }
+    : offers;
   return (
     <>
       <div hidden={picked !== null}>
-        <SlotPicker slug={slug} event={event} linkToken={linkToken} initialAt={initialAt} bookingWindowDays={bookingWindowDays} locale={locale} onPick={(slot, tz) => { if (source) sendSlotClick(slug, event, source); setPicked({ slot, tz }); }} />
+        {choosing && (
+          <fieldset className="mt-6">
+            <legend className="font-semibold text-text">{t(locale, "pickLength")}</legend>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {durations.map((d) => (
+                <label key={d.minutes} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-3 ${duration === d.minutes ? "border-accent bg-surface font-semibold" : "border-border-input"} text-text`}>
+                  <input type="radio" name="duration" value={d.minutes} checked={duration === d.minutes} onChange={() => setDuration(d.minutes)} className={`size-5 accent-accent ${focusRing}`} />
+                  <span>{t(locale, "minutes", { n: d.minutes })}{d.price && ` · ${d.price}`}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
+        {(!choosing || duration !== null) && (
+          <SlotPicker slug={slug} event={event} linkToken={linkToken} initialAt={initialAt} bookingWindowDays={bookingWindowDays} duration={choosing ? duration ?? undefined : undefined} locale={locale} onPick={(slot, tz) => { if (source) sendSlotClick(slug, event, source); setPicked({ slot, tz }); }} />
+        )}
         {waitlist && <WaitlistForm slug={slug} event={event} hostName={host.name} locale={locale} />}
       </div>
       {picked && (
         <DetailsForm
-          slug={slug} event={event} linkToken={linkToken} tz={picked.tz} slot={picked.slot} questions={questions} paid={packageToken ? null : paid} host={host} maxWeeks={maxWeeks} packageToken={packageToken} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={whatsapp} sms={sms} source={source}
-          offers={packageToken || paid?.deposit ? null : offers}
+          slug={slug} event={event} linkToken={linkToken} tz={picked.tz} slot={picked.slot} questions={questions} paid={packageToken ? null : shownPaid} duration={choosing ? duration ?? undefined : undefined} host={host} maxWeeks={maxWeeks} packageToken={packageToken} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={whatsapp} sms={sms} source={source}
+          offers={packageToken || paid?.deposit ? null : shownOffers}
           onPick={(slot) => setPicked({ slot, tz: picked.tz })} onBack={() => setPicked(null)}
         />
       )}
@@ -93,13 +122,13 @@ export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = 
 }
 
 interface FormProps {
-  slug: string; event: string; linkToken?: string; tz: string; slot: string; questions: FlowQuestion[]; paid: Props["paid"]; host: Props["host"]; maxWeeks: number; packageToken?: string; locale: Locale; langQuery: string; prefill?: { name: string; email: string }; whatsapp: boolean; sms: boolean;
+  slug: string; event: string; linkToken?: string; tz: string; slot: string; questions: FlowQuestion[]; paid: Props["paid"]; host: Props["host"]; maxWeeks: number; packageToken?: string; locale: Locale; langQuery: string; prefill?: { name: string; email: string }; whatsapp: boolean; sms: boolean; duration?: number;
   offers: FlowOffers | null;
   source?: SourceInput;
   onPick: (slot: string) => void; onBack: () => void;
 }
 
-function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, maxWeeks, packageToken, locale, langQuery, prefill, whatsapp, sms, offers, source, onPick, onBack }: FormProps) {
+function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, maxWeeks, packageToken, locale, langQuery, prefill, whatsapp, sms, offers, source, duration, onPick, onBack }: FormProps) {
   const router = useRouter();
   // Offers: the code the guest applied and what the server quoted for it, and a sliding-scale amount in rupees.
   const [code, setCode] = useState("");
@@ -119,7 +148,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
     if (!c) return;
     setApplying(true); setCodeError(null);
     try {
-      const res = await fetch("/api/offers/quote", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slug, event, couponCode: c }) });
+      const res = await fetch("/api/offers/quote", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slug, event, couponCode: c, ...(duration ? { duration } : {}) }) });
       const body = await res.json();
       if (res.ok) setQuote({ code: c, offer: body.offer ?? null, chargeMinor: body.chargeMinor, couponNotUsed: body.couponNotUsed === true });
       else { setQuote(null); setCodeError(t(locale, res.status === 429 ? "rateLimited" : "offerCodeInvalid")); }
@@ -204,7 +233,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
     try {
       const res = await fetch("/api/bookings", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), ...(data.get("smsOptIn") ? { smsOptIn: true } : {}), ...(source ? { src: source } : {}), locale, ...(offers && code.trim() ? { couponCode: code.trim() } : {}), ...(offers?.sliding && payMinor ? { payMinor } : {}) }),
+        body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(duration ? { duration } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), ...(data.get("smsOptIn") ? { smsOptIn: true } : {}), ...(source ? { src: source } : {}), locale, ...(offers && code.trim() ? { couponCode: code.trim() } : {}), ...(offers?.sliding && payMinor ? { payMinor } : {}) }),
       });
       const body = await res.json();
       if ((res.status === 201 || res.status === 200) && body.payment?.provider === "stripe" && typeof body.payment.url === "string") {

@@ -1,9 +1,10 @@
 // Pure validation for the event type editor. Limits mirror the checks on event_types and custom_questions in docs/schema.sql.
 import type { Plan } from "./billing/plans";
-import { LOCATION_KINDS, type EventLocation, type EventType, type EventTypeDraft, type LocationKind, type QuestionDraft } from "./data/types";
+import { LOCATION_KINDS, type DurationOption, type EventLocation, type EventType, type EventTypeDraft, type LocationKind, type QuestionDraft } from "./data/types";
 import { cleanRedirectUrl } from "./calendar-links";
 import { QUESTION_KINDS } from "./intake/conditions";
 import { INTAKE_QUESTION_MESSAGES, checkIntakeFields } from "./intake/questions";
+import { MAX_DURATION_OPTIONS } from "./durations";
 
 export const DURATION = { min: 5, max: 720 } as const;
 export const START_INCREMENTS = [5, 10, 15, 20, 30, 45, 60] as const;
@@ -56,6 +57,11 @@ export interface EventTypeForm {
   cancelPolicy?: string;
   /** Guests per session: blank or 1 is one-on-one, 2 to 500 makes it a group class. */
   seats?: string;
+  /**
+   * Other lengths the guest may pick instead of durationMinutes, each with an optional price in rupees (blank = the
+   * event's price). Empty or left out = one length only.
+   */
+  durations?: { minutes: string; price: string }[];
 }
 
 /** The most guests a group class takes (event_types.seat_limit). */
@@ -105,6 +111,12 @@ export const EVENT_TYPE_MESSAGES = {
   questionLabel: "Write the question guests will see.",
   questionKind: "Pick a kind of answer.",
   questionChoices: "Add at least two choices, one per line.",
+  durationsText: "Enter each length in minutes.",
+  durationsTooMany: "Offer up to {max} lengths in all.",
+  durationsRange: "Each length is between {min} and {max} minutes.",
+  durationsTwice: "{minutes} minutes is listed twice. Give each length once.",
+  durationsPriceFirst: "Set the event's price first; a length's own price replaces it for that length.",
+  durationsGroup: "A group class runs for one length. Remove the other lengths, or make it one-on-one.",
   ...INTAKE_QUESTION_MESSAGES,
 } as const;
 export type EventTypeErrorCode = keyof typeof EVENT_TYPE_MESSAGES;
@@ -191,6 +203,11 @@ export function checkEventType(form: EventTypeForm, takenSlugs: readonly string[
     if (key === "hidden") {
       // A checkbox: true or false (an older client may leave it out, which means shown).
       if (form.hidden !== undefined && typeof form.hidden !== "boolean") fail("hidden", "notBoolean");
+    } else if (key === "durations") {
+      const d = form.durations;
+      if (d !== undefined && (!Array.isArray(d) || d.length > 20 || d.some((r) => typeof r !== "object" || r === null || typeof r.minutes !== "string" || typeof r.price !== "string"))) {
+        fail("durations", "durationsText");
+      }
     } else if (key === "redirectUrl" || key === "weeklyLimit" || key === "cancelPolicy" || key === "seats") {
       // Optional, so an older client may leave them out.
       if (form[key] !== undefined && typeof form[key] !== "string") fail(key, "notText");
@@ -214,7 +231,7 @@ export function checkEventType(form: EventTypeForm, takenSlugs: readonly string[
     fail("slug", "slugTaken");
   }
 
-  const number = (key: Exclude<keyof EventTypeForm, "hidden" | "redirectUrl" | "cancelPolicy">, min: number, max: number, code: EventTypeErrorCode, vars?: Record<string, number>): number => {
+  const number = (key: Exclude<keyof EventTypeForm, "hidden" | "redirectUrl" | "cancelPolicy" | "durations">, min: number, max: number, code: EventTypeErrorCode, vars?: Record<string, number>): number => {
     const n = whole(form[key] ?? "");
     if (n === null || n < min || n > max) fail(key, code, vars);
     return n ?? 0;
@@ -260,6 +277,8 @@ export function checkEventType(form: EventTypeForm, takenSlugs: readonly string[
     else if (depositMinor !== null) fail("seats", "seatsDeposit");
     else if (maxRepeats > 1) fail("seats", "seatsRepeats");
   }
+  const durationOptions = errors.durations ? [] : validateDurations(form.durations ?? [], durationMinutes, priceMinor, (code, vars) => fail("durations", code, vars));
+  if (durationOptions.length > 0 && seats !== null && !errors.seats && !errors.durations) fail("durations", "durationsGroup");
   const redirectUrl = cleanRedirectUrl(form.redirectUrl ?? "");
   if (redirectUrl === undefined) fail("redirectUrl", "redirectUrl");
 
@@ -270,17 +289,55 @@ export function checkEventType(form: EventTypeForm, takenSlugs: readonly string[
       name, slug, description: form.description.trim() || null, durationMinutes, minNoticeMinutes, bookingWindowDays,
       startIncrementMinutes, bufferBeforeMinutes, bufferAfterMinutes, dailyLimit, cancelCutoffMinutes, maxRepeats, depositMinor,
       priceMinor, currency: priceMinor === null && depositMinor === null ? null : "INR", hidden: form.hidden === true, redirectUrl: redirectUrl ?? null, weeklyLimit, cancelPolicy: cancelPolicy || null,
-      seatLimit: seats,
+      seatLimit: seats, durationOptions,
       location: form.locationKind ? { kind: form.locationKind, value: valueLabel ? locationValue : null } : null,
     },
   };
+}
+
+/**
+ * The other lengths the host typed, as the event type's full list of options (the main length included, shortest
+ * first), or [] when there are none. Problems go into `errors.durations`.
+ */
+function validateDurations(
+  rows: { minutes: string; price: string }[], main: number, priceMinor: number | null, fail: (code: EventTypeErrorCode, vars?: Record<string, number>) => void,
+): DurationOption[] {
+  const filled = rows.filter((r) => r.minutes.trim() || r.price.trim());
+  if (filled.length === 0) return [];
+  if (filled.length + 1 > MAX_DURATION_OPTIONS) {
+    fail("durationsTooMany", { max: MAX_DURATION_OPTIONS });
+    return [];
+  }
+  const options: DurationOption[] = [{ minutes: main, priceMinor: null }];
+  for (const r of filled) {
+    const minutes = whole(r.minutes);
+    if (minutes === null || minutes < DURATION.min || minutes > DURATION.max) {
+      fail("durationsRange", { min: DURATION.min, max: DURATION.max });
+      return [];
+    }
+    if (options.some((o) => o.minutes === minutes)) {
+      fail("durationsTwice", { minutes });
+      return [];
+    }
+    const price = parsePrice(r.price);
+    if (price === "invalid") {
+      fail("priceInvalid");
+      return [];
+    }
+    if (price !== null && priceMinor === null) {
+      fail("durationsPriceFirst");
+      return [];
+    }
+    options.push({ minutes, priceMinor: price });
+  }
+  return options.sort((a, b) => a.minutes - b.minutes);
 }
 
 /** Starting values for a new event type: the schema defaults, 30 minutes on Google Meet. */
 export const NEW_EVENT_TYPE_FORM: EventTypeForm = {
   name: "", slug: "", durationMinutes: "30", description: "", locationKind: "google_meet", locationValue: "", minNoticeMinutes: "240",
   bookingWindowDays: "60", startIncrementMinutes: "30", bufferBeforeMinutes: "0", bufferAfterMinutes: "0", dailyLimit: "", cancelCutoffMinutes: "0", maxRepeats: "1", deposit: "",
-  price: "", hidden: false, redirectUrl: "", weeklyLimit: "", cancelPolicy: "", seats: "",
+  price: "", hidden: false, redirectUrl: "", weeklyLimit: "", cancelPolicy: "", seats: "", durations: [],
 };
 
 /** The editor's values for a saved event type and its first location. */
@@ -294,6 +351,7 @@ export function toForm(et: EventType, location: EventLocation | undefined): Even
     price: priceInput(et.priceMinor), hidden: et.hidden, redirectUrl: et.redirectUrl ?? "",
     weeklyLimit: et.weeklyLimit === null ? "" : String(et.weeklyLimit), cancelPolicy: et.cancelPolicy ?? "",
     seats: et.seatLimit === null ? "" : String(et.seatLimit),
+    durations: et.durationOptions.filter((o) => o.minutes !== et.durationMinutes).map((o) => ({ minutes: String(o.minutes), price: priceInput(o.priceMinor) })),
   };
 }
 
