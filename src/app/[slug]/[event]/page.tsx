@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { BookingFooter } from "@/components/BookingFooter";
 import Link from "next/link";
 import { EmbedResize } from "@/components/EmbedResize";
@@ -81,4 +82,22 @@ export default async function PublicEventPage({ params, searchParams }: { params
       <BookingFooter hostId={host.id} locale={locale} />
     </main>
   );
+}
+
+/** The service's own title and line in link previews; the image is the host's card from ../opengraph-image.tsx. */
+export async function generateMetadata({ params }: { params: Promise<{ slug: string; event: string }> }): Promise<Metadata> {
+  const { slug, event } = await params;
+  const found = await store.getPublicEventType(slug, event);
+  if (!found) return {};
+  const { host, eventType } = found;
+  const title = `${eventType.name} · ${host.name}`;
+  const description = eventType.description ?? `Book ${eventType.name} with ${host.name}.`;
+  const path = `/${host.slug}/${eventType.slug}`;
+  // Setting openGraph here drops the image inherited from the host's segment, so it is named again.
+  const images = [{ url: `/${host.slug}/opengraph-image`, width: 1200, height: 630, alt: `Book ${host.name}` }];
+  return {
+    title, description, alternates: { canonical: path },
+    openGraph: { type: "website", siteName: "Hourhand", url: path, title, description, images },
+    twitter: { card: "summary_large_image", title, description, images },
+  };
 }

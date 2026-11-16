@@ -61,7 +61,7 @@ export async function freeSlotSeats(store: DataStore, host: User, eventType: Eve
     }).map((start) => ({ start, seatsLeft: null }));
   }
   const [{ schedule, rules }, connections, busyBlocks, bookings] = await Promise.all([
-    store.getDefaultSchedule(host.id),
+    store.getSchedule(host.id, eventType.scheduleId), // its own schedule, or the host's default
     store.listCalendarConnections(host.id),
     busyWithPollHolds(store, host.id, from, to, now),
     store.listBookings(host.id),

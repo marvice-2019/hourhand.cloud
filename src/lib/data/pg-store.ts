@@ -8,12 +8,13 @@ import { seal, tokenKey, unseal } from "../crypto/seal";
 import { bookingNoteAad, clientNoteAad } from "../privacy/notes";
 import { pollHolds } from "../polls/holds";
 import { PackageUnavailableError, takeCredits } from "../packages/packages";
+import { attachMembershipCredits, checkMovedMembershipCredit, isMembershipToken, takeMembershipCredits } from "../memberships/memberships";
 import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
 import { queueWaitlistFor } from "../waitlist";
 import { classKeyOf, localDay, weekOf } from "../slots";
 import {
-  EventTypeInUseError, LinkUnavailableError, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type AvailabilityRule, type BookingLink,
+  DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type AvailabilityRule, type BookingLink,
   type BookingWithInvitee, type CreateBookingInput, type CustomQuestion, type DataStore, type EventType, type EventTypeDraft, type Interval, type User,
 } from "./types";
 
@@ -84,6 +85,9 @@ const toLink = (r: Row, now: Date): BookingLink => {
   const state = usedBy ? "used" : revokedAt ? "revoked" : expiresAt && expiresAt.getTime() <= now.getTime() ? "expired" : "open";
   return { id: r.id as string, eventTypeId: r.event_type_id as string, label: (r.label as string | null) ?? null, expiresAt, revokedAt, createdAt: r.created_at as Date, state, usedBy };
 };
+
+const SCHEDULE = "id, user_id, name, timezone, is_default";
+const toSchedule = (r: Row): AvailabilitySchedule => ({ id: r.id as string, userId: r.user_id as string, name: r.name as string, timezone: r.timezone as string, isDefault: r.is_default as boolean });
 
 const code = (error: unknown) => (error as { code?: string }).code;
 
@@ -200,7 +204,7 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
   async function checkLimits(client: pg.PoolClient, eventTypeId: string, starts: Date[]): Promise<void> {
     const { rows: [et] } = await client.query(
       `select e.daily_limit, e.weekly_limit, s.timezone from event_types e
-         join availability_schedules s on s.user_id = e.user_id and s.is_default
+         join availability_schedules s on s.id = coalesce(e.schedule_id, (select d.id from availability_schedules d where d.user_id = e.user_id and d.is_default))
         where e.id = $1 for update of e`, [eventTypeId]);
     if (!et || (et.daily_limit === null && et.weekly_limit === null)) return;
     const { rows } = await client.query(
@@ -264,6 +268,31 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
     }
   }
 
+  async function rulesOf(db: Db, scheduleId: string): Promise<AvailabilityRule[]> {
+    const { rows } = await db.query("select id, schedule_id, kind, weekday, on_date::text as on_date, intervals from availability_rules where schedule_id = $1 order by kind desc, weekday, on_date", [scheduleId]);
+    return rows.map((r): AvailabilityRule => r.kind === "weekly"
+      ? { id: r.id, scheduleId: r.schedule_id, kind: "weekly", weekday: r.weekday, onDate: null, intervals: r.intervals }
+      : { id: r.id, scheduleId: r.schedule_id, kind: "date", weekday: null, onDate: r.on_date, intervals: r.intervals });
+  }
+
+  /** The host's schedule row, locked for the rest of the transaction. NotFoundError unless it is theirs. */
+  async function lockSchedule(db: Db, userId: string, scheduleId: string): Promise<AvailabilitySchedule> {
+    const { rows } = isId(userId) && isId(scheduleId)
+      ? await db.query(`select ${SCHEDULE} from availability_schedules where id = $1 and user_id = $2 for update`, [scheduleId, userId]) : { rows: [] };
+    if (!rows[0]) throw new NotFoundError("Schedule");
+    return toSchedule(rows[0]);
+  }
+
+  /** A name the host already uses (the unique index is on lower(name)) becomes ScheduleNameTakenError. */
+  async function nameSafe<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      if (code(error) === "23505" && (error as { constraint?: string }).constraint === "availability_schedules_user_name_key") throw new ScheduleNameTakenError();
+      throw error;
+    }
+  }
+
   async function setOverride(db: Db, scheduleId: string, date: string, intervals: Interval[]) {
     await db.query("delete from availability_rules where schedule_id = $1 and kind = 'date' and on_date = $2", [scheduleId, date]);
     await db.query("insert into availability_rules (schedule_id, kind, on_date, intervals) values ($1,'date',$2,$3)", [scheduleId, date, JSON.stringify(intervals)]);
@@ -321,7 +350,7 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
       }));
     },
     async getDefaultSchedule(userId) {
-      const find = () => pool.query("select id, user_id, name, timezone, is_default from availability_schedules where user_id = $1 and is_default", [userId]);
+      const find = () => pool.query(`select ${SCHEDULE} from availability_schedules where user_id = $1 and is_default`, [userId]);
       let { rows } = isId(userId) ? await find() : { rows: [] };
       if (!rows[0] && isId(userId)) {
         // Sign-up creates only the users row, so a new host's first visit makes their schedule: weekdays 09:00–17:00 in
@@ -339,14 +368,89 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
         ({ rows } = await find());
       }
       if (!rows[0]) throw new Error(`No default schedule for ${userId}`);
-      const s = rows[0];
-      const rules = await pool.query("select id, schedule_id, kind, weekday, on_date::text as on_date, intervals from availability_rules where schedule_id = $1 order by kind desc, weekday, on_date", [s.id]);
-      return {
-        schedule: { id: s.id, userId: s.user_id, name: s.name, timezone: s.timezone, isDefault: s.is_default },
-        rules: rules.rows.map((r): AvailabilityRule => r.kind === "weekly"
-          ? { id: r.id, scheduleId: r.schedule_id, kind: "weekly", weekday: r.weekday, onDate: null, intervals: r.intervals }
-          : { id: r.id, scheduleId: r.schedule_id, kind: "date", weekday: null, onDate: r.on_date, intervals: r.intervals }),
-      };
+      return { schedule: toSchedule(rows[0]), rules: await rulesOf(pool, rows[0].id) };
+    },
+    async listSchedules(userId) {
+      if (!isId(userId)) return [];
+      const fallback = (await this.getDefaultSchedule(userId)).schedule.id;
+      const [{ rows }, { rows: types }] = await Promise.all([
+        pool.query(`select ${SCHEDULE} from availability_schedules where user_id = $1 order by is_default desc, lower(name), created_at`, [userId]),
+        // One-off meetings run on their own offered times, never on a schedule.
+        pool.query("select id, name, coalesce(schedule_id, $2::uuid) as schedule_id from event_types where user_id = $1 and kind <> 'one_off' order by position, created_at", [userId, fallback]),
+      ]);
+      return rows.map((r) => ({ ...toSchedule(r), eventTypes: types.filter((t) => t.schedule_id === r.id).map((t) => ({ id: t.id as string, name: t.name as string })) }));
+    },
+    async getSchedule(userId, scheduleId) {
+      if (scheduleId && isId(userId) && isId(scheduleId)) {
+        const { rows } = await pool.query(`select ${SCHEDULE} from availability_schedules where id = $1 and user_id = $2`, [scheduleId, userId]);
+        if (rows[0]) return { schedule: toSchedule(rows[0]), rules: await rulesOf(pool, rows[0].id) };
+      }
+      return this.getDefaultSchedule(userId);
+    },
+    async createSchedule(userId, input, limit) {
+      // Made first so the new schedule is never the host's only one (the default would then push them over the limit).
+      await this.getDefaultSchedule(userId);
+      return nameSafe(() => tx(async (client) => {
+        // The user row lock serialises two creates at once, so both can't pass the count below.
+        const { rows: [user] } = await client.query("select timezone from users where id = $1 for update", [userId]);
+        const { rows: [{ n }] } = await client.query("select count(*)::int as n from availability_schedules where user_id = $1", [userId]);
+        if (n >= limit) throw new ScheduleLimitError(limit);
+        const source = input.copyFrom === undefined ? null : await lockSchedule(client, userId, input.copyFrom);
+        const { rows } = await client.query(
+          `insert into availability_schedules (user_id, name, timezone, is_default) values ($1, $2, $3, false) returning ${SCHEDULE}`,
+          [userId, input.name, input.timezone ?? source?.timezone ?? user.timezone]);
+        const made = toSchedule(rows[0]);
+        if (source) {
+          await client.query(
+            `insert into availability_rules (schedule_id, kind, weekday, on_date, intervals)
+             select $1, kind, weekday, on_date, intervals from availability_rules where schedule_id = $2`, [made.id, source.id]);
+        } else {
+          await client.query(
+            `insert into availability_rules (schedule_id, kind, weekday, intervals)
+             select $1, 'weekly', d, '[{"from":"09:00","to":"17:00"}]'::jsonb from generate_series(1, 5) d`, [made.id]);
+        }
+        return made;
+      }));
+    },
+    async updateSchedule(userId, scheduleId, input) {
+      return nameSafe(() => tx(async (client) => {
+        await lockSchedule(client, userId, scheduleId);
+        const { rows } = await client.query(
+          `update availability_schedules set name = $3, timezone = $4, updated_at = now() where id = $1 and user_id = $2 returning ${SCHEDULE}`,
+          [scheduleId, userId, input.name, input.timezone]);
+        return toSchedule(rows[0]);
+      }));
+    },
+    async setDefaultSchedule(userId, scheduleId) {
+      await tx(async (client) => {
+        const target = await lockSchedule(client, userId, scheduleId);
+        if (target.isDefault) return;
+        await client.query("update availability_schedules set is_default = false, updated_at = now() where user_id = $1 and is_default", [userId]);
+        await client.query("update availability_schedules set is_default = true, updated_at = now() where id = $1", [scheduleId]);
+      });
+    },
+    async deleteSchedule(userId, scheduleId, opts = {}) {
+      await tx(async (client) => {
+        const target = await lockSchedule(client, userId, scheduleId);
+        if (target.isDefault) throw new DefaultScheduleError();
+        const { rows: users } = await client.query(
+          "select id, name from event_types where user_id = $1 and schedule_id = $2 and kind <> 'one_off' order by position, created_at", [userId, scheduleId]);
+        if (users.length > 0) {
+          if (opts.moveTo === undefined) throw new ScheduleInUseError(users.map((u) => ({ id: u.id as string, name: u.name as string })));
+          if (opts.moveTo === scheduleId) throw new NotFoundError("Schedule");
+          await lockSchedule(client, userId, opts.moveTo);
+          await client.query("update event_types set schedule_id = $3 where user_id = $1 and schedule_id = $2", [userId, scheduleId, opts.moveTo]);
+        }
+        await client.query("delete from availability_schedules where id = $1 and user_id = $2", [scheduleId, userId]);
+      });
+    },
+    async setEventTypeSchedule(userId, eventTypeId, scheduleId) {
+      return tx(async (client) => {
+        await owned(client, userId, eventTypeId);
+        await lockSchedule(client, userId, scheduleId);
+        const { rows } = await client.query(`update event_types set schedule_id = $3 where user_id = $1 and id = $2 returning ${EVENT}`, [userId, eventTypeId, scheduleId]);
+        return toEventType(rows[0]);
+      });
     },
     async listCalendarConnections(userId) {
       if (!isId(userId)) return [];
@@ -384,7 +488,10 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
           const linkId = input.bookingLinkToken === undefined ? null : await takeLink(client, input, input.bookingLinkToken);
           const weekStarts = Array.from({ length: input.weeks ?? 1 }, (_, i) => new Date(input.startAt.getTime() + i * WEEK));
           await checkLimits(client, input.eventTypeId, weekStarts);
-          const purchaseId = input.packageToken === undefined ? null : await takeCredits(client, input.packageToken, input.eventTypeId, weekStarts);
+          // A member's link rides in packageToken too; its token format tells the two apart.
+          const memberToken = input.packageToken !== undefined && isMembershipToken(input.packageToken);
+          const purchaseId = input.packageToken === undefined || memberToken ? null : await takeCredits(client, input.packageToken, input.eventTypeId, weekStarts);
+          const grantIds = memberToken ? await takeMembershipCredits(client, input.packageToken!, input.eventTypeId, weekStarts) : null;
           const newId = await insertBooking(client, input, null, linkId);
           // A held booking says nothing yet: its emails and calendar write go out once the payment is confirmed.
           if (!input.holdUntil) await queueBookingNotifications(client, newId, "booked", new Date());
@@ -400,6 +507,7 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
             }
           }
           if (purchaseId) await client.query("update bookings set package_purchase_id = $2 where id = $1 or series_id = $1", [newId, purchaseId]);
+          if (grantIds) await attachMembershipCredits(client, newId, grantIds);
           return newId;
         });
         kickJobs();
@@ -454,11 +562,12 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
           // A moved week stays its series' week: same series, same place in it. A package session stays paid for by its
           // package (or its credit would come back while still booked), and can't move past the package's end date.
           await client.query(
-            "update bookings n set series_id = o.series_id, series_index = o.series_index, package_purchase_id = o.package_purchase_id from bookings o where n.id = $1 and o.id = $2",
+            "update bookings n set series_id = o.series_id, series_index = o.series_index, package_purchase_id = o.package_purchase_id, membership_grant_id = o.membership_grant_id from bookings o where n.id = $1 and o.id = $2",
             [newId, bookingId]);
           const { rows: [pk] } = await client.query(
             "select p.expires_at from package_purchases p where p.id = (select package_purchase_id from bookings where id = $1) for update", [bookingId]);
           if (pk && startAt.getTime() >= new Date(pk.expires_at).getTime()) throw new PackageUnavailableError("expired");
+          await checkMovedMembershipCredit(client, newId, startAt);
           // Nothing more goes out about the old time; the new booking gets its own emails and reminders.
           // A calendar write already running for the old booking is left to finish; the move waits for it and then moves its event.
           await client.query(

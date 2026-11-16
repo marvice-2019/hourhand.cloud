@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EventTypeEditor } from "@/components/EventTypeEditor";
+import { EventTypeSchedule } from "@/components/EventTypeSchedule";
 import { store } from "@/lib/data";
 import { toForm } from "@/lib/event-types";
 import { requireHost } from "@/lib/auth/session";
@@ -18,16 +19,17 @@ export const dynamic = "force-dynamic";
 
 export default async function EventTypePage({ params, searchParams }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string; followups?: string }>;
+  searchParams: Promise<{ saved?: string; followups?: string; schedule?: string }>;
 }) {
   const { id } = await params;
-  const { saved, followups } = await searchParams;
+  const { saved, followups, schedule } = await searchParams;
   const user = await requireHost();
   const eventType = await store.getEventType(user.id, id);
   if (!eventType) notFound();
-  const [locations, questions, templates, account] = await Promise.all([
+  const [locations, questions, templates, account, schedules] = await Promise.all([
     store.listEventLocations(user.id, id), store.listCustomQuestions(user.id, id), templateChoices(user.id),
     authEnabled() ? paymentAccount(getPool(process.env.DATABASE_URL as string), user.id) : null,
+    store.listSchedules(user.id),
   ]);
   const currency = priceCurrency(account);
   // Saved in another currency (the host switched payment providers): saving again re-prices it, so say so.
@@ -60,6 +62,7 @@ export default async function EventTypePage({ params, searchParams }: {
         provider={account?.provider ?? null}
         zoomSetup={await zoomSetupFor(() => getPool(process.env.DATABASE_URL as string), user.id)}
       />
+      {eventType.kind !== "one_off" && <EventTypeSchedule eventTypeId={eventType.id} schedules={schedules} saved={schedule === "saved"} />}
       {followUps && (
         <FollowUpSettingsForm eventTypeId={eventType.id} settings={followUps} hasReviewLink={Boolean(profile?.reviewsUrl)}
           notice={followups === "saved" ? "Follow-ups saved." : followups === "bad_delay" ? "Pick 1, 2 or 24 hours." : null} />
