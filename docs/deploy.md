@@ -63,7 +63,7 @@ If you want mail sent **to** booking@hourhand.cloud to arrive somewhere, add a m
 
 ## 5. Environment variables (Coolify → app → Environment)
 
-Generate the two random values on your own machine with `openssl rand -hex 32` (once each). **Keep `TOKEN_ENCRYPTION_KEY` in your password manager and never change it:** every connected calendar and every host's Razorpay key is sealed with it, so a new key disconnects them all.
+Generate the two random values on your own machine with `openssl rand -hex 32` (once each). **Keep `TOKEN_ENCRYPTION_KEY` in your password manager and never change it:** every connected calendar, every host's Razorpay key and every private client and session note is sealed with it, so a new key disconnects them all and makes notes unreadable.
 
 | Name | Value | Required |
 | --- | --- | --- |
