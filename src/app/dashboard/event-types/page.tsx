@@ -40,6 +40,7 @@ export default async function EventTypesPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {!acting && <Link href="/dashboard/event-types/import" className={buttonClasses({ variant: "secondary" })}>{t("eventTypes.importLink")}</Link>}
+          <Link href="/dashboard/event-types/templates" className={buttonClasses({ variant: "secondary" })}>{t("intake.templatesLink")}</Link>
           <Link href="/dashboard/event-types/new" className={buttonClasses()}>{t("eventTypes.new")}</Link>
         </div>
       </div>

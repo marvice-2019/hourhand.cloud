@@ -206,6 +206,11 @@ export const eventTypes: Record<keyof typeof en, string> = {
   "eventTypes.errQuestionLabel": "वह सवाल लिखें जो मेहमान देखेंगे।",
   "eventTypes.errQuestionKind": "जवाब का प्रकार चुनें।",
   "eventTypes.errQuestionChoices": "कम से कम दो विकल्प जोड़ें, हर लाइन में एक।",
+  "eventTypes.errConditionParent": "जिस पर टिकाना है, वह पहले का कोई हाँ/नहीं या विकल्प वाला सवाल चुनें।",
+  "eventTypes.errConditionChain": "वह सवाल ख़ुद कभी-कभी ही दिखता है। कोई ऐसा सवाल चुनें जो हमेशा पूछा जाता हो।",
+  "eventTypes.errConditionValues": "कम से कम एक ऐसा जवाब टिक करें जिस पर यह सवाल दिखे।",
+  "eventTypes.errRangeNumbers": "सीमाएँ सादी संख्या में लिखें, जैसे 0 या 120।",
+  "eventTypes.errRangeOrder": "सबसे कम संख्या, सबसे ज़्यादा से बड़ी नहीं हो सकती।",
   // Import messages, one per code in IMPORT_MESSAGES (src/lib/import/messages.ts); the English must match.
   "eventTypes.importMsgTimeout": "{label} ने जवाब देने में बहुत देर लगाई। एक मिनट बाद फिर से कोशिश करें।",
   "eventTypes.importMsgUnreachable": "अभी {label} से कनेक्ट नहीं हो सका। एक मिनट बाद फिर से कोशिश करें।",

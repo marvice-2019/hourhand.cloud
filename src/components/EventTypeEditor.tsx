@@ -5,13 +5,14 @@ import { currencyLabel } from "@/lib/money";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
 import { deleteEventType, saveEventType } from "@/app/dashboard/event-types/actions";
-import type { CustomQuestion, LocationKind, QuestionDraft } from "@/lib/data/types";
+import type { LocationKind, QuestionDraft } from "@/lib/data/types";
+import { QuestionListEditor, editableToDrafts, toEditable, type EditableQuestion, type TemplateOption } from "./intake/QuestionListEditor";
+import { SaveAsTemplate } from "./intake/SaveAsTemplate";
 import type { VideoAvailability } from "@/lib/video/gate";
 import type { ZoomSetup } from "@/lib/zoom/connection";
 import { ZoomHint } from "./ZoomHint";
 import { START_INCREMENTS, slugify, type EventTypeErrors, type EventTypeForm, type QuestionErrors } from "@/lib/event-types";
 import { Button } from "./ui/Button";
-import { Card } from "./ui/Card";
 import { focusRing } from "./ui/focus";
 import { Input, Label } from "./ui/Input";
 import { useHostI18n } from "./HostI18nProvider";
@@ -47,16 +48,9 @@ const LOCATION_VALUE_KEY: Partial<Record<LocationKind, HostKey>> = {
   custom: "eventTypes.valueDetails",
 };
 
-const QUESTION_KINDS: { kind: CustomQuestion["kind"]; label: HostKey }[] = [
-  { kind: "short_text", label: "eventTypes.kindShort" },
-  { kind: "long_text", label: "eventTypes.kindLong" },
-  { kind: "single_select", label: "eventTypes.kindSelect" },
-];
-
 const fieldClasses = (invalid: boolean) =>
   `mt-1 block w-full rounded-md border bg-card px-3 text-base text-text ${invalid ? "border-danger" : "border-border-input"} ${focusRing}`;
 
-type EditableQuestion = QuestionDraft & { key: string };
 
 export interface EventTypeEditorProps {
   id: string | null;
@@ -74,15 +68,19 @@ export interface EventTypeEditorProps {
   zoomSetup?: ZoomSetup;
   /** Whether Hourhand video can be picked: set up on this server and on the host's plan. */
   video?: VideoAvailability;
+  /** The host's intake templates and the starter examples, to add questions from. */
+  templates?: TemplateOption[];
+  /** Whether the host can save templates (needs the database). */
+  canSaveTemplates?: boolean;
 }
 
-export function EventTypeEditor({ id, userSlug, bookingHost = "hourhand.cloud", initial, initialQuestions, justSaved = false, currency = "INR", provider = null, zoomSetup = "not_configured", video = "not_set_up" }: EventTypeEditorProps) {
+export function EventTypeEditor({ id, userSlug, bookingHost = "hourhand.cloud", initial, initialQuestions, justSaved = false, currency = "INR", provider = null, zoomSetup = "not_configured", video = "not_set_up", templates = [], canSaveTemplates = false }: EventTypeEditorProps) {
   const router = useRouter();
   const { t, tNodes } = useHostI18n();
   const [tab, setTab] = useState<TabId>("details");
   const [form, setForm] = useState(initial);
   const [customDuration, setCustomDuration] = useState(!PRESET_DURATIONS.includes(Number(initial.durationMinutes)));
-  const [questions, setQuestions] = useState<EditableQuestion[]>(() => initialQuestions.map((q, i) => ({ ...q, key: q.id ?? `new-${i}` })));
+  const [questions, setQuestions] = useState<EditableQuestion[]>(() => { let n = 0; return toEditable(initialQuestions, () => `new-${n++}`); });
   const [errors, setErrors] = useState<EventTypeErrors>({});
   const [questionErrors, setQuestionErrors] = useState<QuestionErrors>([]);
   const [status, setStatus] = useState<"idle" | "saved" | "invalid">(justSaved ? "saved" : "idle");
@@ -100,7 +98,7 @@ export function EventTypeEditor({ id, userSlug, bookingHost = "hourhand.cloud", 
 
   const tabHasErrors = (tabId: TabId) =>
     tabId === "form"
-      ? questionErrors.some((e) => e.label || e.choices)
+      ? questionErrors.some((e) => e.label || e.choices || e.condition || e.range)
       : Object.keys(errors).some((k) => DETAIL_FIELDS.includes(k as keyof EventTypeForm) === (tabId === "details"));
 
   function onTabKey(e: KeyboardEvent<HTMLButtonElement>) {
@@ -112,32 +110,14 @@ export function EventTypeEditor({ id, userSlug, bookingHost = "hourhand.cloud", 
     tabRefs.current[TABS[next].id]?.focus();
   }
 
-  function updateQuestion(index: number, patch: Partial<QuestionDraft>) {
-    setQuestions((qs) => qs.map((q, i) => (i === index ? { ...q, ...patch } : q)));
-    setStatus("idle");
-  }
-  function moveQuestion(index: number, by: -1 | 1) {
-    setQuestions((qs) => {
-      const next = [...qs];
-      [next[index], next[index + by]] = [next[index + by], next[index]];
-      return next;
-    });
-    setQuestionErrors([]);
-    setStatus("idle");
-  }
-  function removeQuestion(index: number) {
-    setQuestions((qs) => qs.filter((_, i) => i !== index));
-    setQuestionErrors((es) => es.filter((_, i) => i !== index));
-    setStatus("idle");
-  }
-  function addQuestion() {
-    setQuestions((qs) => [...qs, { key: crypto.randomUUID(), id: null, label: "", kind: "short_text", required: false, choices: [] }]);
+  function changeQuestions(next: EditableQuestion[]) {
+    setQuestions(next);
     setStatus("idle");
   }
 
   function save() {
     startSaving(async () => {
-      const result = await saveEventType(id, form, questions.map(({ id: qid, label, kind, required, choices }) => ({ id: qid, label, kind, required, choices })));
+      const result = await saveEventType(id, form, editableToDrafts(questions));
       if (!result.ok) {
         setErrors(result.errors);
         setQuestionErrors(result.questionErrors);
@@ -343,55 +323,15 @@ export function EventTypeEditor({ id, userSlug, bookingHost = "hourhand.cloud", 
 
       <Panel id="form" active={tab}>
         <p className="text-sm text-text-muted">{t("eventTypes.formIntro")}</p>
-        {questions.length === 0 && <p className="text-text-muted">{t("eventTypes.noQuestions")}</p>}
-        <ol className="grid gap-4">
-          {questions.map((q, i) => {
-            const e = questionErrors[i] ?? {};
-            const name = q.label.trim() || t("eventTypes.questionN", { n: i + 1 });
-            return (
-              <li key={q.key}>
-                <Card className="grid gap-3">
-                  <div>
-                    <Label htmlFor={`q-${q.key}-label`}>{t("eventTypes.questionN", { n: i + 1 })}</Label>
-                    <Input id={`q-${q.key}-label`} value={q.label} onChange={(ev) => updateQuestion(i, { label: ev.target.value })} error={e.label} />
-                  </div>
-                  <div>
-                    <Label htmlFor={`q-${q.key}-kind`}>{t("eventTypes.answerType")}</Label>
-                    <select
-                      id={`q-${q.key}-kind`} value={q.kind} onChange={(ev) => updateQuestion(i, { kind: ev.target.value as CustomQuestion["kind"] })}
-                      className={`h-11 ${fieldClasses(false)}`}
-                    >
-                      {QUESTION_KINDS.map((k) => <option key={k.kind} value={k.kind}>{t(k.label)}</option>)}
-                      {!QUESTION_KINDS.some((k) => k.kind === q.kind) && <option value={q.kind}>{q.kind.replace("_", " ")}</option>}
-                    </select>
-                  </div>
-                  {q.kind === "single_select" && (
-                    <div>
-                      <Label htmlFor={`q-${q.key}-choices`}>{t("eventTypes.choices")}</Label>
-                      <textarea
-                        id={`q-${q.key}-choices`} rows={3} value={q.choices.join("\n")}
-                        onChange={(ev) => updateQuestion(i, { choices: ev.target.value.split("\n") })}
-                        aria-invalid={e.choices ? true : undefined} aria-describedby={e.choices ? `q-${q.key}-choices-error` : undefined}
-                        className={`py-2 ${fieldClasses(Boolean(e.choices))}`}
-                      />
-                      {e.choices && <p id={`q-${q.key}-choices-error`} className="mt-1 text-sm text-danger">{e.choices}</p>}
-                    </div>
-                  )}
-                  <label className="inline-flex min-h-11 items-center gap-2 text-sm text-text">
-                    <input type="checkbox" checked={q.required} onChange={(ev) => updateQuestion(i, { required: ev.target.checked })} className={`size-5 accent-accent ${focusRing}`} />
-                    {t("eventTypes.required")}
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="secondary" size="sm" disabled={i === 0} onClick={() => moveQuestion(i, -1)} aria-label={t("eventTypes.moveUpLabel", { name })}>{t("eventTypes.moveUp")}</Button>
-                    <Button variant="secondary" size="sm" disabled={i === questions.length - 1} onClick={() => moveQuestion(i, 1)} aria-label={t("eventTypes.moveDownLabel", { name })}>{t("eventTypes.moveDown")}</Button>
-                    <Button variant="ghost" size="sm" onClick={() => removeQuestion(i)} aria-label={t("eventTypes.removeLabel", { name })}>{t("common.remove")}</Button>
-                  </div>
-                </Card>
-              </li>
-            );
-          })}
-        </ol>
-        <div><Button variant="secondary" onClick={addQuestion}>{t("eventTypes.addQuestion")}</Button></div>
+        <QuestionListEditor
+          questions={questions} onChange={changeQuestions} errors={questionErrors} onErrorsChange={setQuestionErrors} templates={templates}
+          newKey={() => crypto.randomUUID()}
+        />
+        <p className="text-sm text-text-muted">
+          <Link href="/dashboard/event-types/templates" className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("intake.templatesLink")}</Link>{" "}
+          {t("intake.templatesHint")}
+        </p>
+        {canSaveTemplates && <SaveAsTemplate questions={questions} />}
       </Panel>
 
       <div className="mt-8 flex flex-wrap items-center gap-4 border-t border-border pt-4">

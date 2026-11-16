@@ -11,6 +11,8 @@ import { FollowUpSettingsForm } from "@/components/FollowUpSettingsForm";
 import { getPool } from "@/lib/data/pg-store";
 import { getFollowUpSettings } from "@/lib/follow-ups/follow-ups";
 import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
+import { templateChoices, templatesEnabled } from "@/lib/intake/options";
+import { toDrafts } from "@/lib/intake/templates-shape";
 import { getHostI18n } from "@/lib/i18n/host/server";
 import { getProfile } from "@/lib/profile";
 import { zoomSetupFor } from "@/lib/zoom/connection";
@@ -28,15 +30,14 @@ export default async function EventTypePage({ params, searchParams }: {
   const video = await videoAvailabilityFor(user.id);
   const eventType = await store.getEventType(user.id, id);
   if (!eventType) notFound();
-  const [locations, questions, account, schedules] = await Promise.all([
-    store.listEventLocations(user.id, id), store.listCustomQuestions(user.id, id),
+  const [locations, questions, templates, account, schedules] = await Promise.all([
+    store.listEventLocations(user.id, id), store.listCustomQuestions(user.id, id), templateChoices(user.id, t),
     authEnabled() ? paymentAccount(getPool(process.env.DATABASE_URL as string), user.id) : null,
     store.listSchedules(user.id),
   ]);
   const currency = priceCurrency(account);
   // Saved in another currency (the host switched payment providers): saving again re-prices it, so say so.
   const otherCurrency = eventType.currency !== null && eventType.currency !== currency ? eventType.currency : null;
-  const ordered = [...questions].sort((a, b) => a.position - b.position);
   // Follow-ups need Postgres (the outbox and the feedback table); the demo store has neither.
   const db = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
   const [followUps, profile] = db ? await Promise.all([getFollowUpSettings(db, user.id, id), getProfile(db, user.id)]) : [null, null];
@@ -58,7 +59,9 @@ export default async function EventTypePage({ params, searchParams }: {
         userSlug={user.slug}
         bookingHost={bookingHostName()}
         initial={toForm(eventType, locations[0])}
-        initialQuestions={ordered.map(({ id: qid, label, kind, required, choices }) => ({ id: qid, label, kind, required, choices }))}
+        initialQuestions={toDrafts(questions)}
+        templates={templates}
+        canSaveTemplates={templatesEnabled()}
         justSaved={saved === "1"}
         video={video}
         currency={currency}

@@ -5,6 +5,8 @@ import { isNamedError, type Booking, type DataStore, type EventType, type LinkUn
 import { isLocale, t } from "./i18n/guest";
 import { consentFor } from "./privacy/consent";
 import { waNumber } from "./whatsapp";
+import { ANSWER_MAX, isFirstBooking, resolveAnswers } from "./intake/answers";
+import { askedQuestionIds, toIntakeQuestion } from "./intake/conditions";
 import { smsNumber } from "./sms/config";
 import { BOOKING_LIMITS, type createRateLimiter } from "./rate-limit";
 import type { Plan } from "./billing/plans";
@@ -160,7 +162,8 @@ export interface BookingRequest {
   email: string;
   timezone: string;
   phone: string | null;
-  answers: Record<string, string>;
+  /** Question id to answer: text, or the ticked choices of a multi-select. Checked against the questions in handleCreateBooking. */
+  answers: Record<string, string | string[]>;
   idempotencyKey: string;
   /** The same time this many weeks running; 1 = just this once. */
   weeks: number;
@@ -226,13 +229,15 @@ export function validateBookingRequest(input: unknown): Validation {
     }
   }
 
-  const answers: Record<string, string> = {};
+  const answers: Record<string, string | string[]> = {};
   if (body.answers !== undefined) {
     if (typeof body.answers !== "object" || body.answers === null || Array.isArray(body.answers)) {
       fields.answers = "Answers must be an object.";
     } else {
       for (const [k, v] of Object.entries(body.answers)) {
-        if (typeof v !== "string" || v.length > 2000) fields[`answers.${k}`] = "Keep answers under 2000 characters.";
+        // A multi-select's ticked choices come as a list of short strings.
+        if (Array.isArray(v) && v.length <= 50 && v.every((x) => typeof x === "string" && x.length <= 300)) answers[k] = v.map((x: string) => x.trim());
+        else if (typeof v !== "string" || v.length > ANSWER_MAX) fields[`answers.${k}`] = "Keep answers under 2000 characters.";
         else answers[k] = v.trim();
       }
     }
@@ -312,7 +317,8 @@ export async function handleCreateBooking(
   }
 
   // A repeated submit returns the booking it already made, before the slot re-check (which it would now fail).
-  const existing = (await store.listBookings(host.id)).find((b) => b.idempotencyKey === req.idempotencyKey);
+  const hostBookings = await store.listBookings(host.id);
+  const existing = hostBookings.find((b) => b.idempotencyKey === req.idempotencyKey);
   // What the guest pays now: the price after at most one offer (worked out and recorded by resolvePrice), or else a
   // refundable no-show deposit, which offers never touch. Paid for with a package: nothing at booking.
   const priced = !req.packageToken && eventType.priceMinor !== null && payments
@@ -331,13 +337,21 @@ export async function handleCreateBooking(
   if (existing && priceMinor && existing.status === "confirmed") return { status: 200, body: { bookingId: existing.id, manageToken: existing.invitee.manageToken } };
   if (existing && priceMinor && existing.status === "cancelled") return { status: 409, body: { error: "attempt_expired" } };
 
+  // Intake answers, checked here whatever the form showed: hidden questions are dropped and never required. A question
+  // asked only on a client's first booking is checked in two steps. Its answer's format is checked now; whether it was
+  // left out is checked only after the slot re-check and the rate limiter, so this endpoint can't be used to learn
+  // cheaply whether an email has booked with this host before.
   const questions = await store.listCustomQuestions(host.id, eventType.id);
-  const missing = questions.filter((q) => q.required && !req.answers[q.id]);
-  if (missing.length > 0) {
-    return { status: 400, body: { error: "invalid_request", fields: Object.fromEntries(missing.map((q) => [`answers.${q.id}`, "This one is required."])) } };
-  }
+  const firstBooking = isFirstBooking(hostBookings, req.email, req.idempotencyKey);
+  const precheck = resolveAnswers(questions, req.answers, { firstBooking: null });
+  if (!precheck.ok) return { status: 400, body: { error: "invalid_request", fields: precheck.fields } };
+  const intake = resolveAnswers(questions, req.answers, { firstBooking });
+  const intakeRefusal: HandlerResult | null = intake.ok ? null : { status: 400, body: { error: "invalid_request", fields: intake.fields } };
 
-  const answers = questions.filter((q) => req.answers[q.id]).map((q) => ({ questionId: q.id, label: q.label, answer: req.answers[q.id] }));
+  // Only checked answers to questions actually asked are stored and logged; a hidden tick box isn't logged as declined.
+  const answers = intake.ok ? intake.answers : [];
+  const asked = askedQuestionIds(questions.map(toIntakeQuestion), req.answers, firstBooking);
+  const askedQuestions = questions.filter((q) => asked.has(q.id));
   const bookingInput = {
     eventTypeId: eventType.id, startAt: req.start, idempotencyKey: req.idempotencyKey, ...(req.weeks > 1 ? { weeks: req.weeks } : {}),
     // Used up in the same write as the booking (or its payment hold), so two guests on one link can't both book.
@@ -350,7 +364,7 @@ export async function handleCreateBooking(
       consent: consentFor({
         hostName: host.name, channel: found.linkToken ? "single_use_link" : req.packageToken ? "package_link" : "booking_page",
         whatsappOptIn: req.whatsappOptIn && req.phone !== null, whatsappStatement: t(isLocale(req.locale) ? req.locale : "en", "whatsappOptIn"),
-        smsOptIn: req.smsOptIn && req.phone !== null, smsStatement: t(isLocale(req.locale) ? req.locale : "en", "smsOptIn"), questions, answers,
+        smsOptIn: req.smsOptIn && req.phone !== null, smsStatement: t(isLocale(req.locale) ? req.locale : "en", "smsOptIn"), questions: askedQuestions, answers,
       }),
     },
   };
@@ -401,7 +415,7 @@ export async function handleCreateBooking(
 
   try {
     // The repeat skips the slot re-check and the limiter, as the free repeat above does.
-    if (existing && paid && priceMinor) return await startPaid(paid, priceMinor, 200);
+    if (existing && paid && priceMinor) return intakeRefusal ?? await startPaid(paid, priceMinor, 200);
 
     // Server-side re-check: the start must be one the engine offers right now.
     const offered = await freeSlots(store, host, eventType, req.start, new Date(req.start.getTime() + MIN), now);
@@ -416,6 +430,7 @@ export async function handleCreateBooking(
     if (limit && (!limit.limiter.take(`booking-ip:${limit.clientKey}`, BOOKING_LIMITS.perIp) || !limit.limiter.take(`booking-email:${req.email.toLowerCase()}`, BOOKING_LIMITS.perEmail))) {
       return { status: 429, body: { error: "too_many_requests" } };
     }
+    if (intakeRefusal) return intakeRefusal;
 
     if (paid && priceMinor) {
       const started = await startPaid(paid, priceMinor, 201);

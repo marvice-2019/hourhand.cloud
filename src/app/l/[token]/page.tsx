@@ -4,6 +4,7 @@ import { BookingFooter } from "@/components/BookingFooter";
 import { formatAmount } from "@/lib/money";
 import { store } from "@/lib/data";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
+import { toIntakeQuestion } from "@/lib/intake/conditions";
 import { smsOffered } from "@/lib/sms/offer";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,7 @@ export default async function LinkPage({ params }: { params: Promise<{ token: st
   const { host, eventType } = resolved;
   const questions = (await store.listCustomQuestions(host.id, eventType.id))
     .sort((a, b) => a.position - b.position)
-    .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
+    .map(toIntakeQuestion);
   return (
     <main className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
       <p className="text-sm font-semibold text-text-muted">{host.name}</p>

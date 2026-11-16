@@ -13,6 +13,7 @@ import { formatDate, formatTime, zoneName } from "@/lib/format";
 import { purchaseByToken, purchaseSessions } from "@/lib/packages/packages";
 import { requestPaymentDeps } from "@/lib/payments/request-deps";
 import { settleStripeSession } from "@/lib/payments/stripe-checkout";
+import { toIntakeQuestion } from "@/lib/intake/conditions";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export default async function PackagePage({ params, searchParams }: { params: Pr
   const sessions = await purchaseSessions(db!, purchase.id);
   const questions = (await store.listCustomQuestions(host.id, eventType.id))
     .sort((a, b) => a.position - b.position)
-    .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
+    .map(toIntakeQuestion);
   const tz = host.timezone;
 
   return (

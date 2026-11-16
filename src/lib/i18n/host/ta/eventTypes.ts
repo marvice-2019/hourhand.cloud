@@ -202,6 +202,11 @@ export const eventTypes: Record<keyof typeof en, string> = {
   "eventTypes.errQuestionLabel": "விருந்தினர்கள் பார்க்கும் கேள்வியை எழுதுங்கள்.",
   "eventTypes.errQuestionKind": "பதில் வகையைத் தேர்ந்தெடுங்கள்.",
   "eventTypes.errQuestionChoices": "குறைந்தது இரண்டு தேர்வுகளைச் சேருங்கள், ஒரு வரிக்கு ஒன்று.",
+  "eventTypes.errConditionParent": "சார்ந்திருக்க முந்தைய ஆம்/இல்லை அல்லது தேர்வுக் கேள்வியைத் தேர்ந்தெடுங்கள்.",
+  "eventTypes.errConditionChain": "அந்தக் கேள்வியே சில நேரங்களில் மட்டுமே காட்டப்படும். எப்போதும் கேட்கப்படும் ஒன்றைத் தேர்ந்தெடுங்கள்.",
+  "eventTypes.errConditionValues": "இந்தக் கேள்வியைக் காட்டும் குறைந்தது ஒரு பதிலை டிக் செய்யுங்கள்.",
+  "eventTypes.errRangeNumbers": "வரம்புகளை 0 அல்லது 120 போன்ற எண்களாக எழுதுங்கள்.",
+  "eventTypes.errRangeOrder": "குறைந்தபட்ச எண் அதிகபட்சத்தை விடப் பெரியதாக இருக்க முடியாது.",
   // Import messages, one per code in IMPORT_MESSAGES (src/lib/import/messages.ts); the English must match.
   "eventTypes.importMsgTimeout": "{label} பதில் சொல்ல அதிக நேரம் எடுத்தது. ஒரு நிமிடம் கழித்து மீண்டும் முயற்சி செய்யுங்கள்.",
   "eventTypes.importMsgUnreachable": "இப்போது {label}-ஐ அணுக முடியவில்லை. ஒரு நிமிடம் கழித்து மீண்டும் முயற்சி செய்யுங்கள்.",

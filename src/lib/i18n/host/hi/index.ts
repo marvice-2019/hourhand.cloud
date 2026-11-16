@@ -11,6 +11,7 @@ import { earnings } from "./earnings";
 import { eventTypes } from "./eventTypes";
 import { feedback } from "./feedback";
 import { getBooked } from "./getBooked";
+import { intake } from "./intake";
 import { integrations } from "./integrations";
 import { invoices } from "./invoices";
 import { links } from "./links";
@@ -27,5 +28,5 @@ import { settings } from "./settings";
 import { voice } from "./voice";
 
 export const hi: HostCatalog = {
-  ...analytics, ...availability, ...bookings, ...calendars, ...clients, ...common, ...domain, ...earnings, ...eventTypes, ...feedback, ...getBooked, ...integrations, ...invoices, ...links, ...mail, ...memberships, ...nav, ...offers, ...packages, ...plan, ...polls, ...profile, ...seat, ...settings, ...voice,
+  ...analytics, ...availability, ...bookings, ...calendars, ...clients, ...common, ...domain, ...earnings, ...eventTypes, ...feedback, ...getBooked, ...intake, ...integrations, ...invoices, ...links, ...mail, ...memberships, ...nav, ...offers, ...packages, ...plan, ...polls, ...profile, ...seat, ...settings, ...voice,
 };
