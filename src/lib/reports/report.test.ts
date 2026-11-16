@@ -150,8 +150,8 @@ describe("CSV exports", () => {
     expect(csv).toContain("Less: GST output tax (from invoices),INR,-180.00\r\n");
     expect(csv).toContain("Less: refunds,INR,-180.00\r\n");
     expect(csv).toContain(`Less: payment gateway fees (estimated until Razorpay reports them),INR,-${((118_000 * 0.02 * 1.18) / 100).toFixed(2)}\r\n`);
-    expect(csv).toContain("Less: payment gateway fees (as charged incl. GST),USD,-0.59\r\n");
-    expect(csv).toContain("Memo: GST in gateway fees (input tax credit; check with your CA),USD,0.09\r\n");
+    expect(csv).toContain("Less: payment gateway fees (as charged incl. tax),USD,-0.59\r\n");
+    expect(csv).toContain("Memo: tax in gateway fees,USD,0.09\r\n"); // GST input-tax wording is for rupees only
     expect(csv).not.toMatch(/output tax.*USD/); // GST output tax is a rupee figure only
   });
 });

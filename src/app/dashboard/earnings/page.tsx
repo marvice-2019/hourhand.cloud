@@ -47,7 +47,7 @@ export default async function EarningsPage({ searchParams }: { searchParams: Pro
       ...(c.currency === "INR" && r ? [tile("GST collected (output tax)", m(r.gst.outputTaxMinor), "From your invoices less credit notes; owed to the government")] : []),
       c.feesReportedMinor !== null
         ? tile("Gateway fees", m(c.feesReportedMinor + (c.feeEstimateMinor ?? 0)),
-          [`As Razorpay charged them, GST included${c.feeTaxReportedMinor ? ` (${m(c.feeTaxReportedMinor)} GST, claimable as input tax)` : ""}`,
+          [`As ${c.currency === "INR" ? "Razorpay" : "Stripe"} charged them, tax included${c.feeTaxReportedMinor ? ` (${m(c.feeTaxReportedMinor)} of it is tax${c.currency === "INR" ? ", claimable as input tax" : ""})` : ""}`,
             c.feeEstimateMinor !== null ? `; includes ≈ ${m(c.feeEstimateMinor)} estimated for payments whose fee isn't in yet` : ""].join(""))
         : c.feeEstimateMinor !== null ? tile("Gateway fees (estimate)", `≈ ${m(c.feeEstimateMinor)}`, "Razorpay's standard 2% + GST until Razorpay reports the real fee") : null,
     ];

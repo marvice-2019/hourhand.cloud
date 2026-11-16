@@ -8,9 +8,10 @@ import { businessReport } from "../reports/report";
 import { resolvePeriod } from "../reports/period";
 import { monthlyEarnings } from "../earnings";
 import { applyCapturedPayment, confirmPayment } from "./booking-payments";
-import { recordMissingFees } from "./fees";
+import { recordMissingFees, recordMissingStripeFees } from "./fees";
 import type { HostRazorpayAuth } from "./host-razorpay";
 import { feeOf, type RazorpayOrders, type RazorpayPayment } from "./razorpay-orders";
+import { stripeFeeOf, type StripeCheckoutApi, type StripeFee } from "./stripe-checkout";
 
 const BASE = process.env.TEST_DATABASE_URL;
 
@@ -25,6 +26,25 @@ describe("reading Razorpay's fee", () => {
     expect(feeOf({ status: "captured", fee: 100, tax: 180 })).toBeNull(); // tax can't exceed the fee
     expect(feeOf({ status: "captured", fee: -5, tax: 0 })).toBeNull();
     expect(feeOf({ status: "captured", fee: "1180", tax: 180 })).toBeNull();
+  });
+});
+
+describe("reading Stripe's fee", () => {
+  const pi = (bt: unknown) => ({ id: "pi_x", latest_charge: { id: "ch_x", balance_transaction: bt } });
+  it("takes the fee and its tax from the charge's expanded balance transaction", () => {
+    expect(stripeFeeOf(pi({ fee: 317, currency: "usd", fee_details: [{ type: "stripe_fee", amount: 317, currency: "usd" }] })))
+      .toEqual({ feeMinor: 317, taxMinor: 0, currency: "USD" });
+    expect(stripeFeeOf(pi({ fee: 360, currency: "gbp", fee_details: [{ type: "stripe_fee", amount: 300, currency: "gbp" }, { type: "tax", amount: 60, currency: "gbp" }] })))
+      .toEqual({ feeMinor: 360, taxMinor: 60, currency: "GBP" });
+  });
+  it("is null until Stripe has the balance transaction, or when the figures are wrong", () => {
+    expect(stripeFeeOf({ id: "pi_x", latest_charge: null })).toBeNull();
+    expect(stripeFeeOf({ id: "pi_x", latest_charge: "ch_x" })).toBeNull(); // not expanded
+    expect(stripeFeeOf(pi(null))).toBeNull();
+    expect(stripeFeeOf(pi("txn_x"))).toBeNull();
+    expect(stripeFeeOf(pi({ fee: -1, currency: "usd" }))).toBeNull();
+    expect(stripeFeeOf(pi({ fee: 1.5, currency: "usd" }))).toBeNull();
+    expect(stripeFeeOf(pi({ fee: 100, currency: "usd", fee_details: [{ type: "tax", amount: 500, currency: "usd" }] }))!.taxMinor).toBe(100); // never above the fee
   });
 });
 
@@ -161,5 +181,39 @@ describe.skipIf(!BASE)("recording fees (Postgres)", () => {
     const e = (await monthlyEarnings(pool, host, "2026-10", new Date("2026-11-15T06:00:00Z")))!;
     expect(e.feesMinor).toBe(inr.feesReportedMinor);
     expect(e.feeEstimateMinor).toBe(inr.feeEstimateMinor);
+  });
+
+  it("records Stripe's fee only when it is in the currency the guest paid", async () => {
+    const stripeHost = (await pool.query("insert into users (email, name, slug) values ('sfee@example.com', 'Stripe Host', 'stripe-fee') returning id")).rows[0].id;
+    const set = async (b: string, pi: string, currency: string) => pool.query(
+      `update payments set provider = 'stripe', status = 'paid', paid_at = $3, provider_payment_id = $2, currency = $4, host_id = $5 where booking_id = $1`,
+      [b, pi, now, currency, stripeHost]);
+    const usd = await held(); await set(usd, "pi_fee_usd_00000001", "USD");
+    const eur = await held(); await set(eur, "pi_fee_eur_00000001", "EUR"); // the account settles in GBP: no fee recorded
+    const later = await held(); await set(later, "pi_fee_late_0000001", "USD"); // no balance transaction yet
+    await pool.query("update bookings set host_id = $1 where id in ($2, $3, $4)", [stripeHost, usd, eur, later]);
+    await pool.query("update invitees set host_id = $1 where booking_id in ($2, $3, $4)", [stripeHost, usd, eur, later]);
+    const fees: Record<string, StripeFee | null> = {
+      pi_fee_usd_00000001: { feeMinor: 317, taxMinor: 0, currency: "USD" },
+      pi_fee_eur_00000001: { feeMinor: 290, taxMinor: 0, currency: "GBP" },
+      pi_fee_late_0000001: null,
+    };
+    const accounts: string[] = [];
+    const api = { async paymentFee(account: string, id: string) { accounts.push(account); return fees[id]; } } as unknown as StripeCheckoutApi;
+    const deps = { pool, api, accountFor: async () => ({ accountId: "acct_hostfee01", onboarding: "active" as const, currency: "GBP", country: "GB", mode: "test" as const }) };
+    expect(await recordMissingStripeFees(deps, now)).toEqual({ checked: 3, recorded: 1, errors: 0 });
+    expect(new Set(accounts)).toEqual(new Set(["acct_hostfee01"])); // asked as the host's own account
+    expect(await feeRow(usd)).toEqual({ fee_minor: 317, fee_tax_minor: 0 });
+    expect(await feeRow(eur)).toEqual({ fee_minor: null, fee_tax_minor: null });
+    expect(await feeRow(later)).toEqual({ fee_minor: null, fee_tax_minor: null });
+    // Razorpay's job leaves Stripe rows alone, and a Stripe client without paymentFee does nothing.
+    expect((await recordMissingFees({ pool, authFor: async () => auth, ordersFor: () => fake({}).orders }, new Date(now.getTime() + 2 * 3_600_000))).checked).toBe(0);
+    expect(await recordMissingStripeFees({ ...deps, api: {} as StripeCheckoutApi }, now)).toEqual({ checked: 0, recorded: 0, errors: 0 });
+
+    const r = (await businessReport(pool, stripeHost, resolvePeriod({ month: "2026-10" }, "Asia/Kolkata", new Date("2026-11-15T06:00:00Z")), now))!;
+    expect(r.currencies.find((c) => c.currency === "USD")).toMatchObject({ feesReportedMinor: 317, feeEstimateMinor: null });
+    expect(r.currencies.find((c) => c.currency === "EUR")).toMatchObject({ feesReportedMinor: null, feeEstimateMinor: null }); // unknown, never guessed
+    const e = (await monthlyEarnings(pool, stripeHost, "2026-10", new Date("2026-11-15T06:00:00Z"), "USD"))!;
+    expect([e.feesMinor, e.feeEstimateMinor]).toEqual([317, 0]);
   });
 });

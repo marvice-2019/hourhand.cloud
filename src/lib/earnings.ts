@@ -32,7 +32,7 @@ export interface MonthlyEarnings {
   netMinor: number;
   /** GST on this month's invoices, less credit notes; part of net, owed to the government. */
   gstMinor: number;
-  /** Razorpay's fees as charged (GST included) on money captured this month, where Razorpay has reported them. 0 for Stripe hosts. */
+  /** The provider's fees as charged (tax included) on money captured this month, where Razorpay or Stripe has reported them. */
   feesMinor: number;
   /** An estimate (2% + 18% GST) for INR money whose real fee isn't in yet; 0 once every fee is known, and for Stripe hosts. */
   feeEstimateMinor: number;
@@ -154,7 +154,9 @@ export function earningsCsv(e: MonthlyEarnings): string {
   const rows = [
     ["Month", e.month], ["Currency", e.currency], ["Bookings paid", r(e.bookingsMinor)], ["Packages paid", r(e.packagesMinor)], ["Deposits kept (no-shows)", r(e.depositsKeptMinor)],
     ["Refunds", r(-e.refundsMinor)], ["Net received", r(e.netMinor)],
-    ...(e.currency === "INR" ? [["of which GST", r(e.gstMinor)], ["Razorpay fees (as charged)", r(e.feesMinor)], ["Razorpay fees (estimated until reported)", r(e.feeEstimateMinor)]] : []),
+    ...(e.currency === "INR"
+      ? [["of which GST", r(e.gstMinor)], ["Razorpay fees (as charged)", r(e.feesMinor)], ["Razorpay fees (estimated until reported)", r(e.feeEstimateMinor)]]
+      : [["Stripe fees (as charged)", r(e.feesMinor)]]),
     ["Deposits still held", r(e.depositsHeldMinor)], ["Sessions held", String(e.sessions.held)], ["No-shows", String(e.sessions.noShows)],
     ["Cancelled by guest", String(e.sessions.cancelledByGuest)], ["Cancelled by you", String(e.sessions.cancelledByHost)],
     ...e.byEventType.map((l) => [`${l.eventName}`, r(l.bookingsMinor + l.packagesMinor)]),

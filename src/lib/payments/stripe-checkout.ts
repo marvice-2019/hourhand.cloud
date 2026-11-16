@@ -42,6 +42,9 @@ export interface StripeSession {
 
 export interface StripeRefund { id: string; status: string; amount: number }
 
+/** Stripe's fee on a charge as its balance transaction reports it: GST/VAT part included, in the account's settlement currency. */
+export interface StripeFee { feeMinor: number; taxMinor: number; currency: string }
+
 export interface StripeCheckoutApi {
   createSession(account: string, p: {
     ref: string; amountMinor: number; currency: string; productName: string; customerEmail: string; applicationFeeMinor: number;
@@ -53,6 +56,25 @@ export interface StripeCheckoutApi {
   listRefunds(account: string, paymentIntentId: string): Promise<StripeRefund[]>;
   /** A full refund. The idempotency key makes a retried request return the first refund instead of paying twice. */
   refund(account: string, paymentIntentId: string, o: { refundApplicationFee: boolean; ref: string }, idempotencyKey: string): Promise<StripeRefund>;
+  /** The fee on the payment's charge, or null until Stripe has made its balance transaction. Optional for fakes. */
+  paymentFee?(account: string, paymentIntentId: string): Promise<StripeFee | null>;
+}
+
+/**
+ * Reads the fee from a PaymentIntent fetched with latest_charge.balance_transaction expanded. Null while the charge or its
+ * balance transaction isn't there yet, or when the figures don't add up (a fee that isn't a whole non-negative number).
+ */
+export function stripeFeeOf(pi: Record<string, unknown>): StripeFee | null {
+  const charge = pi.latest_charge;
+  const bt = charge && typeof charge === "object" ? (charge as Record<string, unknown>).balance_transaction : null;
+  if (!bt || typeof bt !== "object") return null;
+  const t = bt as Record<string, unknown>;
+  const fee = t.fee, currency = t.currency;
+  if (typeof fee !== "number" || !Number.isInteger(fee) || fee < 0 || typeof currency !== "string" || !/^[a-z]{3}$/i.test(currency)) return null;
+  const tax = (Array.isArray(t.fee_details) ? t.fee_details : [])
+    .filter((d): d is Record<string, unknown> => !!d && typeof d === "object" && (d as Record<string, unknown>).type === "tax" && String((d as Record<string, unknown>).currency).toLowerCase() === currency.toLowerCase())
+    .reduce((sum, d) => sum + (typeof d.amount === "number" && Number.isInteger(d.amount) && d.amount > 0 ? d.amount : 0), 0);
+  return { feeMinor: fee, taxMinor: Math.min(tax, fee), currency: currency.toUpperCase() };
 }
 
 const SESSION_ID = /^cs_[A-Za-z0-9_]{8,200}$/;
@@ -134,6 +156,10 @@ export function stripeCheckoutApi(opts: { secretKey: string; baseUrl?: string; f
       return toRefund(await call(account, "POST", "/refunds", {
         payment_intent: paymentIntentId, metadata: { hourhand_ref: o.ref }, ...(o.refundApplicationFee ? { refund_application_fee: "true" } : {}),
       }, idempotencyKey));
+    },
+    async paymentFee(account, paymentIntentId) {
+      if (!PI_ID.test(paymentIntentId)) throw new BillingApiError("Not a PaymentIntent id", null, false);
+      return stripeFeeOf(await call(account, "GET", `/payment_intents/${paymentIntentId}`, { expand: ["latest_charge.balance_transaction"] }));
     },
   };
 }

@@ -64,7 +64,7 @@ export function pnlCsv(r: BusinessReport, periodLabel: string): string {
       after -= r.gst.outputTaxMinor;
     }
     if (c.feesReportedMinor !== null) {
-      add("Less: payment gateway fees (as charged incl. GST)", c.currency, -c.feesReportedMinor);
+      add("Less: payment gateway fees (as charged incl. tax)", c.currency, -c.feesReportedMinor);
       after -= c.feesReportedMinor;
     }
     if (c.feeEstimateMinor !== null) {
@@ -72,7 +72,7 @@ export function pnlCsv(r: BusinessReport, periodLabel: string): string {
       after -= c.feeEstimateMinor;
     }
     add("Net after tax and fees", c.currency, after);
-    if (c.feeTaxReportedMinor) add("Memo: GST in gateway fees (input tax credit; check with your CA)", c.currency, c.feeTaxReportedMinor);
+    if (c.feeTaxReportedMinor) add(c.currency === "INR" ? "Memo: GST in gateway fees (input tax credit; check with your CA)" : "Memo: tax in gateway fees", c.currency, c.feeTaxReportedMinor);
     if (c.depositsHeldMinor > 0) add("Memo: deposits still held (not income)", c.currency, c.depositsHeldMinor);
   }
   for (const t of r.trend) add(`Net income ${t.month}`, t.currency, t.netIncomeMinor);
