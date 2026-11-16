@@ -206,6 +206,15 @@ const en = {
   offerKindFirst: "first-session discount",
   offerKindSliding: "pay what you can",
   price: "Price",
+  // Your data: a guest asks their host for a copy or deletion (roadmap 3.10).
+  yourData: "Your data",
+  yourDataIntro: "{host} keeps the details you gave when booking, using Hourhand. You can ask them for a copy, or to delete them.",
+  askCopy: "Ask for a copy",
+  askDelete: "Ask to delete my data",
+  copyRequested: "You asked {host} for a copy of your data. They have until {date} to respond.",
+  deleteRequested: "You asked {host} to delete your data. They have until {date} to respond.",
+  deleteHint: "If you have a booking coming up, {host} cancels it first. Tax invoices are kept as the law requires, without your contact details.",
+  requestFailed: "That didn't go through. Try again, or contact {host} directly.",
 };
 
 export type GuestKey = keyof typeof en;
@@ -393,6 +402,14 @@ const hi: Catalog = {
   offerKindFirst: "पहले सेशन की छूट",
   offerKindSliding: "जितना हो सके उतना दें",
   price: "कीमत",
+  yourData: "आपका डेटा",
+  yourDataIntro: "बुकिंग के समय दी गई आपकी जानकारी {host} Hourhand में रखते हैं। आप उनसे इसकी कॉपी माँग सकते हैं, या इसे मिटाने को कह सकते हैं।",
+  askCopy: "कॉपी माँगें",
+  askDelete: "मेरा डेटा मिटाने को कहें",
+  copyRequested: "आपने {host} से अपने डेटा की कॉपी माँगी है। उन्हें {date} तक जवाब देना है।",
+  deleteRequested: "आपने {host} से अपना डेटा मिटाने को कहा है। उन्हें {date} तक जवाब देना है।",
+  deleteHint: "अगर आपकी कोई बुकिंग आने वाली है, तो {host} पहले उसे रद्द करेंगे। टैक्स इनवॉइस क़ानून के अनुसार रखे जाते हैं, आपके संपर्क विवरण के बिना।",
+  requestFailed: "यह नहीं पहुँचा। फिर से कोशिश करें, या सीधे {host} से संपर्क करें।",
 };
 
 const ta: Catalog = {
@@ -577,6 +594,14 @@ const ta: Catalog = {
   offerKindFirst: "முதல் செஷன் தள்ளுபடி",
   offerKindSliding: "உங்களால் முடிந்ததைச் செலுத்துங்கள்",
   price: "விலை",
+  yourData: "உங்கள் தரவு",
+  yourDataIntro: "முன்பதிவின்போது நீங்கள் கொடுத்த விவரங்களை {host} Hourhand-இல் வைத்திருக்கிறார். அதன் நகலைக் கேட்கலாம், அல்லது அழிக்கச் சொல்லலாம்.",
+  askCopy: "நகலைக் கேளுங்கள்",
+  askDelete: "என் தரவை அழிக்கச் சொல்லுங்கள்",
+  copyRequested: "உங்கள் தரவின் நகலை {host}-இடம் கேட்டுள்ளீர்கள். அவர் {date}-க்குள் பதில் தர வேண்டும்.",
+  deleteRequested: "உங்கள் தரவை அழிக்கும்படி {host}-இடம் கேட்டுள்ளீர்கள். அவர் {date}-க்குள் பதில் தர வேண்டும்.",
+  deleteHint: "வரவிருக்கும் முன்பதிவு இருந்தால், {host} முதலில் அதை ரத்து செய்வார். வரி விலைப்பட்டியல்கள் சட்டப்படி, உங்கள் தொடர்பு விவரங்கள் இல்லாமல் வைக்கப்படும்.",
+  requestFailed: "அது போகவில்லை. மீண்டும் முயற்சி செய்யுங்கள், அல்லது {host}-ஐ நேரடியாகத் தொடர்பு கொள்ளுங்கள்.",
 };
 
 const te: Catalog = {
@@ -761,6 +786,14 @@ const te: Catalog = {
   offerKindFirst: "మొదటి సెషన్ తగ్గింపు",
   offerKindSliding: "మీకు వీలైనంత చెల్లించండి",
   price: "ధర",
+  yourData: "మీ డేటా",
+  yourDataIntro: "బుకింగ్ సమయంలో మీరు ఇచ్చిన వివరాలను {host} Hourhandలో ఉంచుతారు. మీరు వాటి కాపీ అడగవచ్చు, లేదా తొలగించమని కోరవచ్చు.",
+  askCopy: "కాపీ అడగండి",
+  askDelete: "నా డేటాను తొలగించమని అడగండి",
+  copyRequested: "మీ డేటా కాపీ కోసం {host}ని అడిగారు. వారు {date} లోపు స్పందించాలి.",
+  deleteRequested: "మీ డేటాను తొలగించమని {host}ని అడిగారు. వారు {date} లోపు స్పందించాలి.",
+  deleteHint: "మీకు రాబోయే బుకింగ్ ఉంటే, {host} ముందుగా దాన్ని రద్దు చేస్తారు. పన్ను ఇన్వాయిస్‌లు చట్ట ప్రకారం, మీ సంప్రదింపు వివరాలు లేకుండా ఉంచబడతాయి.",
+  requestFailed: "అది వెళ్ళలేదు. మళ్ళీ ప్రయత్నించండి, లేదా నేరుగా {host}ని సంప్రదించండి.",
 };
 
 const kn: Catalog = {
@@ -945,6 +978,14 @@ const kn: Catalog = {
   offerKindFirst: "ಮೊದಲ ಸೆಷನ್ ರಿಯಾಯಿತಿ",
   offerKindSliding: "ನಿಮಗೆ ಸಾಧ್ಯವಾದಷ್ಟು ಪಾವತಿಸಿ",
   price: "ಬೆಲೆ",
+  yourData: "ನಿಮ್ಮ ಡೇಟಾ",
+  yourDataIntro: "ಬುಕಿಂಗ್ ಮಾಡುವಾಗ ನೀವು ನೀಡಿದ ವಿವರಗಳನ್ನು {host} Hourhand ನಲ್ಲಿ ಇಟ್ಟುಕೊಳ್ಳುತ್ತಾರೆ. ಅದರ ಪ್ರತಿಯನ್ನು ಕೇಳಬಹುದು, ಅಥವಾ ಅಳಿಸಲು ಹೇಳಬಹುದು.",
+  askCopy: "ಪ್ರತಿ ಕೇಳಿ",
+  askDelete: "ನನ್ನ ಡೇಟಾ ಅಳಿಸಲು ಕೇಳಿ",
+  copyRequested: "ನಿಮ್ಮ ಡೇಟಾದ ಪ್ರತಿಗಾಗಿ {host} ಅವರನ್ನು ಕೇಳಿದ್ದೀರಿ. ಅವರು {date} ಒಳಗೆ ಉತ್ತರಿಸಬೇಕು.",
+  deleteRequested: "ನಿಮ್ಮ ಡೇಟಾ ಅಳಿಸಲು {host} ಅವರನ್ನು ಕೇಳಿದ್ದೀರಿ. ಅವರು {date} ಒಳಗೆ ಉತ್ತರಿಸಬೇಕು.",
+  deleteHint: "ಮುಂಬರುವ ಬುಕಿಂಗ್ ಇದ್ದರೆ, {host} ಮೊದಲು ಅದನ್ನು ರದ್ದುಗೊಳಿಸುತ್ತಾರೆ. ತೆರಿಗೆ ಇನ್‌ವಾಯ್ಸ್‌ಗಳನ್ನು ಕಾನೂನಿನಂತೆ, ನಿಮ್ಮ ಸಂಪರ್ಕ ವಿವರಗಳಿಲ್ಲದೆ ಇಡಲಾಗುತ್ತದೆ.",
+  requestFailed: "ಅದು ಹೋಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ, ಅಥವಾ ನೇರವಾಗಿ {host} ಅವರನ್ನು ಸಂಪರ್ಕಿಸಿ.",
 };
 
 // Marathi (mr): DRAFT, needs native-speaker review before Hourhand is marketed in Marathi. Written from the English source.
@@ -1130,6 +1171,14 @@ const mr: Catalog = {
   textsTurnOff: "SMS बंद करा",
   textsTurnOn: "SMS सुरू करा",
   textsFailed: "ते सेव्ह झाले नाही. पुन्हा प्रयत्न करा.",
+  yourData: "तुमचा डेटा",
+  yourDataIntro: "बुकिंग करताना तुम्ही दिलेली माहिती {host} Hourhand मध्ये ठेवतात. तुम्ही त्याची प्रत मागू शकता, किंवा ती हटवायला सांगू शकता.",
+  askCopy: "प्रत मागा",
+  askDelete: "माझा डेटा हटवायला सांगा",
+  copyRequested: "तुम्ही {host} यांच्याकडे तुमच्या डेटाची प्रत मागितली आहे. त्यांनी {date} पर्यंत उत्तर द्यायचे आहे.",
+  deleteRequested: "तुम्ही {host} यांना तुमचा डेटा हटवायला सांगितले आहे. त्यांनी {date} पर्यंत उत्तर द्यायचे आहे.",
+  deleteHint: "तुमचे एखादे बुकिंग येणार असेल, तर {host} ते आधी रद्द करतील. कर पावत्या कायद्यानुसार ठेवल्या जातात, तुमच्या संपर्क तपशिलांशिवाय.",
+  requestFailed: "ते पोहोचले नाही. पुन्हा प्रयत्न करा, किंवा थेट {host} यांच्याशी संपर्क साधा.",
 };
 
 // Bengali (bn): DRAFT, needs native-speaker review before Hourhand is marketed in Bengali. Written from the English source.
@@ -1315,6 +1364,14 @@ const bn: Catalog = {
   textsTurnOff: "SMS বন্ধ করুন",
   textsTurnOn: "SMS চালু করুন",
   textsFailed: "সেভ হয়নি। আবার চেষ্টা করুন।",
+  yourData: "আপনার ডেটা",
+  yourDataIntro: "বুকিংয়ের সময় আপনার দেওয়া তথ্য {host} Hourhand-এ রাখেন। আপনি এর একটি কপি চাইতে পারেন, অথবা মুছে ফেলতে বলতে পারেন।",
+  askCopy: "কপি চান",
+  askDelete: "আমার ডেটা মুছে ফেলতে বলুন",
+  copyRequested: "আপনি {host}-এর কাছে আপনার ডেটার কপি চেয়েছেন। তাঁদের {date}-এর মধ্যে উত্তর দিতে হবে।",
+  deleteRequested: "আপনি {host}-কে আপনার ডেটা মুছে ফেলতে বলেছেন। তাঁদের {date}-এর মধ্যে উত্তর দিতে হবে।",
+  deleteHint: "আপনার কোনো বুকিং সামনে থাকলে {host} আগে সেটি বাতিল করবেন। কর ইনভয়েস আইন অনুযায়ী রাখা হয়, আপনার যোগাযোগের তথ্য ছাড়া।",
+  requestFailed: "এটি পৌঁছায়নি। আবার চেষ্টা করুন, অথবা সরাসরি {host}-এর সঙ্গে যোগাযোগ করুন।",
 };
 
 // Malayalam (ml): DRAFT, needs native-speaker review before Hourhand is marketed in Malayalam. Written from the English source.
@@ -1500,6 +1557,14 @@ const ml: Catalog = {
   textsTurnOff: "SMS ഓഫ് ചെയ്യുക",
   textsTurnOn: "SMS ഓൺ ചെയ്യുക",
   textsFailed: "അത് സേവ് ആയില്ല. വീണ്ടും ശ്രമിക്കുക.",
+  yourData: "നിങ്ങളുടെ ഡാറ്റ",
+  yourDataIntro: "ബുക്ക് ചെയ്യുമ്പോൾ നിങ്ങൾ നൽകിയ വിവരങ്ങൾ {host} Hourhand-ൽ സൂക്ഷിക്കുന്നു. അതിന്റെ പകർപ്പ് ചോദിക്കാം, അല്ലെങ്കിൽ ഇല്ലാതാക്കാൻ ആവശ്യപ്പെടാം.",
+  askCopy: "പകർപ്പ് ചോദിക്കുക",
+  askDelete: "എന്റെ ഡാറ്റ ഇല്ലാതാക്കാൻ ആവശ്യപ്പെടുക",
+  copyRequested: "നിങ്ങളുടെ ഡാറ്റയുടെ പകർപ്പ് {host}-നോട് ചോദിച്ചു. {date}-നകം അവർ മറുപടി നൽകണം.",
+  deleteRequested: "നിങ്ങളുടെ ഡാറ്റ ഇല്ലാതാക്കാൻ {host}-നോട് ആവശ്യപ്പെട്ടു. {date}-നകം അവർ മറുപടി നൽകണം.",
+  deleteHint: "വരാനിരിക്കുന്ന ബുക്കിംഗ് ഉണ്ടെങ്കിൽ {host} ആദ്യം അത് റദ്ദാക്കും. നികുതി ഇൻവോയ്സുകൾ നിയമപ്രകാരം, നിങ്ങളുടെ ബന്ധപ്പെടൽ വിവരങ്ങളില്ലാതെ സൂക്ഷിക്കും.",
+  requestFailed: "അത് എത്തിയില്ല. വീണ്ടും ശ്രമിക്കുക, അല്ലെങ്കിൽ {host}-നെ നേരിട്ട് ബന്ധപ്പെടുക.",
 };
 
 // Gujarati (gu): DRAFT, needs native-speaker review before Hourhand is marketed in Gujarati. Written from the English source.
@@ -1685,6 +1750,14 @@ const gu: Catalog = {
   textsTurnOff: "SMS બંધ કરો",
   textsTurnOn: "SMS ચાલુ કરો",
   textsFailed: "તે સેવ થયું નહીં. ફરી પ્રયાસ કરો.",
+  yourData: "તમારો ડેટા",
+  yourDataIntro: "બુકિંગ વખતે તમે આપેલી વિગતો {host} Hourhand માં રાખે છે. તમે તેની નકલ માગી શકો છો, અથવા તેને કાઢી નાખવા કહી શકો છો.",
+  askCopy: "નકલ માગો",
+  askDelete: "મારો ડેટા કાઢી નાખવા કહો",
+  copyRequested: "તમે {host} પાસે તમારા ડેટાની નકલ માગી છે. તેમણે {date} સુધીમાં જવાબ આપવાનો છે.",
+  deleteRequested: "તમે {host} ને તમારો ડેટા કાઢી નાખવા કહ્યું છે. તેમણે {date} સુધીમાં જવાબ આપવાનો છે.",
+  deleteHint: "જો તમારું કોઈ બુકિંગ આવનારું હોય, તો {host} પહેલાં તેને રદ કરશે. ટેક્સ ઇન્વૉઇસ કાયદા મુજબ, તમારી સંપર્ક વિગતો વગર રાખવામાં આવે છે.",
+  requestFailed: "તે પહોંચ્યું નહીં. ફરી પ્રયાસ કરો, અથવા સીધો {host} નો સંપર્ક કરો.",
 };
 
 export const CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn, mr, bn, ml, gu };

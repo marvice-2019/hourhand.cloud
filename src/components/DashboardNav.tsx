@@ -15,6 +15,7 @@ const items = [
   { href: "/dashboard/polls", label: "Polls" },
   { href: "/dashboard/packages", label: "Packages" },
   { href: "/dashboard/offers", label: "Offers" },
+  { href: "/dashboard/memberships", label: "Memberships" },
   { href: "/dashboard/earnings", label: "Earnings" },
   { href: "/dashboard/invoices", label: "Invoices" },
   { href: "/dashboard/availability", label: "Availability" },
