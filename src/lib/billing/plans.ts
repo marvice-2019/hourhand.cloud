@@ -30,15 +30,17 @@ export interface PlanLimits {
   openPolls: number;
   /** Clients can find the host's times by messaging Hourhand's WhatsApp number (after the host turns it on). */
   whatsappBooking: boolean;
+  /** Booking texts (SMS) a host's guests can get per calendar month (IST). Over it, email still goes. */
+  smsPerMonth: number;
   /** Booking analytics: how many days back the host can see, and whether they can download it as CSV. */
   analyticsDays: number;
   analyticsExport: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, analyticsDays: 7, analyticsExport: false },
-  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, analyticsDays: 90, analyticsExport: true },
-  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, analyticsDays: 90, analyticsExport: true },
+  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, analyticsDays: 7, analyticsExport: false },
+  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, analyticsDays: 90, analyticsExport: true },
+  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, analyticsDays: 90, analyticsExport: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {

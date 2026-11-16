@@ -14,6 +14,7 @@ import { closeDuePolls } from "../polls/polls";
 import { setJobKick } from "./kick";
 import { BATCH_SIZE, processDueNotifications, type CalendarDeps } from "./worker";
 import { whatsappConfig } from "../whatsapp-cloud";
+import { smsConfig } from "../sms/config";
 import type { Resolver } from "../domains/dns";
 import { recheckDomains } from "../domains/recheck";
 import type { TraefikSetup } from "../domains/traefik";
@@ -79,7 +80,7 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
         await closeDuePolls(opts.pool, new Date()).catch((error) => console.error("[jobs] closing polls failed", error));
         // A full batch means more may be due: keep going until a batch comes back short.
         for (;;) {
-          const r = await processDueNotifications(opts.pool, opts.mailer, { baseUrl: opts.baseUrl, calendar: opts.calendar, whatsapp: whatsappConfig() });
+          const r = await processDueNotifications(opts.pool, opts.mailer, { baseUrl: opts.baseUrl, calendar: opts.calendar, whatsapp: whatsappConfig(), sms: smsConfig() });
           if (r.claimed < BATCH_SIZE && r.released === 0) break;
         }
         // Custom domains: DNS re-checks and the Traefik files, every 5 minutes, after the emails so slow DNS can't delay them. A failure here stops nothing else.

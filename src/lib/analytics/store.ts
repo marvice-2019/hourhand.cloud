@@ -3,7 +3,7 @@ import type pg from "pg";
 import { classify, inAppChannel, isBot, optedOut, CHANNEL_LABELS, type Channel, type SourceInput } from "./source";
 
 // Booking analytics in Postgres: recording (never in a guest's way), the daily rollup, and the host's report.
-// See db/migrations/0030_analytics.sql for what is stored and for how long.
+// See db/migrations/0048_analytics.sql for what is stored and for how long.
 
 type Db = Pick<pg.Pool, "query">;
 const DAY = 86_400_000;
