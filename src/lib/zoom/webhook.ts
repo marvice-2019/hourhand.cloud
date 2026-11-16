@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type pg from "pg";
 import { markZoomDisconnected } from "./connection";
 
@@ -44,11 +44,13 @@ export async function handleZoomWebhook(
   const p = event.payload ?? {};
   const zoomUserId = typeof p.user_id === "string" ? p.user_id : null;
   if (!zoomUserId) return { status: 200, body: { ignored: "no user" } };
-  // Zoom retries until it gets a 2xx; the per-deauthorization signature (or user + time) makes a retry a no-op.
-  const externalId = String(p.signature ?? `${zoomUserId}:${p.deauthorization_time ?? ""}`);
+  // Zoom retries until it gets a 2xx; the per-deauthorization signature (or user + time) makes a retry a no-op. Only the
+  // event name and time are kept: the Zoom user and account IDs are the user's data, which Zoom asks apps to delete.
+  const externalId = typeof p.signature === "string" && p.signature
+    ? p.signature : `h:${createHash("sha256").update(`${zoomUserId}:${p.deauthorization_time ?? ""}`).digest("hex")}`;
   const fresh = await db.query(
     "insert into webhook_events (provider, external_id, payload, processed_at) values ('zoom', $1, $2, $3) on conflict (provider, external_id) do nothing",
-    [externalId, JSON.stringify(event), now]);
+    [externalId, JSON.stringify({ event: event.event, deauthorization_time: p.deauthorization_time ?? null }), now]);
   if (!fresh.rowCount) return { status: 200, body: { duplicate: true } };
   const { rows } = await db.query("select id from integrations where provider = 'zoom' and public_id = $1 and status = 'ok'", [zoomUserId]);
   for (const r of rows) await markZoomDisconnected(db, r.id, "Hourhand was removed from your Zoom account", now);

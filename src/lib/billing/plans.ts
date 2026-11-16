@@ -43,12 +43,14 @@ export interface PlanLimits {
   offers: boolean;
   /** Private video rooms on the owner's own Jitsi server (the "Hourhand video" location). */
   hourhandVideo: boolean;
+  /** A short AI prep brief before each session (after the host turns it on). */
+  sessionPrep: boolean;
 }
 
 export const LIMITS: Record<Plan, PlanLimits> = {
-  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, memberships: false, schedules: 1, offers: false, hourhandVideo: false, analyticsDays: 7, analyticsExport: false },
-  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true, analyticsDays: 90, analyticsExport: true },
-  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true, analyticsDays: 90, analyticsExport: true },
+  free: { checkedCalendars: 2, footer: true, openPolls: 1, whatsappBooking: false, smsPerMonth: 0, memberships: false, schedules: 1, offers: false, hourhandVideo: false, analyticsDays: 7, analyticsExport: false, sessionPrep: false },
+  solo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 100, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true, analyticsDays: 90, analyticsExport: true, sessionPrep: true },
+  duo: { checkedCalendars: Infinity, footer: false, openPolls: Infinity, whatsappBooking: true, smsPerMonth: 200, memberships: true, schedules: Infinity, offers: true, hourhandVideo: true, analyticsDays: 90, analyticsExport: true, sessionPrep: true },
 };
 
 const ENV_NAMES: Record<Provider, Record<PaidPlan, Record<BillingInterval, string>>> = {

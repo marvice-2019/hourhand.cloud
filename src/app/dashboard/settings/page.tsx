@@ -12,14 +12,22 @@ import { focusRing } from "@/components/ui/focus";
 import { LOCALES, LOCALE_NAMES, isLocale } from "@/lib/i18n/guest";
 import { getHostI18n } from "@/lib/i18n/host/server";
 import { HOST_LOCALES, HOST_LOCALE_NAMES, hostLocaleOf } from "@/lib/i18n/host";
-import { setBookingLanguage, setDashboardLanguage } from "./actions";
+import { setBookingLanguage, setDashboardLanguage, setSessionPrep } from "./actions";
+import { hostPlan } from "@/lib/billing/account";
+import { LIMITS } from "@/lib/billing/plans";
+import { getPool } from "@/lib/data/pg-store";
+import { prepClientFromEnv, prepSettings } from "@/lib/session-prep/prep";
 
 export const dynamic = "force-dynamic";
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ saved?: string; error?: string }> }) {
   const user = await requireOwnAccount();
   const { t } = await getHostI18n();
-  const { saved } = await searchParams;
+  const { saved, error } = await searchParams;
+  const pool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
+  const prep = pool ? await prepSettings(pool, user.id) : null;
+  const prepPlan = pool ? LIMITS[await hostPlan(pool, user.id)].sessionPrep : false;
+  const prepServer = prepClientFromEnv() !== null;
   const phone = isPhonePlaceholderEmail(user.email) ? formatPhone(`+${user.email.split("@")[0]}`) : undefined;
   return (
     <div>
@@ -78,6 +86,37 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </form>
         {saved === "language" && <p role="status" className="mt-2 text-success">{t("settings.languageSaved")}</p>}
       </Card>
+
+      {prep && (
+        <Card id="session-prep" className="mt-6 max-w-xl">
+          <h2 className="font-semibold text-text">{t("settings.prepTitle")}</h2>
+          <p className="mt-1 text-text-muted">{t("settings.prepIntro")}</p>
+          <p className="mt-2 text-sm text-text-muted">{t("settings.prepData")}</p>
+          {!prepServer ? (
+            <p className="mt-3 text-sm text-text">{t("settings.prepNotSetUp")}</p>
+          ) : !prepPlan ? (
+            <p className="mt-3 text-sm text-text">{t("settings.prepPlan")} <Link href="/dashboard/plan" className="font-semibold text-accent underline">{t("settings.prepSeePlans")}</Link></p>
+          ) : prep.enabled ? (
+            <form action={setSessionPrep} className="mt-4">
+              <p className="text-sm text-success">{t("settings.prepOnSince", { date: prep.enabledAt?.toISOString().slice(0, 10) ?? "" })}</p>
+              <Button type="submit" variant="secondary" className="mt-2">{t("settings.prepTurnOff")}</Button>
+            </form>
+          ) : (
+            <form action={setSessionPrep} className="mt-4 grid gap-3">
+              <input type="hidden" name="enabled" value="on" />
+              <label className="flex items-start gap-3 text-sm text-text">
+                <input type="checkbox" name="agree" required className={`mt-0.5 size-5 shrink-0 accent-accent ${focusRing}`} />
+                <span>{t("settings.prepAgree")}</span>
+              </label>
+              <div><Button type="submit">{t("settings.prepTurnOn")}</Button></div>
+            </form>
+          )}
+          {error === "prep_agree" && <p role="alert" className="mt-2 text-sm text-danger">{t("settings.prepErrAgree")}</p>}
+          {error === "prep_plan" && <p role="alert" className="mt-2 text-sm text-danger">{t("settings.prepPlan")}</p>}
+          {saved === "prep_on" && <p role="status" className="mt-2 text-sm text-success">{t("settings.prepSavedOn")}</p>}
+          {saved === "prep_off" && <p role="status" className="mt-2 text-sm text-text">{t("settings.prepSavedOff")}</p>}
+        </Card>
+      )}
 
       <Card className="mt-6 max-w-xl">
         <h2 className="font-semibold text-text">

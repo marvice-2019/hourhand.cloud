@@ -310,10 +310,10 @@ export function renderCalendarAlert(a: { accountEmail: string; disconnected: boo
 }
 
 /** Zoom stopped letting Hourhand make meetings: the grant was revoked, expired, or the app was removed in Zoom. */
-export function renderZoomAlert(a: { accountEmail: string; lastError: string | null; integrationsUrl: string; hostLocale?: string | null }): RenderedMail {
+export function renderZoomAlert(a: { accountEmail: string | null; lastError: string | null; integrationsUrl: string; hostLocale?: string | null }): RenderedMail {
   return render(h(a, "mail.subjZoom"), {
     heading: h(a, "mail.hZoom"),
-    intro: h(a, "mail.iZoom", { account: a.accountEmail }),
+    intro: a.accountEmail ? h(a, "mail.iZoom", { account: a.accountEmail }) : h(a, "mail.iZoomNoAccount"),
     rows: a.lastError ? [[h(a, "mail.rLastError"), a.lastError.slice(0, 200)]] : [],
     link: { label: h(a, "mail.lReconnectZoom"), url: a.integrationsUrl },
     footer: hostFooter(a),
