@@ -27,6 +27,7 @@ import { ZOOM_READY_SQL } from "../zoom/sql";
 import type { SmsConfig } from "../sms/config";
 import { queueSmsFallback, sendBookingSms, smsSkipReason } from "../sms/outbox";
 import { SmsError } from "../sms/provider";
+import { renderMembership } from "../memberships/mail";
 
 // Runs due rows of the notifications queue: emails, writes to the host's calendar (Google, Microsoft, iCloud) and to
 // their Zoom (a meeting per booking). Several workers can run
@@ -584,7 +585,7 @@ export async function processDueNotifications(
       continue;
     }
     // Host emails about their account rather than a booking.
-    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind) || c.kind === "data_request_host";
+    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind) || c.kind === "data_request_host" || c.kind === "membership_guest" || c.kind === "membership_host";
     if (!isAccountMail) {
       if (!r?.id) { await skip(c, "booking no longer exists"); continue; }
       const why = skipReason(c.kind, r, now);
@@ -664,6 +665,7 @@ export async function processDueNotifications(
           : c.kind === "data_request_host" ? await renderDataRequest(pool, c, opts.baseUrl)
           : c.kind === FOLLOW_UP_KIND ? await buildFollowUp(pool, c, opts.baseUrl, now, followUpLinkKey())
           : isPollKind(c.kind) ? await renderPoll(pool, c, opts.baseUrl, now)
+          : c.kind === "membership_guest" || c.kind === "membership_host" ? await renderMembership(pool, c, opts.baseUrl, now)
           : renderBookingMail(c.kind as BookingEmailKind, {
             ...toContext(r, opts.baseUrl),
             extraGuest: c.recipient.toLowerCase() !== String(r.guest_email).toLowerCase() && c.kind.endsWith("_guest"),
