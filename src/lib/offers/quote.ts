@@ -1,4 +1,5 @@
 import type { HandlerResult, PaymentDeps } from "../booking";
+import { priceFor, resolveDuration } from "../durations";
 import type { DataStore } from "../data/types";
 import { publicPackage } from "../packages/packages";
 import type { createRateLimiter } from "../rate-limit";
@@ -22,7 +23,10 @@ export async function handleQuote(store: DataStore, deps: PaymentDeps | null, in
     if (found) target = { hostId: found.host.id, item: { kind: "package", id: found.pkg.id, listMinor: found.pkg.priceMinor } };
   } else if (str("slug") && str("event")) {
     const found = await store.getPublicEventType(str("slug"), str("event"));
-    if (found?.eventType.priceMinor != null) target = { hostId: found.host.id, item: { kind: "event_type", id: found.eventType.id, listMinor: found.eventType.priceMinor } };
+    // The chosen length's price, when the event type offers several; an unknown length quotes nothing.
+    const minutes = found ? resolveDuration(found.eventType, typeof body.duration === "number" ? body.duration : null) : null;
+    const listMinor = found && minutes !== null ? priceFor(found.eventType, minutes) : null;
+    if (found && listMinor != null) target = { hostId: found.host.id, item: { kind: "event_type", id: found.eventType.id, listMinor } };
   }
   if (!target) return { status: 404, body: { error: "not_found" } };
   const r = await resolvePrice(deps.pool, {

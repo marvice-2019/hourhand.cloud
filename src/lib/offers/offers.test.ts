@@ -343,6 +343,31 @@ describe.skipIf(!BASE)("offers (Postgres)", () => {
     expect((await booked()).payment.amount).toBe(118_000);
   });
 
+  it("with several lengths, offers come off the chosen length's own price, on the booking and in the quote", async () => {
+    // Coaching also offered at a longer length with its own price: ₹1,180 at its own length, ₹2,000 at the longer one.
+    const longer = et.durationMinutes + 30;
+    await pool.query("update event_types set duration_options = $2, duration_prices = '{NULL,200000}' where id = $1", [et.id, [et.durationMinutes, longer]]);
+    et = (await store.listEventTypes(priya.id)).find((e) => e.id === et.id)!;
+    try {
+      await createCampaign(pool, priya.id, { name: "Diwali offer", banner: "10% off", discount: { kind: "percent", value: 10 }, startsOn: today(-1), endsOn: today(1), eventTypeIds: [], packageIds: [] });
+      const start = (await freeSlots(store, priya, { ...et, durationMinutes: longer }, new Date(), new Date(Date.now() + 30 * DAY), new Date()))[0];
+      const r = await handleCreateBooking(store, { ...(await request()), start: start.toISOString(), duration: longer }, new Date(), undefined, deps());
+      expect(r.status).toBe(201);
+      const body = r.body as Created;
+      expect(body.payment.amount).toBe(180_000); // 10% off ₹2,000, not off ₹1,180
+      expect(await offerForBooking(pool, body.bookingId)).toMatchObject({ kind: "campaign", listMinor: 200_000, chargeMinor: 180_000 });
+      // The booking page's coupon preview quotes the same length.
+      expect(await handleQuote(store, deps(), { slug: "priya", event: et.slug, duration: longer }, new Date())).toMatchObject({ status: 200, body: { listMinor: 200_000, chargeMinor: 180_000 } });
+      expect(await handleQuote(store, deps(), { slug: "priya", event: et.slug }, new Date())).toMatchObject({ status: 200, body: { listMinor: 118_000 } });
+      expect(await handleQuote(store, deps(), { slug: "priya", event: et.slug, duration: longer + 5 }, new Date())).not.toMatchObject({ status: 200 });
+      // The booking page works out each length's campaign price from the same rules.
+      expect((await pagePricing(pool, priya.id, "solo", { kind: "event_type", id: et.id, listMinor: 200_000, currency: "INR" }, new Date())).campaign?.chargeMinor).toBe(180_000);
+    } finally {
+      await pool.query("update event_types set duration_options = '{}', duration_prices = '{}' where id = $1", [et.id]);
+      et = (await store.listEventTypes(priya.id)).find((e) => e.id === et.id)!;
+    }
+  });
+
   it("only one adjustment: the best of coupon, first session and campaign, never stacked", async () => {
     await saveFirstSession(pool, priya.id, { kind: "percent", value: 10 }, true);
     await createCampaign(pool, priya.id, { name: "Diwali offer", banner: "20% off till 5 Nov", discount: { kind: "percent", value: 15 }, startsOn: today(-1), endsOn: today(1), eventTypeIds: [], packageIds: [] });

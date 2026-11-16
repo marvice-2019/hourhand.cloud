@@ -34,7 +34,7 @@ export const earnings: Record<keyof typeof en, string> = {
   "earnings.netSales": "नेट बिक्री",
   "earnings.netSalesHint": "कुल वसूली − रिफ़ंड",
   "earnings.depositsKept": "रखी गई डिपॉज़िट",
-  "earnings.depositsKeptHint": "जो मेहमान नहीं आए, उनसे",
+  "earnings.depositsKeptHint": "नो-शो से",
   "earnings.forfeited": "ज़ब्त डिपॉज़िट",
   "earnings.forfeitedHint": "नो-शो से रखी गई; इनका इनवॉइस नहीं बनता",
   "earnings.netIncome": "नेट आय",

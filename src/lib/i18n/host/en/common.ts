@@ -14,4 +14,6 @@ export const common = {
   "common.themeDevice": "Device",
   "common.themeLight": "Light",
   "common.themeDark": "Dark",
+  // For hosts paid through Stripe in another currency; rupee hosts keep the rupee wording.
+  "common.errPriceOther": "Enter a price in {currency}, like 49 or 49.50 (at least {min}).",
 } as const;

@@ -7,6 +7,7 @@ import { BookingFlow } from "@/components/BookingFlow";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { resolveLocale, t } from "@/lib/i18n/guest";
 import { formatAmount } from "@/lib/money";
+import { durationChoices, guestDurations, lengthsLabel, priceRange } from "@/lib/durations";
 import { authEnabled } from "@/lib/auth/auth";
 import { store } from "@/lib/data";
 import { getPool } from "@/lib/data/pg-store";
@@ -15,6 +16,7 @@ import { hostPlan } from "@/lib/billing/account";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
 import { smsOffered } from "@/lib/sms/offer";
 import { razorpayStatus } from "@/lib/payments/host-razorpay";
+import { toIntakeQuestion } from "@/lib/intake/conditions";
 import { paymentAccountFor } from "@/lib/clinic/payments";
 import { countPageView } from "@/lib/analytics/page-view";
 import { pagePricing } from "@/lib/offers/offers";
@@ -45,7 +47,7 @@ export default async function PublicEventPage({ params, searchParams }: { params
   const langQuery = typeof lang === "string" && lang === locale ? `?lang=${locale}` : "";
   const questions = (await store.listCustomQuestions(host.id, eventType.id))
     .sort((a, b) => a.position - b.position)
-    .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
+    .map(toIntakeQuestion);
   // Packages need Postgres, a paid plan and the host's Razorpay; offered only when a buyer could actually pay.
   const pool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
   const plan = pool ? await hostPlan(pool, host.id) : "free";
@@ -59,9 +61,21 @@ export default async function PublicEventPage({ params, searchParams }: { params
   const pricing = pool && eventType.priceMinor !== null
     ? await pagePricing(pool, host.id, plan, { kind: "event_type", id: eventType.id, listMinor: eventType.priceMinor, currency }, new Date())
     : null;
+  // Several lengths at different prices: the header shows the range, and each length carries today's campaign price
+  // for it, so what the guest sees after picking a length is what they're charged.
+  const lengthPrices = new Set(durationChoices(eventType).map((c) => c.priceMinor)).size > 1;
   const priceText = eventType.priceMinor === null ? null
     : pricing?.sliding ? `${money(pricing.sliding.minMinor)}–${money(pricing.sliding.maxMinor)}`
+    : lengthPrices ? priceRange(eventType, money)
     : money(eventType.priceMinor);
+  const choices = guestDurations(eventType, money);
+  const durations = choices && pool && eventType.priceMinor !== null && !pricing?.sliding
+    ? await Promise.all(choices.map(async (c) => ({
+      ...c,
+      campaignMinor: c.priceMinor === null ? null
+        : (await pagePricing(pool, host.id, plan, { kind: "event_type", id: eventType.id, listMinor: c.priceMinor, currency }, new Date())).campaign?.chargeMinor ?? null,
+    })))
+    : choices;
   return (
     <main lang={locale} className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
       <EmbedResize />
@@ -70,8 +84,8 @@ export default async function PublicEventPage({ params, searchParams }: { params
       <h1 className="font-display text-xl text-text">{eventType.name}</h1>
       {pricing?.campaign && <CampaignBanner name={pricing.campaign.name} banner={pricing.campaign.banner} />}
       <p className="mt-2 text-text-muted">
-        {t(locale, "minutes", { n: eventType.durationMinutes })}
-        {priceText && (pricing?.campaign
+        {t(locale, "minutes", { n: lengthsLabel(eventType) })}
+        {priceText && (pricing?.campaign && !lengthPrices
           ? <> · <s>{priceText}</s> <span className="font-semibold text-text">{t(locale, "offerWith", { price: money(pricing.campaign.chargeMinor), name: pricing.campaign.name })}</span></>
           : ` · ${priceText}`)}
       </p>
@@ -99,7 +113,7 @@ export default async function PublicEventPage({ params, searchParams }: { params
         </ul>
       )}
       <BookingFlow
-        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)} source={source}
+        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} durations={durations} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)} source={source}
         offers={pricing && eventType.priceMinor !== null ? {
           listMinor: eventType.priceMinor, currency, campaign: pricing.campaign && { name: pricing.campaign.name, chargeMinor: pricing.campaign.chargeMinor },
           sliding: pricing.sliding, coupons: pricing.coupons, firstSession: pricing.firstSession && discountText(pricing.firstSession),
