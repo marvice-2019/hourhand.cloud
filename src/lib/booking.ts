@@ -4,9 +4,12 @@ import { computeOneOffSlots, computeSlotSeats, isSyncStale } from "./slots";
 import { isNamedError, type Booking, type DataStore, type EventType, type LinkUnavailableError, type User } from "./data/types";
 import { isLocale } from "./i18n/guest";
 import { waNumber } from "./whatsapp";
+import { smsNumber } from "./sms/config";
 import { BOOKING_LIMITS, type createRateLimiter } from "./rate-limit";
 import type { Plan } from "./billing/plans";
 import { startPaidBooking } from "./payments/booking-payments";
+import { chargeableCurrency, startStripeBooking, type StripeDeps } from "./payments/stripe-checkout";
+import { stripeReady } from "./payments/stripe-connect";
 import type { HostRazorpayAuth } from "./payments/host-razorpay";
 import type { RazorpayOrders } from "./payments/razorpay-orders";
 
@@ -167,6 +170,8 @@ export interface BookingRequest {
   locale: string;
   /** Updates on WhatsApp to `phone`: only with the guest's own tick, and only for a number WhatsApp can be sent to. */
   whatsappOptIn: boolean;
+  /** Texts (SMS) to `phone`: only with the guest's own tick, and only for an Indian mobile. */
+  smsOptIn: boolean;
 }
 
 export type Validation = { ok: true; value: BookingRequest } | { ok: false; fields: Record<string, string> };
@@ -197,6 +202,8 @@ export function validateBookingRequest(input: unknown): Validation {
   if (phone && !/^\+?[0-9 ()-]{7,20}$/.test(phone)) fields.phone = "Enter a phone number with country code, like +91 98765 43210.";
   const whatsappOptIn = body.whatsappOptIn === true;
   if (whatsappOptIn && !fields.phone && !waNumber(phone)) fields.phone = "For WhatsApp updates, enter your number with country code, like +91 98765 43210.";
+  const smsOptIn = body.smsOptIn === true;
+  if (smsOptIn && !fields.phone && !smsNumber(phone)) fields.smsOptIn = "Text updates go to Indian mobile numbers only, like +91 98765 43210.";
   const weeks = body.weeks === undefined ? 1 : body.weeks;
   if (!Number.isInteger(weeks) || (weeks as number) < 1 || (weeks as number) > 12) fields.weeks = "Pick 1 to 12 weeks.";
   if (!idempotencyKey) fields.idempotencyKey = "Missing request key.";
@@ -232,7 +239,7 @@ export function validateBookingRequest(input: unknown): Validation {
   if (Object.keys(fields).length > 0 || !start) return { ok: false, fields };
   return {
     ok: true,
-    value: { slug: str("slug"), event: str("event"), linkToken: linkToken || null, start, name, email, timezone: body.timezone as string, phone: phone || null, answers, idempotencyKey, weeks: weeks as number, packageToken: packageToken || null, guests, locale: isLocale(body.locale) ? body.locale : "en", whatsappOptIn },
+    value: { slug: str("slug"), event: str("event"), linkToken: linkToken || null, start, name, email, timezone: body.timezone as string, phone: phone || null, answers, idempotencyKey, weeks: weeks as number, packageToken: packageToken || null, guests, locale: isLocale(body.locale) ? body.locale : "en", whatsappOptIn, smsOptIn },
   };
 }
 
@@ -261,6 +268,8 @@ export interface PaymentDeps {
   authFor(hostId: string): Promise<HostRazorpayAuth | null>;
   ordersFor(auth: HostRazorpayAuth): RazorpayOrders;
   planFor(hostId: string): Promise<Plan>;
+  /** Hosts on Stripe Connect, and this site's public address for Checkout's return URLs. Absent where Stripe isn't set up. */
+  stripe?: { deps: StripeDeps; baseUrl: string } | null;
 }
 
 /**
@@ -310,23 +319,49 @@ export async function handleCreateBooking(
     ...(found.linkToken ? { bookingLinkToken: found.linkToken, now } : {}),
     ...(req.packageToken ? { packageToken: req.packageToken } : {}),
     invitee: {
-      name: req.name, email: req.email, timezone: req.timezone, phone: req.phone, guests: req.guests, locale: req.locale, whatsappOptIn: req.whatsappOptIn,
+      name: req.name, email: req.email, timezone: req.timezone, phone: req.phone, guests: req.guests, locale: req.locale, whatsappOptIn: req.whatsappOptIn, smsOptIn: req.smsOptIn,
       answers: questions.filter((q) => req.answers[q.id]).map((q) => ({ questionId: q.id, label: q.label, answer: req.answers[q.id] })),
     },
   };
 
-  // Paid bookings need a paid plan and the host's own Razorpay; checked before the limiter so a refusal costs nothing.
-  let paid: { auth: HostRazorpayAuth; deps: PaymentDeps } | null = null;
+  // Paid bookings need a paid plan and the host's own Razorpay or Stripe account, taking the event's currency; checked
+  // before the limiter so a refusal costs nothing.
+  type Paid = { provider: "razorpay"; auth: HostRazorpayAuth; deps: PaymentDeps } | { provider: "stripe"; stripe: NonNullable<PaymentDeps["stripe"]>; host: NonNullable<Awaited<ReturnType<StripeDeps["accountFor"]>>> & { currency: string } };
+  let paid: Paid | null = null;
   if (priceMinor) {
-    const auth = payments && (await payments.planFor(host.id)) !== "free" ? await payments.authFor(host.id) : null;
-    if (!payments || !auth) return { status: 409, body: { error: "payments_unavailable" } };
-    paid = { auth, deps: payments };
+    if (!payments || (await payments.planFor(host.id)) === "free") return { status: 409, body: { error: "payments_unavailable" } };
+    // Prices saved before the currency was recorded are rupees.
+    const currency = eventType.currency ?? "INR";
+    const auth = await payments.authFor(host.id);
+    if (auth && currency === "INR") paid = { provider: "razorpay", auth, deps: payments };
+    else if (!auth && payments.stripe) {
+      const s = await payments.stripe.deps.accountFor(host.id);
+      // A price in another currency than the account settles in (the host switched providers and hasn't re-priced) can't be charged.
+      if (stripeReady(s) && chargeableCurrency(s.currency) && s.currency === currency) paid = { provider: "stripe", stripe: payments.stripe, host: s };
+    }
+    if (!paid) return { status: 409, body: { error: "payments_unavailable" } };
   }
 
-  const startPaid = async (p: { auth: HostRazorpayAuth; deps: PaymentDeps }, priceMinor: number, status: number): Promise<HandlerResult> => {
+  const startPaid = async (p: Paid, priceMinor: number, status: number): Promise<HandlerResult> => {
+    if (p.provider === "stripe") {
+      const base = p.stripe.baseUrl.replace(/\/+$/, "");
+      const lang = req.locale ? `&lang=${encodeURIComponent(req.locale)}` : "";
+      const { booking, payment } = await startStripeBooking(
+        { pool: p.stripe.deps.pool, store, api: p.stripe.deps.api, host: p.host },
+        {
+          ...bookingInput, priceMinor, kind: paymentKind,
+          productName: paymentKind === "deposit" ? `Refundable deposit: ${eventType.name} with ${host.name}` : `${eventType.name} with ${host.name}`,
+          urls: (b) => {
+            const page = `${base}/${host.slug}/${eventType.slug}/booked/${b.id}`;
+            // Stripe fills in {CHECKOUT_SESSION_ID}; the booked page reads that session back from Stripe before confirming.
+            return { successUrl: `${page}?session_id={CHECKOUT_SESSION_ID}${lang}`, cancelUrl: `${page}${lang ? `?${lang.slice(1)}` : ""}` };
+          },
+        }, now);
+      return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, holdExpiresAt: payment.holdExpiresAt.toISOString() } } };
+    }
     const { booking, payment } = await startPaidBooking(
       { pool: p.deps.pool, store, auth: p.auth, orders: p.deps.ordersFor(p.auth) }, { ...bookingInput, priceMinor, kind: paymentKind }, now);
-    return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, holdExpiresAt: payment.holdExpiresAt.toISOString() } } };
+    return { status, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, payment: payment && { ...payment, provider: "razorpay", holdExpiresAt: payment.holdExpiresAt.toISOString() } } };
   };
 
   try {

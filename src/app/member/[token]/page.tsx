@@ -86,7 +86,7 @@ export default async function MemberPage({ params, searchParams }: { params: Pro
           {eventTypes.length > 1 && (
             <ul className="mt-2 flex flex-wrap gap-2">
               {eventTypes.map((e) => (
-                <li key={e.id}><Link href={`/m/${token}?event=${encodeURIComponent(e.slug)}`} aria-current={e.id === chosen.id ? "page" : undefined}
+                <li key={e.id}><Link href={`/member/${token}?event=${encodeURIComponent(e.slug)}`} aria-current={e.id === chosen.id ? "page" : undefined}
                   className={`rounded-md border border-border px-3 py-1 text-sm ${e.id === chosen.id ? "bg-surface font-semibold text-text" : "text-text-muted"}`}>{e.name}</Link></li>
               ))}
             </ul>

@@ -19,7 +19,7 @@ export function baseSlug(email: string, name?: string | null): string {
 export const RESERVED_SLUGS = new Set([
   "about", "admin", "assets", "coaches", "grievance", "refunds", "site", "therapists", "tutors", "api", "app", "auth", "b", "billing", "l", "blog", "dashboard", "help", "login", "logout",
   "onboarding", "pricing", "privacy", "settings", "sign-in", "sign-out", "sign-up", "signin", "signup",
-  "static", "support", "terms", "www", "join",
+  "static", "support", "terms", "www", "join", "member",
 ]);
 
 /** The first free slug: the base, then base-2, base-3 … and finally a random suffix. Reserved words count as taken. */

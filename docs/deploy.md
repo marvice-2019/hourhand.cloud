@@ -35,6 +35,7 @@ The repo is ready to deploy as a **public beta**. Five must-have features are st
 | Resend | Add domain `hourhand.cloud`, add the SPF, DKIM and DMARC records it shows (section 4), wait for "Verified" |
 | Google Cloud | Redirect URIs, authorised domain and scopes from `docs/backend.md` → "Production addresses for hourhand.cloud". Then submit verification: home page `https://hourhand.cloud`, privacy `https://hourhand.cloud/privacy`, terms `https://hourhand.cloud/terms` |
 | Microsoft Entra | Section 6 |
+| Stripe Connect (hosts outside India) | Section 5d. Sandbox first |
 | Razorpay | Test mode first: webhook `https://hourhand.cloud/api/webhooks/razorpay` (events `subscription.*`), 4 test Plans, one test payment end to end. Then live keys (the live pair shared in chat on 2026-10-11 must be **regenerated** first) |
 
 ## 3. Coolify application
@@ -91,6 +92,8 @@ iCloud calendars need no server keys: each host connects with their own Apple ID
 **Batches A–C (2026-10-11):** migrations now run to `0020` (0019 is skipped on purpose); the container applies them on start, as before. No new required variables. Monthly earnings emails, waitlist emails, Duo invitations and waitlist cleanup run inside the existing job runner. Profile photos are stored in Postgres (up to 2 MB each), so they are in your database backups.
 
 **Batch D (2026-10-11):** migrations run to `0023`. No new variables. Booking pages can now be embedded on other sites through `/embed.js`; the dashboard, sign-in, API and legal pages refuse to be framed. Only https redirect links are kept on event types (any other stored value was cleared by `0023`).
+
+**Roadmap 1.4, Stripe Connect (2026-11-15):** migrations `0034_stripe_connect` and `0035_stripe_payments` (0026 to 0033 belong to other work and may land in any order; each migration is independent). New Runtime variables `STRIPE_SECRET_KEY` and `STRIPE_CONNECT_WEBHOOK_SECRET` (section 5d). Without them, nothing changes for Razorpay hosts and the Stripe option says it isn't set up.
 
 **Security fixes (2026-10-11):** if you put Cloudflare (or any other proxy) in front of Coolify, add its address ranges to `TRUSTED_PROXIES`, or every visitor shares one rate-limit bucket. Keep the app's own port closed to the internet so all traffic comes through Coolify's proxy.
 
@@ -375,6 +378,110 @@ Cost (Meta pricing from 1 October 2026): replies are service messages, free for 
 }
 ```
 
+## 5d. SMS (roadmap 1.2: booking texts through MSG91 and DLT)
+
+Off until every variable below is set. With any missing, nothing is queued, nothing is sent, and the booking form doesn't offer texts. Migration `0030` adds the opt-in, the short-link code and the opt-out table either way.
+
+Who gets texts: a guest who gives an **Indian mobile** (+91, starting 6–9) and ticks "Text me booking updates by SMS", on a host whose plan includes texts. They get four texts: booking confirmed, a reminder a day ahead, cancelled and rescheduled. Each text has a short link (`https://hourhand.cloud/m/<12-character code>`) that opens the booking's manage page. Guests with other numbers get email, and WhatsApp if they ticked it. If a guest ticks both WhatsApp and SMS, the message goes on WhatsApp. A text is sent only when that WhatsApp message can't go (the guest isn't on WhatsApp, Meta refuses it, it's reported undelivered, or the host is over their WhatsApp limit). The same message never goes on both channels. Guests can turn texts off, and back on, on the manage page.
+
+| Variable | Value | Required for SMS |
+| --- | --- | --- |
+| `SMS_PROVIDER` | `msg91` | yes |
+| `MSG91_AUTH_KEY` | MSG91 → API → Auth key | yes |
+| `MSG91_SENDER_ID` | your 6-letter DLT header, capitals (e.g. `HRHAND`) | yes |
+| `MSG91_TEMPLATE_BOOKED` | MSG91's template id (24 characters) for the English "booking confirmed" template | yes |
+| `MSG91_TEMPLATE_REMINDER` | same, English reminder | yes |
+| `MSG91_TEMPLATE_CANCELLED` | same, English cancelled | yes |
+| `MSG91_TEMPLATE_RESCHEDULED` | same, English rescheduled | yes |
+| `MSG91_TEMPLATE_BOOKED_HI` and the other three with `_HI` | MSG91's ids for the Hindi templates | no: Hindi guests get English until set |
+| `MSG91_WEBHOOK_SECRET` | any long random string you make up; type the same one in step 6 | yes |
+
+Set them in Coolify as **Runtime** variables, not Build variables, then redeploy.
+
+Steps (you; Claude never signs in to a DLT portal or MSG91):
+
+1. **DLT entity.** On one operator's DLT portal (Jio TrueConnect, Airtel, Vi, BSNL, Tata, SmartPing/Videocon or PingConnect; any one covers all networks), register Marvice Media Private Limited as a Principal Entity (PE). You need the PAN, GST certificate, a letter of authorisation and the signatory's ID. You get a 19-digit Entity ID. MSG91 lists portal fees of about ₹5,000 + GST and also says PingConnect is free; check the portal before you pay.
+2. **Header.** Register a 6-letter header (sender ID) in the **Service Implicit** category, e.g. `HRHAND`. These are booking updates for a service the guest asked for, which TRAI allows without separate consent. "Transactional" only covers texts sent within 30 minutes of the guest's own action, so reminders wouldn't qualify. Operators show it to the guest as e.g. `VM-HRHAND-S`.
+3. **URL whitelisting.** On the same portal, whitelist `https://hourhand.cloud/m/`. Since 1 October 2024, operators drop texts with links that aren't whitelisted.
+4. **Content templates.** Register the eight templates below as **Service Implicit**, linked to your header, with exactly the text shown (Hindi as Unicode). Each has three `{#var#}` slots, TRAI's default allowance; each slot carries at most 30 characters. Note each template's DLT Template ID.
+5. **Telemarketer binding.** Bind your Entity ID to MSG91 on the portal (PE–TM chain): Walkover Web Solutions Pvt. Ltd, TM ID `1302157225275643280` (from MSG91's help page; confirm it in your MSG91 panel). Since 11 December 2024, texts without a complete PE–TM chain are rejected.
+6. **MSG91.** Create an account and add your Entity ID and header. Add each template under SMS → Templates, pasting the DLT text with the slots renamed `##VAR1##`, `##VAR2##` and `##VAR3##` in order, and the DLT Template ID. Copy MSG91's template id of each into the variables above. Then go to Webhook (New), event "On Report Received", URL `https://hourhand.cloud/api/webhooks/sms`, and add a custom header `x-hourhand-secret` set to your `MSG91_WEBHOOK_SECRET`. MSG91 doesn't sign its webhooks, so this header is what keeps others from posting fake reports. If a header can't be added, use the URL `https://hourhand.cloud/api/webhooks/sms?secret=<your secret>`.
+7. Recharge MSG91 credits.
+
+Plan allowance per host per calendar month (IST): Free 0, Solo 100, Duo 200 texts. Over it, the text is skipped and email still goes. A Hindi text counts as one text against the allowance but MSG91 bills it by segment (up to 3).
+
+Opt-out: the manage page has an on/off switch for each booking. A delivery report saying a number is blocked (MSG91 status 17, or 9 NDNC) adds it to `sms_opt_outs`, and that number gets no more texts from any host. To block a number by hand: `insert into sms_opt_outs (phone, source) values ('91XXXXXXXXXX', 'manual');`.
+
+Check after go-live: book on your own page with your Indian mobile and the SMS tick (not WhatsApp). The confirmation text arrives within a minute, its link opens the booking, and the `notifications` row for it gets a `delivered_at`. Turn texts off on the manage page: the reminder row turns `skipped`.
+
+### SMS templates to register
+
+The texts the app sends. `docs/deploy.md` is checked against `src/lib/sms/templates.ts` by a test, so the two can't drift apart. If the site moves off hourhand.cloud, register new templates with the new address.
+
+#### Booking confirmed (English): `MSG91_TEMPLATE_BOOKED`
+
+```
+Your {#var#} is booked for {#var#}. To change or cancel: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 76% of the template. Longest real text: 133 GSM characters, 1 segment.
+
+#### Booking confirmed (Hindi): `MSG91_TEMPLATE_BOOKED_HI`
+
+```
+आपका {#var#} {#var#} के लिए बुक है। बदलने या रद्द करने के लिए: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 78% of the template. Longest real text: 139 Unicode characters, 3 segments.
+
+#### Day-ahead reminder (English): `MSG91_TEMPLATE_REMINDER`
+
+```
+Reminder: your {#var#} is on {#var#}. To change or cancel: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 77% of the template. Longest real text: 135 GSM characters, 1 segment.
+
+#### Day-ahead reminder (Hindi): `MSG91_TEMPLATE_REMINDER_HI`
+
+```
+याद दिला दें: आपका {#var#} {#var#} को है। बदलने या रद्द करने के लिए: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 79% of the template. Longest real text: 145 Unicode characters, 3 segments.
+
+#### Cancelled (English): `MSG91_TEMPLATE_CANCELLED`
+
+```
+Your {#var#} on {#var#} is cancelled. To book again: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 75% of the template. Longest real text: 129 GSM characters, 1 segment.
+
+#### Cancelled (Hindi): `MSG91_TEMPLATE_CANCELLED_HI`
+
+```
+{#var#} का आपका {#var#} रद्द हो गया है। फिर से बुक करने के लिए: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 78% of the template. Longest real text: 140 Unicode characters, 3 segments.
+
+#### Rescheduled (English): `MSG91_TEMPLATE_RESCHEDULED`
+
+```
+Your {#var#} has moved to {#var#}. To change or cancel: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 76% of the template. Longest real text: 132 GSM characters, 1 segment.
+
+#### Rescheduled (Hindi): `MSG91_TEMPLATE_RESCHEDULED_HI`
+
+```
+आपका {#var#} अब {#var#} को है। बदलने या रद्द करने के लिए: https://hourhand.cloud/m/{#var#}
+```
+
+Fixed text 77% of the template. Longest real text: 134 Unicode characters, 2 segments.
+
 ## 5c. Custom domains (roadmap 1.1: book.coachname.com)
 
 Hosts on Solo or Duo buy the **Custom domain add-on** (₹199 + 18% GST = ₹234.82 a month) and serve their booking pages at their own domain. It costs nothing extra to run: certificates come from the same Coolify Traefik that serves hourhand.cloud, through one small config file per domain that the app writes. No Cloudflare.
@@ -426,6 +533,18 @@ Then **Redeploy**. The log should **not** contain `Custom domains are not set up
 How it runs: every 5 minutes the job runner re-checks DNS (pending and failed domains every 5 minutes, active ones every 30) and makes the folder match the domains that should serve. A domain serves only while DNS is verified, the add-on is active and the host is on a paid plan. A DNS lookup that times out never takes a live domain down; a record that's gone or pointing elsewhere does, and the host sees why.
 
 Watch: `[domains]` lines in the app log. Let's Encrypt allows 50 certificates per registered domain a week and 300 new orders per 3 hours per account, far above what this needs.
+
+## 5d. Stripe Connect (roadmap 1.4: hosts outside India take payment through their own Stripe)
+
+Do all of this in a **Stripe sandbox first**, then repeat it in live mode.
+
+1. **Stripe Dashboard → Connect → Get started.** Choose the platform / SaaS setup, where hosts run their own businesses and accept their own payments. Fill in the Connect branding (business name, icon, brand colour); Stripe's hosted onboarding won't open without it. Hourhand creates accounts with Accounts v2 and the full Stripe Dashboard, so no OAuth client id is needed.
+2. **Workbench → Webhooks → Add destination**, **Events from: Connected accounts**, URL `https://hourhand.cloud/api/webhooks/stripe-connect`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `account.updated`, `account.application.deauthorized`. Copy its signing secret. This is a different endpoint and secret from the plans webhook (`/api/webhooks/stripe`, Your account).
+3. **Coolify env (Runtime only, never build-time):** `STRIPE_SECRET_KEY` (the sandbox key first; a restricted key also works if it can write Accounts v2, Account Links, Checkout Sessions and Refunds) and `STRIPE_CONNECT_WEBHOOK_SECRET`. Redeploy. The log line should end `Stripe on)`.
+4. **Test end to end in the sandbox:** sign in as a host on a paid plan, then Integrations → Stripe → pick a country → Connect Stripe → finish onboarding with Stripe's test data. The card shows "Taking payments" and the currency. Set a price on an event type and book it as a guest with card `4242 4242 4242 4242`. The booking confirms, the host sees "paid", and Stripe emails the receipt. Cancel it and the guest is refunded in the connected account's Dashboard. Try a package and a no-show deposit the same way.
+5. **Live:** swap in the live secret key and the live endpoint's signing secret. Connected accounts made in the sandbox don't carry over; hosts connect again.
+
+Production webhook endpoints for Connect receive both live and test events. Test events that don't match anything here are acknowledged and ignored.
 
 ## 6. Microsoft Entra (for B6: Outlook, Teams links, Sign in with Microsoft)
 

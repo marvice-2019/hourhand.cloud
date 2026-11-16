@@ -366,7 +366,7 @@ describe.skipIf(!BASE)("memberships (Postgres)", () => {
     while ((await processDueNotifications(pool, mailer, { baseUrl: "https://hourhand.test" })).claimed > 0) { /* drain */ }
     const m = (await membershipByToken(pool, token))!;
     const toMember = sent.find((x) => x.to === m.guestEmail && x.subject.startsWith("Your Coaching Plus membership"))!;
-    expect(toMember.text).toContain(`https://hourhand.test/m/${token}`);
+    expect(toMember.text).toContain(`https://hourhand.test/member/${token}`);
     const toHost = sent.find((x) => x.to === priya.email && x.subject === `New member: ${m.guestName}, Coaching Plus`)!;
     expect(toHost.text).not.toContain(token); // the member's link is theirs alone
   });

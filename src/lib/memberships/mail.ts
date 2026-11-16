@@ -15,7 +15,7 @@ export async function renderMembership(pool: pg.Pool, c: { kind: string; dedupe_
   const ctx: MembershipMailContext = {
     what: m[2] as MembershipMailContext["what"], hostName: r.host_name, hostEmail: r.host_email, guestName: r.guest_name, guestEmail: r.guest_email,
     planName: r.plan_name, sessions: r.sessions, priceMinor: r.price_minor, creditsLeft: left, paidThrough: r.paid_through, timezone: r.timezone,
-    memberUrl: `${baseUrl}/m/${r.token}`, dashboardUrl: `${baseUrl}/dashboard/memberships`,
+    memberUrl: `${baseUrl}/member/${r.token}`, dashboardUrl: `${baseUrl}/dashboard/memberships`,
   };
   return renderMembershipMail(m[3] as "guest" | "host", ctx);
 }

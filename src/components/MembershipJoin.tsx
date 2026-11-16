@@ -29,12 +29,12 @@ export function MembershipJoin({ planId, price, hostName, planName }: { planId: 
       if (res.status === 409) { setMessage(`${hostName} isn't taking memberships online right now. Contact them directly.`); return; }
       if (res.status === 429) { setMessage("Too many tries from here in the last hour. Try again later."); return; }
       if (!res.ok) { setMessage("Something went wrong and nothing was charged. Try again."); return; }
-      if (!body.checkout) { router.push(`/m/${body.token}`); return; } // already set up
+      if (!body.checkout) { router.push(`/member/${body.token}`); return; } // already set up
       const done = await subscribeWithRazorpay({ keyId: body.checkout.publicKey, subscriptionId: body.checkout.subscriptionId }, {
         name: hostName, description: `${planName}, monthly`, prefill: { name: who.name, email: who.email, ...(who.phone ? { contact: who.phone } : {}) },
       });
       if (!done) { setMessage("You haven't finished setting up the payment. Press the button again when you're ready."); return; }
-      router.push(`/m/${body.token}`);
+      router.push(`/member/${body.token}`);
     } catch {
       setMessage("Razorpay didn't open, and nothing was charged. Check your connection and try again.");
     } finally {

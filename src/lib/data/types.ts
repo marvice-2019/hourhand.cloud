@@ -41,9 +41,10 @@ export interface EventType {
   dailyLimit: number | null;
   /** Guests can't cancel online once the start is closer than this. 0 = any time before the start. */
   cancelCutoffMinutes: number;
-  /** What guests pay in paise; null = free. Set only together with currency (price_minor / currency in the schema). */
+  /** What guests pay in minor units (paise, cents); null = free. */
   priceMinor: number | null;
-  currency: "INR" | null;
+  /** The currency of the price or deposit: INR on Razorpay, the Stripe account's currency otherwise. Null when nothing is charged. */
+  currency: string | null;
   hidden: boolean;
   active: boolean;
   position: number;
@@ -155,6 +156,8 @@ export interface Invitee {
   locale: string;
   /** The guest ticked "updates on WhatsApp" for the phone they gave. */
   whatsappOptIn: boolean;
+  /** Texts (SMS) to the phone are on: ticked when booking, or turned on on the manage page. */
+  smsOptIn?: boolean;
 }
 
 /** One entry of invitees.answers (jsonb). The label is copied so later edits to the question don't rewrite history. */
@@ -207,7 +210,7 @@ export interface CreateBookingInput {
   weeks?: number;
   /** Pay with a session package (its buyer's token): one credit per booking, checked and used in the same write. Postgres only. */
   packageToken?: string;
-  invitee: { name: string; email: string; timezone: string; phone: string | null; answers: InviteeAnswer[]; guests?: string[]; locale?: string; whatsappOptIn?: boolean };
+  invitee: { name: string; email: string; timezone: string; phone: string | null; answers: InviteeAnswer[]; guests?: string[]; locale?: string; whatsappOptIn?: boolean; smsOptIn?: boolean };
 }
 
 export type BookingLinkState = "open" | "used" | "expired" | "revoked";
