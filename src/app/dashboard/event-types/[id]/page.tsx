@@ -6,7 +6,7 @@ import { store } from "@/lib/data";
 import { toForm } from "@/lib/event-types";
 import { requireHost } from "@/lib/auth/session";
 import { videoAvailabilityFor } from "@/lib/video/server";
-import { authEnabled } from "@/lib/auth/auth";
+import { authEnabled, bookingHostName } from "@/lib/auth/auth";
 import { FollowUpSettingsForm } from "@/components/FollowUpSettingsForm";
 import { getPool } from "@/lib/data/pg-store";
 import { getFollowUpSettings } from "@/lib/follow-ups/follow-ups";
@@ -57,6 +57,7 @@ export default async function EventTypePage({ params, searchParams }: {
         key={`${eventType.id}-${saved ?? ""}`}
         id={eventType.id}
         userSlug={user.slug}
+        bookingHost={bookingHostName()}
         initial={toForm(eventType, locations[0])}
         initialQuestions={toDrafts(questions)}
         templates={templates}

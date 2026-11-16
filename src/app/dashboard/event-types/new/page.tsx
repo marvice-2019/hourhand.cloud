@@ -3,7 +3,7 @@ import { EventTypeEditor } from "@/components/EventTypeEditor";
 import { NEW_EVENT_TYPE_FORM } from "@/lib/event-types";
 import { requireHost } from "@/lib/auth/session";
 import { videoAvailabilityFor } from "@/lib/video/server";
-import { authEnabled } from "@/lib/auth/auth";
+import { authEnabled, bookingHostName } from "@/lib/auth/auth";
 import { getPool } from "@/lib/data/pg-store";
 import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
 import { templateChoices, templatesEnabled } from "@/lib/intake/options";
@@ -22,7 +22,7 @@ export default async function NewEventTypePage() {
       <Link href="/dashboard/event-types" className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("eventTypes.backToList")}</Link>
       <h1 className="mt-2 font-display text-xl text-text">{t("eventTypes.new")}</h1>
       <p className="mt-2 text-text-muted">{t("eventTypes.newIntro")}</p>
-      <EventTypeEditor id={null} userSlug={user.slug} initial={NEW_EVENT_TYPE_FORM} initialQuestions={[]} currency={priceCurrency(account)} provider={account?.provider ?? null} zoomSetup={await zoomSetupFor(() => getPool(process.env.DATABASE_URL as string), user.id)} video={video}
+      <EventTypeEditor id={null} userSlug={user.slug} bookingHost={bookingHostName()} initial={NEW_EVENT_TYPE_FORM} initialQuestions={[]} currency={priceCurrency(account)} provider={account?.provider ?? null} zoomSetup={await zoomSetupFor(() => getPool(process.env.DATABASE_URL as string), user.id)} video={video}
         templates={await templateChoices(user.id, t)} canSaveTemplates={templatesEnabled()} />
     </div>
   );

@@ -373,15 +373,20 @@ export function renderInvoiceMail(v: { kind: "invoice" | "credit_note"; number: 
   }, { replyTo: v.supplierEmail });
 }
 
-/** Last month in a few figures, with a link to the full report. `monthLabel` is already in the host's language. */
-export function renderEarningsMail(e: { currency?: string; monthLabel: string; netMinor: number; bookingsMinor: number; packagesMinor: number; refundsMinor: number; sessionsHeld: number; noShows: number; url: string; hostLocale?: string | null }): RenderedMail {
+/**
+ * Last month in a few figures, with a link to the full report. `monthLabel` is already in the host's language. The
+ * figures are in the host's currency; money in any other currency gets its own rows and is never added to the total.
+ */
+export function renderEarningsMail(e: { currency?: string; monthLabel: string; netMinor: number; bookingsMinor: number; packagesMinor: number; refundsMinor: number; sessionsHeld: number; noShows: number; url: string; hostLocale?: string | null; otherCurrencies?: { currency: string; netMinor: number }[] }): RenderedMail {
   const l = hl(e);
   const inr = (m: number) => hostMoney(m, e.currency, l);
   const month = e.monthLabel;
   return render(h(e, "mail.subjEarnings", { month, amount: inr(e.netMinor) }), {
     heading: h(e, "mail.hEarnings", { month }), intro: h(e, "mail.iEarnings", { month }),
     rows: [[h(e, "mail.rNet"), inr(e.netMinor)], [h(e, "mail.rBookings"), inr(e.bookingsMinor)], [h(e, "mail.rPackages"), inr(e.packagesMinor)],
-      [h(e, "mail.rRefunds"), inr(e.refundsMinor)], [h(e, "mail.rHeld"), String(e.sessionsHeld)], [h(e, "mail.rNoShows"), String(e.noShows)]],
+      [h(e, "mail.rRefunds"), inr(e.refundsMinor)],
+      ...(e.otherCurrencies ?? []).map((o): [string, string] => [h(e, "mail.rAlsoIn", { currency: o.currency }), hostMoney(o.netMinor, o.currency, l)]),
+      [h(e, "mail.rHeld"), String(e.sessionsHeld)], [h(e, "mail.rNoShows"), String(e.noShows)]],
     link: { label: h(e, "mail.lFullReport"), url: e.url }, footer: h(e, "mail.footerMonthly"),
   });
 }
@@ -393,6 +398,18 @@ export function renderSeatInviteMail(c: { ownerName: string; ownerEmail: string;
     note: "Once you accept, you get your own booking page on Duo and can manage their bookings. If you weren't expecting this, ignore it.",
     footer: `Sent by Hourhand for ${c.ownerName}. Reply to reach them.`,
   }, { replyTo: c.ownerEmail });
+}
+
+export function renderPracticeInviteMail(c: { practiceName: string; inviterName: string; replyTo: string; role: "admin" | "practitioner"; url: string }): RenderedMail {
+  return render(`${c.practiceName} invited you to Hourhand`, {
+    heading: `Join ${c.practiceName} on Hourhand`,
+    intro: `${c.inviterName} added you to ${c.practiceName} as ${c.role === "admin" ? "an admin" : "a practitioner"}. Sign in with this email address to accept.`,
+    rows: [], link: { label: "Sign in to accept", url: c.url },
+    note: c.role === "admin"
+      ? "As an admin you manage the practice's practitioners and see its bookings. Practitioners' client notes stay private to them. If you weren't expecting this, ignore it."
+      : "You keep your own Hourhand account: your calendars, hours, services and client notes stay yours, and you're listed on the practice's page. If you weren't expecting this, ignore it.",
+    footer: `Sent by Hourhand for ${c.practiceName}. Reply to reach them.`,
+  }, { replyTo: c.replyTo });
 }
 
 /**

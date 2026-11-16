@@ -55,6 +55,8 @@ const fieldClasses = (invalid: boolean) =>
 export interface EventTypeEditorProps {
   id: string | null;
   userSlug: string;
+  /** Host name of the public booking pages, e.g. hourhand.cloud (from the server's base URL). */
+  bookingHost?: string;
   initial: EventTypeForm;
   initialQuestions: QuestionDraft[];
   /** Shows "Saved" on arrival, after creating a new event type. */
@@ -72,7 +74,7 @@ export interface EventTypeEditorProps {
   canSaveTemplates?: boolean;
 }
 
-export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justSaved = false, currency = "INR", provider = null, zoomSetup = "not_configured", video = "not_set_up", templates = [], canSaveTemplates = false }: EventTypeEditorProps) {
+export function EventTypeEditor({ id, userSlug, bookingHost = "hourhand.cloud", initial, initialQuestions, justSaved = false, currency = "INR", provider = null, zoomSetup = "not_configured", video = "not_set_up", templates = [], canSaveTemplates = false }: EventTypeEditorProps) {
   const router = useRouter();
   const { t, tNodes } = useHostI18n();
   const [tab, setTab] = useState<TabId>("details");
@@ -194,7 +196,7 @@ export function EventTypeEditor({ id, userSlug, initial, initialQuestions, justS
           <p id="f-slug-hint" className="mt-1 break-all text-sm text-text-muted">
             {tNodes("eventTypes.slugHint", {
               // i18n-ignore: the booking address, not words
-              url: <span className="font-mono text-text">{`hourhand.app/${userSlug}/${previewSlug}`}</span>,
+              url: <span className="font-mono text-text">{`${bookingHost}/${userSlug}/${previewSlug}`}</span>,
             })}
           </p>
         </div>
