@@ -16,7 +16,7 @@ export const invoices: Record<keyof typeof en, string> = {
   "invoices.creditNote": "கிரெடிட் நோட்",
   "invoices.legalName": "சட்டப்பூர்வ பெயர்",
   "invoices.address": "பதிவு செய்த முகவரி",
-  "invoices.sac": "SAC கோட்",
+  "invoices.sac": "SAC கோடு",
   "invoices.rate": "GST விகிதம்",
   "invoices.prefix": "இன்வாய்ஸ் முன்னொட்டு (prefix)",
   "invoices.prefixHint": "இன்வாய்ஸ்களுக்கு HH/2627/000001 போல எண் வழங்கப்படும்: முன்னொட்டு, நிதியாண்டு, வரிசை எண். கிரெடிட் நோட்டுகளுக்குத் தனி வரிசை.",

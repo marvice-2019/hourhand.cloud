@@ -98,7 +98,7 @@ export const availability: Record<keyof typeof en, string> = {
   "availability.errTooManyDays": "एक बार में {n} दिन तक ब्लॉक करें।",
   "availability.errScheduleNameMissing": "इस शेड्यूल को एक नाम दें, जैसे “क्लिनिक” या “शाम”।",
   "availability.errScheduleNameTooLong": "नाम {n} अक्षरों तक रखें।",
-  "availability.errPickZone": "सूची से एक टाइम ज़ोन चुनें।",
+  "availability.errPickZone": "लिस्ट में से एक टाइम ज़ोन चुनें।",
   "availability.errScheduleNameTaken": "इस नाम का एक शेड्यूल आपके पास पहले से है।",
   "availability.errScheduleLimitOne": "आपके प्लान में एक शेड्यूल शामिल है। कई शेड्यूल रखने के लिए Solo या Duo पर अपग्रेड करें, या अभी वाले शेड्यूल के घंटे बदलें।",
   "availability.errScheduleLimitN": "आपके प्लान में {n} शेड्यूल शामिल हैं।",
