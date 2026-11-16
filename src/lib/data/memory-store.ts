@@ -7,7 +7,7 @@ import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
 import {
   DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type BookingLink, type BookingWithInvitee,
-  type CreateBookingInput, type DataStore, type EventType, type EventTypeDraft, type Interval,
+  type CreateBookingInput, type CustomQuestion, type DataStore, type EventType, type EventTypeDraft, type Interval,
 } from "./types";
 
 const MIN = 60_000;
@@ -407,9 +407,15 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       if (!ownsEventType(userId, eventTypeId)) throw new NotFoundError("Event type");
       // Keep a client-sent id only when it already belongs to a question of this event type.
       const own = new Set(db.questions.filter((q) => q.eventTypeId === eventTypeId).map((q) => q.id));
-      const saved = questions.map((q, position) => ({
-        id: q.id !== null && own.has(q.id) ? q.id : randomUUID(), eventTypeId, label: q.label, kind: q.kind, required: q.required, choices: [...q.choices], position,
-      }));
+      const saved: CustomQuestion[] = [];
+      for (const [position, q] of questions.entries()) {
+        // A condition names an earlier question by list position; it is kept by id, as Postgres does.
+        const showIf = q.showIf && saved[q.showIf.questionIndex] ? { questionId: saved[q.showIf.questionIndex].id, values: [...q.showIf.values] } : null;
+        saved.push({
+          id: q.id !== null && own.has(q.id) ? q.id : randomUUID(), eventTypeId, label: q.label, kind: q.kind, required: q.required, choices: [...q.choices], position,
+          showIf, firstBookingOnly: q.firstBookingOnly === true, minValue: q.minValue ?? null, maxValue: q.maxValue ?? null, templateId: q.templateId ?? null,
+        });
+      }
       db.questions = [...db.questions.filter((q) => q.eventTypeId !== eventTypeId), ...saved];
       return saved;
     },

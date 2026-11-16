@@ -16,12 +16,15 @@ import { payWithRazorpay, type CheckoutPayment } from "./razorpay-checkout";
 import { SlotPicker, useDeviceZone } from "./SlotPicker";
 import { useTimeFormat } from "./useTimeFormat";
 import { WaitlistForm } from "./WaitlistForm";
+import { IntakeFields, answerErrorMessage, answersToSend, readAnswers } from "./intake/IntakeFields";
+import type { IntakeQuestion, RawAnswers } from "@/lib/intake/conditions";
 import { sendSlotClick } from "./analytics-beacon";
 import type { SourceInput } from "@/lib/analytics/source";
 
 const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export interface FlowQuestion { id: string; label: string; kind: string; required: boolean }
+/** A question on the form: see src/lib/intake/conditions.ts. */
+export type FlowQuestion = IntakeQuestion;
 
 interface Props {
   slug: string;
@@ -216,12 +219,15 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
   const [weeksTaken, setWeeksTaken] = useState<string[] | null>(null);
   const [packageRefused, setPackageRefused] = useState<string | null>(null);
   const [showGuests, setShowGuests] = useState(false);
+  // The intake answers so far, so a conditional question appears as soon as the earlier answer matches.
+  const [intake, setIntake] = useState<RawAnswers>({});
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (zone.confirm && !zoneConfirmed) { setZoneError(true); document.getElementById("zone-confirm")?.focus(); return; }
     const data = new FormData(e.currentTarget);
-    const answers = Object.fromEntries(questions.map((q) => [q.id, String(data.get(`q_${q.id}`) ?? "")]));
+    const current = readAnswers(e.currentTarget, questions);
+    const answers = answersToSend(questions, current);
     const guests = String(data.get("guests") ?? "").split(/[\s,;]+/).filter(Boolean);
     setBusy(true); setFailed(false); setLimited(false); setExpired(false); setWeeksTaken(null);
     try {
@@ -259,8 +265,13 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
         // Server messages are English; show ours for the fields it names.
         const own: Record<string, GuestKey> = { name: "errName", email: "errEmail", phone: "errPhone", smsOptIn: "errSmsPhone", timezone: "errTimezone", guests: "errGuests", couponCode: "offerCodeInvalid" };
         const fields = (body.fields ?? {}) as Record<string, string>;
+        const byId = new Map(questions.map((q) => [q.id, q]));
+        const answerError = (k: string) => {
+          const q = byId.get(k.slice("answers.".length));
+          return q ? answerErrorMessage(locale, q, current[q.id]) : t(locale, "errAnswer");
+        };
         const range = offers?.sliding ? { min: money(offers.sliding.minMinor), max: money(offers.sliding.maxMinor) } : { min: "", max: "" };
-        setErrors(Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, k === "payMinor" ? t(locale, "errPay", range) : own[k] ? t(locale, own[k]) : k.startsWith("answers.") ? t(locale, "errAnswer") : v])));
+        setErrors(Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, k === "payMinor" ? t(locale, "errPay", range) : own[k] ? t(locale, own[k]) : k.startsWith("answers.") ? answerError(k) : v])));
         if (fields.couponCode) { setQuote(null); setCodeError(t(locale, "offerCodeInvalid")); }
       }
       else if (res.status === 429) setLimited(true);
@@ -272,7 +283,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
   }
 
   return (
-    <form onSubmit={submit} noValidate className="mt-6 grid max-w-md gap-4">
+    <form onSubmit={submit} onChange={(e) => { if (questions.length > 0) setIntake(readAnswers(e.currentTarget, questions)); }} noValidate className="mt-6 grid max-w-md gap-4">
       <div>
         <p className="font-semibold text-text">{formatDate(start, tz, locale)}, <LocalTime date={start} tz={tz} locale={locale} /> {zoneName(tz)}</p>
         {zone.hostLine && <p className="text-sm text-text-muted">{t(locale, "thatsHost", { time: formatTime(start, host.timezone, cycle, locale), zone: zoneName(host.timezone), name: host.name.split(/\s+/)[0] || host.name })}</p>}
@@ -356,26 +367,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
       ) : (
         <button type="button" onClick={() => setShowGuests(true)} className={`min-h-11 justify-self-start text-sm font-semibold text-accent underline ${focusRing}`}>{t(locale, "addGuests")}</button>
       )}
-      {questions.map((q) => {
-        const id = `q_${q.id}`;
-        const err = errors[`answers.${q.id}`];
-        return (
-          <div key={q.id}>
-            <Label htmlFor={id}>{q.required ? q.label : t(locale, "optionalLabel", { label: q.label })}</Label>
-            {q.kind === "long_text" ? (
-              <>
-                <textarea
-                  id={id} name={id} rows={4} required={q.required} aria-invalid={err ? true : undefined} aria-describedby={err ? `${id}-error` : undefined}
-                  className={`mt-1 block w-full rounded-md border bg-card p-3 text-base text-text ${err ? "border-danger" : "border-border-input"} ${focusRing}`}
-                />
-                {err && <p id={`${id}-error`} className="mt-1 text-sm text-danger">{err}</p>}
-              </>
-            ) : (
-              <Input id={id} name={id} required={q.required} error={err} />
-            )}
-          </div>
-        );
-      })}
+      <IntakeFields questions={questions} answers={intake} errors={errors} locale={locale} hostName={host.name} />
       {paid && offers?.sliding && (
         <div>
           <Label htmlFor="payMinor">{t(locale, "slidingLabel", { min: money(offers.sliding.minMinor), max: money(offers.sliding.maxMinor) })}</Label>

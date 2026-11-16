@@ -7,6 +7,7 @@ import { requireHost } from "@/lib/auth/session";
 import { getPool } from "@/lib/data/pg-store";
 import { isNamedError } from "@/lib/data/types";
 import { getHostI18n } from "@/lib/i18n/host/server";
+import { formatAmount } from "@/lib/money";
 import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
 import { createPackage, PACKAGE_LIMITS, setPackageActive, validatePackageForm } from "@/lib/packages/packages";
 
@@ -24,11 +25,13 @@ export async function createPackageAction(_prev: PackageFormState, form: FormDat
   const v = validatePackageForm({ eventTypeId: field(form, "eventTypeId"), name: field(form, "name"), sessions: field(form, "sessions"), price: field(form, "price"), validDays: field(form, "validDays") });
   if (!v.ok) {
     const { sessions: s, validDays: d } = PACKAGE_LIMITS;
+    // A Stripe host prices in their Stripe account's currency, so the bad-price hint names that currency, not rupees.
+    const currency = v.errors.price && authEnabled() ? priceCurrency(await paymentAccount(getPool(process.env.DATABASE_URL as string), user.id)) : "INR";
     const messages = {
       eventTypeId: t("packages.errorEventType"),
       name: t("packages.errorName"),
       sessions: t("packages.errorSessions", { min: s.min, max: s.max }),
-      price: t("packages.errorPrice"),
+      price: currency === "INR" ? t("packages.errorPrice") : t("common.errPriceOther", { currency, min: formatAmount(100, currency) }),
       validDays: t("packages.errorValidDays", { min: d.min, max: d.max }),
     };
     const errors: Record<string, string> = {};

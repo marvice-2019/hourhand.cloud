@@ -1,7 +1,9 @@
 // Pure validation for the event type editor. Limits mirror the checks on event_types and custom_questions in docs/schema.sql.
 import type { Plan } from "./billing/plans";
-import { LOCATION_KINDS, type CustomQuestion, type DurationOption, type EventLocation, type EventType, type EventTypeDraft, type LocationKind, type QuestionDraft } from "./data/types";
+import { LOCATION_KINDS, type DurationOption, type EventLocation, type EventType, type EventTypeDraft, type LocationKind, type QuestionDraft } from "./data/types";
 import { cleanRedirectUrl } from "./calendar-links";
+import { QUESTION_KINDS } from "./intake/conditions";
+import { INTAKE_QUESTION_MESSAGES, checkIntakeFields } from "./intake/questions";
 import { MAX_DURATION_OPTIONS } from "./durations";
 
 export const DURATION = { min: 5, max: 720 } as const;
@@ -69,7 +71,7 @@ export const MAX_SEATS = 500;
 export const MAX_WEEKS = 12;
 
 export type EventTypeErrors = Partial<Record<keyof EventTypeForm, string>>;
-export type QuestionErrors = { label?: string; choices?: string }[];
+export type QuestionErrors = { label?: string; choices?: string; condition?: string; range?: string }[];
 
 /**
  * Every message the validators below can give, by code, in English. The English goes in `errors` as before; the code
@@ -115,11 +117,12 @@ export const EVENT_TYPE_MESSAGES = {
   durationsTwice: "{minutes} minutes is listed twice. Give each length once.",
   durationsPriceFirst: "Set the event's price first; a length's own price replaces it for that length.",
   durationsGroup: "A group class runs for one length. Remove the other lengths, or make it one-on-one.",
+  ...INTAKE_QUESTION_MESSAGES,
 } as const;
 export type EventTypeErrorCode = keyof typeof EVENT_TYPE_MESSAGES;
 export interface CodedError { code: EventTypeErrorCode; vars?: Record<string, number> }
 export type EventTypeErrorCodes = Partial<Record<keyof EventTypeForm, CodedError>>;
-export type QuestionErrorCodes = { label?: CodedError; choices?: CodedError }[];
+export type QuestionErrorCodes = { label?: CodedError; choices?: CodedError; condition?: CodedError; range?: CodedError }[];
 
 /** The English line for a code, with its values filled in. */
 export const eventTypeMessage = ({ code, vars = {} }: CodedError): string =>
@@ -352,7 +355,6 @@ export function toForm(et: EventType, location: EventLocation | undefined): Even
   };
 }
 
-const QUESTION_KINDS: readonly CustomQuestion["kind"][] = ["short_text", "long_text", "phone", "single_select", "multi_select", "consent"];
 
 /** Checks each question; the error list lines up with the input list. */
 export function validateQuestions(questions: readonly QuestionDraft[]):
@@ -367,20 +369,23 @@ export function checkQuestions(questions: readonly QuestionDraft[]):
   let ok = true;
   const value: QuestionDraft[] = [];
   const codes: QuestionErrorCodes = [];
-  const errors: QuestionErrors = questions.map((q) => {
+  const errors: QuestionErrors = questions.map((q, index) => {
     const e: QuestionErrors[number] = {};
     const c: QuestionErrorCodes[number] = {};
     codes.push(c);
-    const label = q.label.trim();
+    const label = typeof q.label === "string" ? q.label.trim() : "";
     if (!label) c.label = { code: "questionLabel" };
     if (!QUESTION_KINDS.includes(q.kind)) c.label = { code: "questionKind" };
     const isSelect = q.kind === "single_select" || q.kind === "multi_select";
-    const choices = isSelect ? q.choices.map((c) => c.trim()).filter(Boolean) : [];
+    const choices = isSelect && Array.isArray(q.choices) ? q.choices.map((x) => String(x).trim()).filter(Boolean) : [];
     if (isSelect && choices.length < 2) c.choices = { code: "questionChoices" };
-    if (c.label) e.label = eventTypeMessage(c.label);
-    if (c.choices) e.choices = eventTypeMessage(c.choices);
-    if (e.label || e.choices) ok = false;
-    value.push({ id: q.id, label, kind: q.kind, required: q.required, choices });
+    // Conditions, first-booking-only and number bounds: src/lib/intake/questions.ts.
+    const extra = checkIntakeFields(q, index, value);
+    if (extra.errors.condition) c.condition = { code: extra.errors.condition };
+    if (extra.errors.range) c.range = { code: extra.errors.range };
+    for (const k of ["label", "choices", "condition", "range"] as const) if (c[k]) e[k] = eventTypeMessage(c[k]!);
+    if (e.label || e.choices || e.condition || e.range) ok = false;
+    value.push({ id: q.id, label, kind: q.kind, required: q.required === true, choices, ...extra.value });
     return e;
   });
   return ok ? { ok: true, value } : { ok: false, errors, codes };

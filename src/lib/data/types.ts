@@ -116,11 +116,26 @@ export interface CustomQuestion {
   id: string;
   eventTypeId: string;
   label: string;
-  kind: "short_text" | "long_text" | "phone" | "single_select" | "multi_select" | "consent";
+  kind: "short_text" | "long_text" | "phone" | "single_select" | "multi_select" | "consent" | QuestionKindIntake;
   required: boolean;
   choices: string[];
   position: number;
+  /** Asked only when an earlier question's answer is one of `values` (see src/lib/intake). Absent or null: always asked. */
+  showIf?: QuestionCondition | null;
+  /** Asked only the first time a client email books with this host. */
+  firstBookingOnly?: boolean;
+  /** Bounds for a number question; null or absent means no bound. */
+  minValue?: number | null;
+  maxValue?: number | null;
+  /** The host's intake template this question was copied from, if any. */
+  templateId?: string | null;
 }
+
+/** Kinds added for intake forms (roadmap 2.5). */
+export type QuestionKindIntake = "yes_no" | "date" | "number" | "email";
+
+/** Show a question only when the answer to `questionId` (an earlier select or yes/no question) is one of `values`. */
+export interface QuestionCondition { questionId: string; values: string[] }
 
 export interface Booking {
   id: string;
@@ -431,8 +446,14 @@ export type EventTypeDraft = Pick<EventType,
   location: { kind: LocationKind; value: string | null } | null;
 };
 
-/** A question as edited; `id` is null for a new one. */
-export type QuestionDraft = Pick<CustomQuestion, "label" | "kind" | "required" | "choices"> & { id: string | null };
+/** A question as edited; `id` is null for a new one. A condition names its earlier question by list position, since new ones have no id yet. */
+export type QuestionDraft = Pick<CustomQuestion, "label" | "kind" | "required" | "choices"> & {
+  id: string | null;
+  showIf?: DraftCondition | null;
+} & Partial<Pick<CustomQuestion, "firstBookingOnly" | "minValue" | "maxValue" | "templateId">>;
+
+/** A condition in a draft: `questionIndex` is the earlier question's place in the same list. */
+export interface DraftCondition { questionIndex: number; values: string[] }
 
 export class SlugTakenError extends Error {
   readonly code = "slug_taken";

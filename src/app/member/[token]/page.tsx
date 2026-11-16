@@ -12,6 +12,7 @@ import { getPool } from "@/lib/data/pg-store";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
 import { creditsLeft, isRenewing, memberEventTypes, memberSessions, membershipByToken } from "@/lib/memberships/memberships";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
+import { toIntakeQuestion } from "@/lib/intake/conditions";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,7 @@ export default async function MemberPage({ params, searchParams }: { params: Pro
   const waiting = m.charges === 0 && !ended && m.status !== "pending" && m.status !== "halted";
   const chosen = eventTypes.find((e) => e.slug === event) ?? eventTypes[0];
   const full = chosen ? await store.getEventType(host.id, chosen.id) : null;
-  const questions = full ? (await store.listCustomQuestions(host.id, full.id)).sort((a, b) => a.position - b.position).map(({ id, label, kind, required }) => ({ id, label, kind, required })) : [];
+  const questions = full ? (await store.listCustomQuestions(host.id, full.id)).sort((a, b) => a.position - b.position).map(toIntakeQuestion) : [];
 
   return (
     <main className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
