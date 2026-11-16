@@ -2,6 +2,7 @@ import type pg from "pg";
 import { waNumber } from "../whatsapp";
 import { whatsappConfig } from "../whatsapp-cloud";
 import { queueFollowUp } from "../follow-ups/follow-ups";
+import { ZOOM_READY_SQL } from "../zoom/sql";
 import { smsConfig } from "../sms/config";
 import { smsRecipient } from "../sms/outbox";
 
@@ -14,13 +15,15 @@ export type BookingEmailKind =
   | "cancelled_guest" | "cancelled_host" | "rescheduled_guest" | "rescheduled_host" | "late_host";
 /** Writes to the host's calendar (channel 'calendar'). */
 export type CalendarJobKind = "calendar_create" | "calendar_move" | "calendar_delete";
+/** Writes to the host's Zoom (channel 'video'): a meeting per booking, moved on reschedule, deleted on cancel. */
+export type VideoJobKind = "zoom_create" | "zoom_move" | "zoom_delete";
 /** A session package was paid: the buyer gets their booking link, the host hears about the sale. */
 export type PackageEmailKind = "package_guest" | "package_host";
 /** A GST invoice or credit note, emailed to the guest with a link to view and print it. */
 export type InvoiceEmailKind = "invoice_guest";
 /** Last month's earnings, to the host on the 1st. */
 export type EarningsEmailKind = "earnings_host";
-export type NotificationKind = BookingEmailKind | CalendarJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | "calendar_alert_host" | "renewal_reminder_host" | PollEmailKind | "follow_up_guest" | "data_request_host";
+export type NotificationKind = BookingEmailKind | CalendarJobKind | VideoJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | "calendar_alert_host" | "zoom_alert_host" | "renewal_reminder_host" | PollEmailKind | "follow_up_guest" | "data_request_host";
 /** Meeting polls: an invitee's link to change their answers, and the host's nudge to pick a time once voting closes. */
 export type PollEmailKind = "poll_voter_link" | "poll_host_closed";
 
@@ -53,7 +56,9 @@ export async function queueBookingNotifications(
        (select c.id from calendars c join calendar_connections cc on cc.id = c.connection_id
         where c.user_id = b.host_id and c.is_add_to and cc.status <> 'disconnected' and octet_length(cc.credentials_encrypted) > 0) as add_to_calendar,
        exists (select 1 from calendar_connections cc where cc.user_id = b.host_id) as has_calendar,
-       b.external_event_id,
+       b.external_event_id, b.location_kind, b.zoom_meeting_id,
+       ${ZOOM_READY_SQL("b.host_id")} as zoom_ready,
+       (select p.zoom_meeting_id from bookings p where p.id = b.rescheduled_from_id) as previous_zoom_meeting_id,
        -- Another live seat of the same group class: the class keeps one calendar event between all its seats.
        (select o.id from bookings o where b.class_key is not null and o.class_key = b.class_key and o.id <> b.id
           and (o.status = 'confirmed' or (o.status = 'pending_payment' and o.hold_expires_at > now()))
@@ -62,7 +67,7 @@ export async function queueBookingNotifications(
   const b = rows[0];
   if (!b) return;
   const start = new Date(b.start_at);
-  const queued: { kind: NotificationKind; channel: "email" | "calendar" | "whatsapp" | "sms"; to: string; sendAt: Date; key: string }[] = [];
+  const queued: { kind: NotificationKind; channel: "email" | "calendar" | "whatsapp" | "sms" | "video"; to: string; sendAt: Date; key: string }[] = [];
   const phone = whatsapp && b.whatsapp_opt_in ? waNumber(b.guest_phone) : null;
   const optedOut = phone !== null && (await db.query("select 1 from whatsapp_opt_outs where phone = $1", [phone])).rowCount! > 0;
   const textTo = phone && !optedOut ? null : await smsRecipient(db, b.guest_phone, b.sms_opt_in, sms);
@@ -80,6 +85,9 @@ export async function queueBookingNotifications(
   // Calendar jobs name the target calendar; a delete finds the event's own calendar from the booking when it runs.
   const calendarJob = (kind: CalendarJobKind, calendarId: string) =>
     queued.push({ kind, channel: "calendar", to: calendarId, sendAt: now, key: `booking:${bookingId}:${kind}` });
+  // Zoom jobs work on the booking itself; the host's own Zoom is found when the job runs.
+  const videoJob = (kind: VideoJobKind) => queued.push({ kind, channel: "video", to: "zoom", sendAt: now, key: `booking:${bookingId}:${kind}` });
+  const isZoom = b.location_kind === "zoom";
 
   if (event === "cancelled") {
     // `confirm: false`: a later week cancelled along with an earlier one, whose email lists it.
@@ -89,7 +97,9 @@ export async function queueBookingNotifications(
     await db.query(
       `update notifications set status = 'skipped', last_error = 'booking cancelled', updated_at = $2
        where booking_id = $1 and status = 'queued' and kind not in ('cancelled_guest', 'cancelled_host')
-         and not (channel = 'calendar' and locked_until > $2)`, [bookingId, now]); // a running calendar write finishes; the delete waits for it
+         and not (channel in ('calendar', 'video') and locked_until > $2)`, [bookingId, now]); // a running calendar or Zoom write finishes; the delete waits for it
+    // The meeting goes once no live booking uses it (seats of a class share one); the job checks that when it runs.
+    if (isZoom || b.zoom_meeting_id) videoJob("zoom_delete");
     if (b.class_mate) {
       // The class goes on: its calendar event stays, now on a remaining seat (or is written for it, if this seat's
       // event was never written).
@@ -111,6 +121,10 @@ export async function queueBookingNotifications(
     if (event === "booked" && b.add_to_calendar && !b.class_mate) calendarJob("calendar_create", b.add_to_calendar);
     // A move updates the old booking's event wherever it is; with no old event it creates one in the add-to calendar.
     if (event === "rescheduled" && (b.add_to_calendar || b.has_calendar)) calendarJob("calendar_move", b.add_to_calendar ?? "event");
+    // Every Zoom booking gets a meeting from the host's own Zoom. Seats of one class end up sharing the first one made.
+    if (event === "booked" && isZoom && b.zoom_ready) videoJob("zoom_create");
+    // A move keeps the old booking's meeting (moved to the new time), or makes one if it had none.
+    if (event === "rescheduled" && ((isZoom && b.zoom_ready) || b.previous_zoom_meeting_id)) videoJob("zoom_move");
     for (const offset of REMINDER_OFFSETS_MINUTES) {
       const sendAt = new Date(start.getTime() - offset * MIN);
       if (sendAt > now) toGuests("reminder_guest", sendAt, `booking:${bookingId}:reminder_guest:${offset}`);

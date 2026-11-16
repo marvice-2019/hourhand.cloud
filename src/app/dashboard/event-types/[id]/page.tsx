@@ -10,6 +10,7 @@ import { getPool } from "@/lib/data/pg-store";
 import { getFollowUpSettings } from "@/lib/follow-ups/follow-ups";
 import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
 import { getProfile } from "@/lib/profile";
+import { zoomSetupFor } from "@/lib/zoom/connection";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,7 @@ export default async function EventTypePage({ params, searchParams }: {
         justSaved={saved === "1"}
         currency={currency}
         provider={account?.provider ?? null}
+        zoomSetup={await zoomSetupFor(() => getPool(process.env.DATABASE_URL as string), user.id)}
       />
       {followUps && (
         <FollowUpSettingsForm eventTypeId={eventType.id} settings={followUps} hasReviewLink={Boolean(profile?.reviewsUrl)}
