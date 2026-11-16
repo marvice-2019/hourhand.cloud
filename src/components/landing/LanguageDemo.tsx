@@ -8,7 +8,7 @@ import { ink } from "./ink";
 // Node and the browser ship different ICU data (spacing before "am", for one), so the formatted text may differ by a character between server and client.
 const times = ["2026-10-23T09:00:00+05:30", "2026-10-23T10:30:00+05:30", "2026-10-23T14:00:00+05:30", "2026-10-23T17:00:00+05:30"];
 
-/** The guest's side of a booking page in each of the five languages a host can pick, using the real catalog strings. */
+/** The guest's side of a booking page in each of the languages a host can pick, using the real catalog strings. */
 export function LanguageDemo() {
   const [locale, setLocale] = useState<Locale>("hi");
   const tag = intlTag(locale);
