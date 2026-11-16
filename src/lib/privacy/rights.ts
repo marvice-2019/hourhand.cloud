@@ -47,7 +47,11 @@ export interface ClientExport {
     cancelReason: string | null; bookedAt: string; name: string; email: string; phone: string | null; timezone: string; locale: string;
     answers: { question: string; answer: string }[]; extraGuests: string[]; whatsappUpdates: boolean; noShowAt: string | null;
     runningLateMinutes: number | null; sessionNote: string | null;
+    /** What the guest said in the follow-up after this session (2.6), if they answered. */
+    feedback: { rating: number; comment: string | null; leftAt: string } | null;
   }[];
+  /** When they asked this host for no more follow-up emails, if they did. */
+  followUpOptOutAt: string | null;
   payments: { bookingId: string; kind: string; amountMinor: number; currency: string; status: string; refundedMinor: number; paidAt: string | null; providerPaymentId: string | null }[];
   packagePurchases: { id: string; package: string; sessions: number; priceMinor: number; currency: string; status: string; paidAt: string | null; expiresAt: string | null; name: string; email: string; phone: string | null }[];
   invoices: { number: string; kind: string; issuedAt: string; buyerName: string; buyerEmail: string; description: string; placeOfSupply: string; totalMinor: number; taxableMinor: number; cgstMinor: number; sgstMinor: number; igstMinor: number }[];
@@ -78,7 +82,7 @@ export async function exportClient(db: Q, hostId: string, email: string, opts: {
   if (bookings.length === 0 && packages.length === 0 && waitlist.length === 0) return null;
 
   const bookingIds = bookings.map((b) => b.id as string);
-  const [{ rows: [host] }, { rows: payments }, { rows: invoices }, { rows: requests }, consents] = await Promise.all([
+  const [{ rows: [host] }, { rows: payments }, { rows: invoices }, { rows: requests }, consents, { rows: feedback }, { rows: [optOut] }] = await Promise.all([
     db.query("select coalesce(name, '') as name, email from users where id = $1", [hostId]),
     db.query(
       `select booking_id, kind, amount_minor, currency, status, refunded_minor, paid_at, provider_payment_id from payments
@@ -88,7 +92,10 @@ export async function exportClient(db: Q, hostId: string, email: string, opts: {
        from invoices where host_id = $1 and buyer_email = $2 order by issued_at`, [hostId, email]),
     db.query("select kind, status, requested_at, due_at, resolved_at from data_requests where host_id = $1 and email = $2 order by requested_at", [hostId, email]),
     listConsents(db, hostId, email),
+    db.query("select booking_id, rating, comment, created_at from booking_feedback where host_id = $1 and booking_id = any($2::uuid[])", [hostId, bookingIds]),
+    db.query("select opted_out_at from follow_up_opt_outs where host_id = $1 and email = $2", [hostId, email]),
   ]);
+  const feedbackFor = new Map(feedback.map((f) => [f.booking_id as string, { rating: f.rating as number, comment: (f.comment as string | null) ?? null, leftAt: iso(f.created_at)! }]));
 
   let clientNote: string | null = null;
   const sessionNotes = new Map<string, string>();
@@ -112,7 +119,9 @@ export async function exportClient(db: Q, hostId: string, email: string, opts: {
       answers: (b.answers as { label: string; answer: string }[]).map((a) => ({ question: a.label, answer: a.answer })), extraGuests: b.guests ?? [],
       whatsappUpdates: b.whatsapp_opt_in_at !== null, noShowAt: iso(b.no_show_at), runningLateMinutes: b.running_late_minutes,
       sessionNote: opts.includeNotes ? sessionNotes.get(b.id) ?? null : null,
+      feedback: feedbackFor.get(b.id) ?? null,
     })),
+    followUpOptOutAt: iso(optOut?.opted_out_at),
     payments: payments.map((p) => ({ bookingId: p.booking_id, kind: p.kind, amountMinor: p.amount_minor, currency: p.currency, status: p.status, refundedMinor: p.refunded_minor, paidAt: iso(p.paid_at), providerPaymentId: p.provider_payment_id })),
     packagePurchases: packages.map((k) => ({ id: k.id, package: k.package_name, sessions: k.sessions, priceMinor: k.price_minor, currency: k.currency, status: k.status, paidAt: iso(k.paid_at), expiresAt: iso(k.expires_at), name: k.guest_name, email: k.guest_email, phone: k.guest_phone })),
     invoices: invoices.map((v) => ({ number: v.number, kind: v.kind, issuedAt: iso(v.issued_at)!, buyerName: v.buyer_name, buyerEmail: v.buyer_email, description: v.description, placeOfSupply: v.place_of_supply, totalMinor: v.total_minor, taxableMinor: v.taxable_minor, cgstMinor: v.cgst_minor, sgstMinor: v.sgst_minor, igstMinor: v.igst_minor })),
@@ -130,9 +139,10 @@ const table = (head: string[], rows: unknown[][]) => rows.length === 0 ? "<p>Non
 /** The same export as a self-contained page, readable on screen and printable to PDF from the browser. */
 export function exportHtml(x: ClientExport): string {
   const sections = [
-    `<h2>Bookings</h2>${table(["When (UTC)", "Event", "Status", "Name", "Email", "Phone", "Answers", "Session note"],
+    `<h2>Bookings</h2>${table(["When (UTC)", "Event", "Status", "Name", "Email", "Phone", "Answers", "Feedback", "Session note"],
       x.bookings.map((b) => [`${b.startAt} to ${b.endAt}`, b.eventType, b.status + (b.noShowAt ? " (no-show)" : ""), b.name, b.email, b.phone ?? "",
-        b.answers.map((a) => `${a.question}: ${a.answer}`).join("\n"), b.sessionNote ?? ""]))}`,
+        b.answers.map((a) => `${a.question}: ${a.answer}`).join("\n"), b.feedback ? `${b.feedback.rating}/5${b.feedback.comment ? `: ${b.feedback.comment}` : ""}` : "", b.sessionNote ?? ""]))}
+${x.followUpOptOutAt ? `<p>Asked for no more follow-up emails on ${esc(x.followUpOptOutAt)}.</p>` : ""}`,
     x.includesPrivateNotes ? `<h2>Private note</h2><p class="pre">${esc(x.clientNote ?? "None.")}</p>` : "",
     `<h2>Payments</h2>${table(["Booking", "Kind", "Amount", "Status", "Refunded", "Paid at"], x.payments.map((p) => [p.bookingId, p.kind, money(p.amountMinor, p.currency), p.status, money(p.refundedMinor, p.currency), p.paidAt ?? ""]))}`,
     `<h2>Session packages</h2>${table(["Package", "Sessions", "Price", "Status", "Paid at", "Valid until"], x.packagePurchases.map((k) => [k.package, k.sessions, money(k.priceMinor, k.currency), k.status, k.paidAt ?? "", k.expiresAt ?? ""]))}`,
@@ -208,6 +218,9 @@ export async function eraseClient(pool: Pick<pg.Pool, "connect">, hostId: string
     await client.query("delete from booking_notes where host_id = $1 and booking_id = any($2::uuid[])", [hostId, bookingIds]);
     await client.query("delete from client_notes where host_id = $1 and email = $2", [hostId, email]);
     await client.query("delete from waitlist where host_id = $1 and email = $2", [hostId, email]);
+    // Session follow-ups (2.6): the guest's own words go; the 1-5 rating stays on the now anonymous booking.
+    await client.query("update booking_feedback set comment = null where host_id = $1 and booking_id = any($2::uuid[])", [hostId, bookingIds]);
+    await client.query("delete from follow_up_opt_outs where host_id = $1 and email = $2", [hostId, email]);
     // The client portal (3.2): sign them out and void any emailed sign-in link.
     await client.query("delete from portal_sessions where host_id = $1 and email = $2", [hostId, email]);
     await client.query("delete from portal_links where host_id = $1 and email = $2", [hostId, email]);

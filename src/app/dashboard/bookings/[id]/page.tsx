@@ -17,6 +17,7 @@ import { bookingPayment, DEPOSIT_HOLD_MS, type BookingPaymentSummary } from "@/l
 import { LOCATION_KEYS, isLocale, t } from "@/lib/i18n/guest";
 import { GUEST_LOCATION_LABELS } from "@/lib/location-labels";
 import { waLink, waNumber, whatsappMessage, type WhatsAppKind } from "@/lib/whatsapp";
+import { feedbackForBooking } from "@/lib/follow-ups/follow-ups";
 import { cancelAsHost, rescheduleAsHost, saveSessionNote, setNoShow } from "./actions";
 
 const PAYMENT_WORDS: Record<BookingPaymentSummary["status"], string> = {
@@ -85,6 +86,8 @@ export default async function BookingDetailPage({ params, searchParams }: { para
   const classmates = booking.classKey ? allBookings.filter((b) => b.classKey === booking.classKey && (b.status === "confirmed" || b.status === "pending_payment")) : [];
   const seatLimit = booking.classKey ? (await store.getEventType(user.id, booking.eventTypeId))?.seatLimit ?? null : null;
   const laterWeeks = series.filter((b) => (b.seriesIndex ?? 0) > (booking.seriesIndex ?? 0) && b.status === "confirmed" && b.startAt > now).length;
+  // The guest's private after-session feedback (src/lib/follow-ups), if they left any.
+  const feedback = authEnabled() ? await feedbackForBooking(getPool(process.env.DATABASE_URL as string), user.id, booking.id) : null;
   return (
     <div>
       <h1 className="font-display text-xl text-text">Booking with {booking.invitee.name}</h1>
@@ -229,6 +232,13 @@ export default async function BookingDetailPage({ params, searchParams }: { para
               )}
             </div>
           )}
+        </section>
+      )}
+      {feedback && (
+        <section aria-labelledby="bk-feedback" className="mt-6 max-w-xl rounded-md bg-surface p-3">
+          <h2 id="bk-feedback" className="font-semibold text-text">Guest feedback: {feedback.rating} / 5</h2>
+          {feedback.comment && <p className="mt-1 whitespace-pre-line break-words text-text">{feedback.comment}</p>}
+          <p className="mt-1 text-sm text-text-muted">Left {formatDate(feedback.createdAt, tz)}. Only you see this.</p>
         </section>
       )}
       {owner ? (

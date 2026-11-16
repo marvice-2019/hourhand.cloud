@@ -82,6 +82,10 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
       await pool.query("insert into portal_sessions (id_hash, host_id, email, expires_at) values ($1, $2, 'meera@example.com', $3::timestamptz + interval '30 days')", [`sess-${tag}`, host, now]);
       await pool.query("insert into portal_links (nonce_hash, host_id, email, expires_at) values ($1, $2, 'meera@example.com', $3::timestamptz + interval '15 minutes')", [`link-${tag}`, host, now]);
     }
+    // Session follow-ups: feedback on her first session, and she asked for no more follow-ups.
+    await pool.query("insert into booking_feedback (booking_id, host_id, rating, comment) values ($1, $2, 4, 'Helpful, Meera here')", [past.id, priya.id]);
+    await pool.query("insert into booking_feedback (booking_id, host_id, rating, comment) values ($1, $2, 5, 'Ravi: great')", [ravisBooking.id, priya.id]);
+    await pool.query("insert into follow_up_opt_outs (host_id, email) values ($1, 'meera@example.com'), ($2, 'meera@example.com')", [priya.id, arun.id]);
     // SMS updates ticked, with the short code their texts link to.
     await pool.query("update invitees set sms_opt_in_at = $2, sms_code = 'mr1sms' where booking_id = $1", [past.id, now]);
     await store.saveClientNote(priya.id, "meera@example.com", "Generalised anxiety; CBT plan.");
@@ -99,6 +103,9 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
     expect(x.bookings.map((b) => b.id)).toEqual([past.id, past2.id]);
     expect(x.bookings[0]).toMatchObject({ name: "Meera Iyer", phone: "+919876543210", answers: [{ question: "Goal", answer: "Manage anxiety at work" }], extraGuests: ["partner@example.com"], whatsappUpdates: true, sessionNote: "Session 1: breathing exercise." });
     expect(x.clientNote).toBe("Generalised anxiety; CBT plan.");
+    expect(x.bookings[0].feedback).toMatchObject({ rating: 4, comment: "Helpful, Meera here" });
+    expect(x.bookings[1].feedback).toBeNull();
+    expect(x.followUpOptOutAt).not.toBeNull();
     expect(x.payments.map((p) => p.amountMinor).sort()).toEqual([236_000, 7_080_000]);
     expect(x.invoices.map((v) => v.number)).toEqual(["INV/2031/1", "INV/2031/2"]);
     expect(x.packagePurchases).toHaveLength(1);
@@ -106,7 +113,7 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
     expect(x.consentLog.map((c) => c.purpose).sort()).toEqual(["booking", "booking", "whatsapp_updates", "whatsapp_updates"]);
     expect(x.client.names).toEqual(["Meera Iyer"]);
     const text = JSON.stringify(x);
-    for (const other of ["Ravi", "ravi@example.com", "INV/2031/3", "Arun's note", arunsBooking.id, ravisBooking.id]) expect(text).not.toContain(other);
+    for (const other of ["Ravi", "ravi@example.com", "Ravi: great", "INV/2031/3", "Arun's note", arunsBooking.id, ravisBooking.id]) expect(text).not.toContain(other);
     expect(exportHtml(x)).toContain("Session 1: breathing exercise.");
 
     const shared = (await exportClient(pool, priya.id, "meera@example.com", { includeNotes: false, key: () => KEY, now }))!;
@@ -169,6 +176,10 @@ describe.skipIf(!BASE)("client rights (Postgres)", () => {
     expect(await meeraRows("select count(*)::int as n from client_notes where host_id = $1 and email = 'meera@example.com'")).toBe(0);
     expect(await count("select count(*)::int as n from booking_notes where booking_id = $1", [past.id])).toBe(0);
     expect(await meeraRows("select count(*)::int as n from waitlist where host_id = $1")).toBe(0);
+    expect((await pool.query("select rating, comment from booking_feedback where booking_id = $1", [past.id])).rows[0]).toEqual({ rating: 4, comment: null });
+    expect((await pool.query("select comment from booking_feedback where booking_id = $1", [ravisBooking.id])).rows[0].comment).toBe("Ravi: great");
+    expect(await meeraRows("select count(*)::int as n from follow_up_opt_outs where host_id = $1")).toBe(0);
+    expect(await count("select count(*)::int as n from follow_up_opt_outs where host_id = $1", [arun.id])).toBe(1);
     expect(await meeraRows("select count(*)::int as n from portal_sessions where host_id = $1")).toBe(0);
     expect(await meeraRows("select count(*)::int as n from portal_links where host_id = $1")).toBe(0);
     expect(await count("select count(*)::int as n from portal_sessions where host_id = $1 and email = 'meera@example.com'", [arun.id])).toBe(1);

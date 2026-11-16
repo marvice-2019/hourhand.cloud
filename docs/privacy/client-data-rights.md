@@ -28,12 +28,13 @@ So notice (s.5, Rule 3), consent (s.6), the fiduciary's duties (s.8), the rights
 
 ## Retention rule on erasure
 
-What an erasure removes: the client's name, email, phone, answers, extra guests, WhatsApp and SMS opt-ins, SMS short link, running-late note and manage link on every booking; cancellation reasons and location values on those bookings; private client and session notes; waitlist entries; client portal sessions and sign-in links; queued messages (deleted) and the address on sent ones; package purchase name, email, phone and link; the identity on consent records and requests. Calendar events already written into the host's own Google or Microsoft calendar are outside Hourhand; the host deletes those.
+What an erasure removes: the client's name, email, phone, answers, extra guests, WhatsApp and SMS opt-ins, SMS short link, running-late note and manage link on every booking; cancellation reasons and location values on those bookings; private client and session notes; waitlist entries; client portal sessions and sign-in links; follow-up feedback comments and the follow-up opt-out; queued messages (deleted) and the address on sent ones; package purchase name, email, phone and link; the identity on consent records and requests. Calendar events already written into the host's own Google or Microsoft calendar are outside Hourhand; the host deletes those.
 
 What it keeps, and why:
 
 | Kept | Rule |
 | --- | --- |
+| Follow-up ratings (1 to 5) on the now anonymous bookings, without the comment | Not personal data once nothing links them to a person; kept for the host's service quality figures. |
 | Booking rows (event, times, status), now "Erased client" | Payments and invoices reference them (CGST Act s.35 accounts of supplies). No personal data remains in them. |
 | Payment rows (amount, status, Razorpay payment id) | CGST Act s.35(1) and s.36; Income-tax books of account (see below). No name or contact. |
 | GST invoices and credit notes: number, date, supplier, place of supply (recipient's State), description, SAC, rate, amounts | CGST Act s.36: keep for 72 months from the due date of the annual return for the year (longer during an appeal or investigation). CGST Rules r.46 particulars; proviso to r.46(f) and CBIC Circular 242/36/2024-GST para 4.5.1: the recipient's State is mandatory for online services. |
