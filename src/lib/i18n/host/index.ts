@@ -13,6 +13,7 @@ import { earnings } from "./en/earnings";
 import { eventTypes } from "./en/eventTypes";
 import { feedback } from "./en/feedback";
 import { getBooked } from "./en/getBooked";
+import { intake } from "./en/intake";
 import { integrations } from "./en/integrations";
 import { invoices } from "./en/invoices";
 import { links } from "./en/links";
@@ -24,6 +25,7 @@ import { packages } from "./en/packages";
 import { plan } from "./en/plan";
 import { polls } from "./en/polls";
 import { profile } from "./en/profile";
+import { referrals } from "./en/referrals";
 import { seat } from "./en/seat";
 import { settings } from "./en/settings";
 import { voice } from "./en/voice";
@@ -32,7 +34,7 @@ import { ta } from "./ta";
 
 const en = {
   ...common, ...nav, ...bookings, ...clients, ...profile, ...eventTypes, ...links, ...packages, ...earnings, ...invoices,
-  ...availability, ...calendars, ...integrations, ...domain, ...plan, ...seat, ...settings, ...mail, ...polls, ...getBooked, ...memberships, ...feedback, ...offers, ...analytics, ...voice,
+  ...availability, ...calendars, ...integrations, ...domain, ...plan, ...seat, ...settings, ...mail, ...polls, ...getBooked, ...memberships, ...feedback, ...offers, ...analytics, ...voice, ...intake, ...referrals,
 };
 
 export type HostKey = keyof typeof en;

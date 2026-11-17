@@ -1,5 +1,6 @@
 import { TZDate } from "@date-fns/tz";
 import type pg from "pg";
+import { prunePracticeWaitlist, queuePracticeWaitlistFor } from "./clinic/waitlist";
 
 // The waitlist: guests waiting for a time on a day that was full. Freed times reach them through the job queue.
 
@@ -75,11 +76,12 @@ export async function queueWaitlistFor(db: Db, bookingId: string, now: Date): Pr
      insert into notifications (booking_id, user_id, channel, kind, recipient, send_at, dedupe_key)
      select p.booking_id, p.host_id, 'email', 'waitlist_guest', p.email, $2, 'waitlist:' || p.id
      from picked p on conflict (dedupe_key) do nothing returning id`, [bookingId, now]);
-  return rows.length;
+  // A Clinic practice's shared waitlist for the same service hears about the time too.
+  return rows.length + await queuePracticeWaitlistFor(db, bookingId, now);
 }
 
 /** Guests' emails are kept only while their day can still open up: a day after it ends, the entry goes. */
 export async function pruneWaitlist(db: Db, now: Date): Promise<number> {
   const { rowCount } = await db.query("delete from waitlist where window_end < $1", [new Date(now.getTime() - DAY_MS)]);
-  return rowCount ?? 0;
+  return (rowCount ?? 0) + await prunePracticeWaitlist(db, now);
 }

@@ -89,14 +89,23 @@ fd.append("key", key); fd.append("note", "Written by someone else");
 const forged = await fetch(B + page, { method: "POST", body: fd, redirect: "manual", headers: { cookie: aj.header(), origin: B, "x-forwarded-for": ip } });
 check(forged.status === 303 && forged.headers.get("location")?.includes("error=not_found"), `another host's note on this client is refused (${forged.headers.get("location")})`);
 check((await pool.query("select count(*)::int as n from client_notes")).rows[0].n === 1, "no stray notes");
-// Earnings (C-16): the page and its CSV for the signed-in host only.
+// Earnings (C-16, 2.7): the page and its CSVs for the signed-in host only. Free sees the last 30 days and no downloads.
 html = await (await get("/dashboard/earnings", pj)).text();
-check(html.includes("Net received") && html.includes("Sessions"), "earnings page shows this month");
+check(html.includes("Sessions") && html.includes("No-show rate") && html.includes("Free shows the last 30 days"), "earnings page shows the last 30 days on Free");
 const month = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 7);
+check((await get(`/dashboard/earnings/export?month=${month}`, pj)).status === 403, "Free can't download the earnings CSV");
+await pool.query("insert into subscriptions (user_id, plan, status) values ($1, 'solo', 'active') on conflict (user_id) do update set plan = 'solo', status = 'active'", [priya.id]);
+html = await (await get("/dashboard/earnings?period=this_fy", pj)).text();
+check(html.includes("Sessions") && html.includes("GST register (CSV)") && !html.includes("Free shows the last 30 days"), "Solo sees the year and the downloads");
 const csvRes = await get(`/dashboard/earnings/export?month=${month}`, pj);
 check(csvRes.status === 200 && (await csvRes.text()).startsWith("Item,Value"), "earnings CSV downloads");
+const gstRes = await get("/dashboard/earnings/export?type=gst&period=this_fy", pj);
+check(gstRes.status === 200 && (await gstRes.text()).includes("For your CA; verify before filing.") && /verify-before-filing/.test(gstRes.headers.get("content-disposition") ?? ""), "GST register downloads, marked for the CA");
+const pnlRes = await get("/dashboard/earnings/export?type=pnl&period=custom&from=2026-04-01&to=2026-04-30", pj);
+check(pnlRes.status === 200 && (await pnlRes.text()).startsWith("Item,Currency,Amount"), "P&L downloads");
 check((await get(`/dashboard/earnings/export?month=${month}`)).status === 401, "earnings CSV needs sign-in");
 check((await get(`/dashboard/earnings/export?month=bad`, pj)).status === 400, "a bad month is refused");
+check((await get("/dashboard/earnings/export?type=nope&period=this_fy", pj)).status === 400, "an unknown export is refused");
 await pool.end();
 console.log(fail ? `${fail} FAILED` : "ALL OK");
 process.exit(fail ? 1 : 0);

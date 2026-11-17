@@ -6,7 +6,12 @@ import { razorpayApiBase, type HostRazorpayAuth } from "./host-razorpay";
 export type RazorpayPaymentStatus = "created" | "authorized" | "captured" | "refunded" | "failed";
 
 export interface RazorpayOrder { id: string; amount: number; currency: string; status: string }
-export interface RazorpayPayment { id: string; orderId: string | null; amount: number; currency: string; status: RazorpayPaymentStatus }
+export interface RazorpayPayment {
+  id: string; orderId: string | null; amount: number; currency: string; status: RazorpayPaymentStatus;
+  /** Razorpay's fee including GST, and the GST part of it, in paise; null until Razorpay reports them (after capture). */
+  fee: PaymentFee | null;
+}
+export interface PaymentFee { feeMinor: number; taxMinor: number }
 export interface RazorpayRefund { id: string; status: "pending" | "processed" | "failed"; amount: number }
 
 export interface RazorpayOrders {
@@ -21,9 +26,16 @@ export interface RazorpayOrders {
   listRefunds(paymentId: string): Promise<RazorpayRefund[]>;
 }
 
+const count = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null);
+/** The fee only once Razorpay has charged it: a whole, non-negative fee with its GST part no larger than itself. */
+export function feeOf(p: Record<string, unknown>): PaymentFee | null {
+  const fee = count(p.fee), tax = count(p.tax) ?? 0;
+  if (fee === null || tax > fee || (p.status !== "captured" && p.status !== "refunded")) return null;
+  return { feeMinor: fee, taxMinor: tax };
+}
 const toPayment = (p: Record<string, unknown>): RazorpayPayment => ({
   id: p.id as string, orderId: (p.order_id as string) ?? null, amount: p.amount as number, currency: p.currency as string,
-  status: p.status as RazorpayPaymentStatus,
+  status: p.status as RazorpayPaymentStatus, fee: feeOf(p),
 });
 const toRefund = (r: Record<string, unknown>): RazorpayRefund => ({ id: r.id as string, status: r.status as RazorpayRefund["status"], amount: r.amount as number });
 

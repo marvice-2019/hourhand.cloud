@@ -11,8 +11,10 @@ import { whatsappOffered } from "@/lib/whatsapp-offer";
 import { smsOffered } from "@/lib/sms/offer";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
 import { purchaseByToken, purchaseSessions } from "@/lib/packages/packages";
+import { guestDurations } from "@/lib/durations";
 import { requestPaymentDeps } from "@/lib/payments/request-deps";
 import { settleStripeSession } from "@/lib/payments/stripe-checkout";
+import { toIntakeQuestion } from "@/lib/intake/conditions";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +42,7 @@ export default async function PackagePage({ params, searchParams }: { params: Pr
   const sessions = await purchaseSessions(db!, purchase.id);
   const questions = (await store.listCustomQuestions(host.id, eventType.id))
     .sort((a, b) => a.position - b.position)
-    .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
+    .map(toIntakeQuestion);
   const tz = host.timezone;
 
   return (
@@ -90,7 +92,7 @@ export default async function PackagePage({ params, searchParams }: { params: Pr
           <h2 id="book" className="font-semibold text-text">Book a session</h2>
           <BookingFlow
             slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} bookingWindowDays={eventType.bookingWindowDays}
-            questions={questions} packageToken={token} maxWeeks={Math.min(left, 12)} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)}
+            durations={guestDurations(eventType, String, { showPrice: false })} questions={questions} packageToken={token} maxWeeks={Math.min(left, 12)} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)}
           />
         </section>
       )}

@@ -18,6 +18,8 @@ interface PickerProps {
   linkToken?: string;
   /** Open on this time's day (an ISO instant), e.g. from a "book again" email suggestion. */
   initialAt?: string;
+  /** The length the guest picked, in minutes, when the event type offers several. */
+  duration?: number;
   /** The guest's language. */
   locale?: Locale;
   /** Called with the chosen slot (ISO instant) and the zone the guest was viewing times in. */
@@ -44,7 +46,7 @@ const monthLabel = ({ y, m }: Month, locale: Locale) => new Intl.DateTimeFormat(
 const weekdays = (locale: Locale) => Array.from({ length: 7 }, (_, i) => new Intl.DateTimeFormat(intlTag(locale), { weekday: "short", timeZone: "UTC" }).format(Date.UTC(1970, 0, 4 + i)));
 
 /** Month calendar plus the open times of the chosen day, in a zone the guest can change. */
-export function SlotPicker({ slug, event, bookingWindowDays, manageToken, linkToken, initialAt, locale = "en", onPick }: PickerProps) {
+export function SlotPicker({ slug, event, bookingWindowDays, manageToken, linkToken, initialAt, duration, locale = "en", onPick }: PickerProps) {
   const detected = useDeviceZone();
   const [chosenZone, setChosenZone] = useState<string | null>(null);
   const tz = chosenZone ?? detected;
@@ -63,11 +65,11 @@ export function SlotPicker({ slug, event, bookingWindowDays, manageToken, linkTo
   const lastMonth = tz ? monthOf(new Date(now.getTime() + bookingWindowDays * DAY), tz) : null;
   const sy = shown?.y;
   const sm = shown?.m;
-  const requestKey = shown ? `${sy}-${sm}-${attempt}` : null;
+  const requestKey = shown ? `${sy}-${sm}-${attempt}-${duration ?? ""}` : null;
 
   useEffect(() => {
     if (sy === undefined || sm === undefined) return;
-    const key = `${sy}-${sm}-${attempt}`;
+    const key = `${sy}-${sm}-${attempt}-${duration ?? ""}`;
     const from = new Date(Math.max(now.getTime(), Date.UTC(sy, sm, 1) - DAY));
     const to = new Date(Date.UTC(sy, sm + 1, 1) + DAY);
     // A single-use link names its own host and event type; the slug pair is only for the public page.
@@ -75,13 +77,14 @@ export function SlotPicker({ slug, event, bookingWindowDays, manageToken, linkTo
       ? new URLSearchParams({ link: linkToken, from: from.toISOString(), to: to.toISOString() })
       : new URLSearchParams({ slug, event, from: from.toISOString(), to: to.toISOString() });
     if (manageToken) params.set("token", manageToken);
+    if (duration) params.set("duration", String(duration));
     let live = true;
     fetch(`/api/slots?${params}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((body: { slots: string[]; seatsLeft?: Record<string, number> }) => live && setLoaded({ key, slots: body.slots, seatsLeft: body.seatsLeft }))
       .catch(() => live && setLoaded({ key, slots: null }));
     return () => { live = false; };
-  }, [sy, sm, attempt, slug, event, manageToken, linkToken, now]);
+  }, [sy, sm, attempt, slug, event, manageToken, linkToken, now, duration]);
 
   const byDay = useMemo(() => {
     const map = new Map<string, string[]>();
