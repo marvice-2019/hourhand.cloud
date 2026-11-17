@@ -6,6 +6,7 @@ import { authEnabled } from "@/lib/auth/auth";
 import { requireOwnAccount } from "@/lib/auth/session";
 import { acceptPracticeInvite, changeMember, createPractice, inviteMember, leavePractice, removeMember, updatePractice, type ClinicActionError, type MemberChange } from "@/lib/clinic/practices";
 import type { ClinicAccessError } from "@/lib/clinic/roles";
+import { createService, deleteService, linkEventType, updateService } from "@/lib/clinic/services";
 import { getPool } from "@/lib/data/pg-store";
 import { isNamedError } from "@/lib/data/types";
 import { kickJobs } from "@/lib/jobs/kick";
@@ -79,4 +80,26 @@ export async function acceptPracticeAction(): Promise<void> {
 export async function leavePracticeAction(): Promise<void> {
   const user = await requireOwnAccount();
   await run(() => leavePractice(db(), user), "left");
+}
+
+export async function createServiceAction(form: FormData): Promise<void> {
+  const user = await requireOwnAccount();
+  await run(() => createService(db(), user.id, { name: str(form, "name"), description: str(form, "description") }), "saved");
+}
+
+export async function updateServiceAction(form: FormData): Promise<void> {
+  const user = await requireOwnAccount();
+  await run(() => updateService(db(), user.id, str(form, "serviceId"), { name: str(form, "name"), description: str(form, "description") }), "saved");
+}
+
+export async function deleteServiceAction(form: FormData): Promise<void> {
+  const user = await requireOwnAccount();
+  await run(() => deleteService(db(), user.id, str(form, "serviceId")), "removed");
+}
+
+/** Links one of the signed-in person's own event types to a service (or none). Never someone else's. */
+export async function linkEventTypeAction(form: FormData): Promise<void> {
+  const user = await requireOwnAccount();
+  const service = str(form, "serviceId");
+  await run(() => linkEventType(db(), user.id, str(form, "eventTypeId"), service === "" ? null : service), "saved");
 }
