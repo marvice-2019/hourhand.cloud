@@ -128,12 +128,12 @@ export default async function PublicEventPage({ params, searchParams }: { params
         </p>
       )}
       {onBehalf && paidEvent ? null : <BookingFlow
-        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} durations={durations} maxWeeks={eventType.priceMinor === null ? eventType.maxRepeats : 1} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)} source={source} onBehalf={onBehalf}
+        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} durations={durations} maxWeeks={eventType.priceMinor === null && eventType.depositMinor !== null ? 1 : eventType.maxRepeats} initialAt={typeof at === "string" ? at : undefined} bookingWindowDays={eventType.bookingWindowDays} questions={questions} waitlist={pool !== null} locale={locale} langQuery={langQuery} prefill={prefill} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)} source={source} onBehalf={onBehalf}
         offers={pricing && eventType.priceMinor !== null ? {
           listMinor: eventType.priceMinor, currency, campaign: pricing.campaign && { name: pricing.campaign.name, chargeMinor: pricing.campaign.chargeMinor },
           sliding: pricing.sliding, coupons: pricing.coupons, firstSession: pricing.firstSession && discountText(pricing.firstSession),
         } : null}
-        paid={eventType.priceMinor !== null ? { price: formatAmount(eventType.priceMinor, eventType.currency), hostName: host.name, eventName: eventType.name }
+        paid={eventType.priceMinor !== null ? { price: formatAmount(eventType.priceMinor, eventType.currency), priceMinor: eventType.priceMinor, currency: eventType.currency, hostName: host.name, eventName: eventType.name }
           : eventType.depositMinor !== null ? { price: formatAmount(eventType.depositMinor, eventType.currency), hostName: host.name, eventName: eventType.name, deposit: true } : null}
       />}
       <BookingFooter hostId={host.id} locale={locale} />

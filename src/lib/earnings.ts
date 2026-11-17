@@ -61,9 +61,14 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
   const [money, refunds, packages, kept, held, gst, sessions, byBooking, byPackage, others, fees] = await Promise.all([
     db.query(`select coalesce(sum(amount_minor), 0)::bigint as total from payments
               where host_id = $1 and currency = $4 and kind = 'payment' and paid_at >= $2 and paid_at < $3 and status in ('paid', 'refund_pending', 'refunded')`, args),
-    // A refund's month is when it was recorded.
-    db.query(`select coalesce(sum(refunded_minor), 0)::bigint as total from payments
-              where host_id = $1 and currency = $4 and kind = 'payment' and status = 'refunded' and refunded_at >= $2 and refunded_at < $3`, args),
+    // A refund's month is when it was recorded. Some weeks of a paid series refunded on their own are dated in
+    // payment_refunds; the refund that completes a payment is dated on it, less those earlier parts.
+    db.query(`select coalesce(sum(t), 0)::bigint as total from (
+                select p.refunded_minor - coalesce((select sum(r.amount_minor) from payment_refunds r where r.payment_id = p.id), 0) as t from payments p
+                where p.host_id = $1 and p.currency = $4 and p.kind = 'payment' and p.status = 'refunded' and p.refunded_at >= $2 and p.refunded_at < $3
+                union all
+                select r.amount_minor from payment_refunds r join payments p on p.id = r.payment_id
+                where p.host_id = $1 and p.currency = $4 and p.kind = 'payment' and r.refunded_at >= $2 and r.refunded_at < $3) x`, args),
     db.query(`select coalesce(sum(price_minor), 0)::bigint as total from package_purchases where host_id = $1 and currency = $4 and status = 'paid' and paid_at >= $2 and paid_at < $3`, args),
     db.query(`select coalesce(sum(p.amount_minor), 0)::bigint as total from payments p join bookings b on b.id = p.booking_id join invitees i on i.booking_id = b.id
               where p.host_id = $1 and p.currency = $4 and p.kind = 'deposit' and p.status = 'paid' and i.no_show_at is not null and b.start_at >= $2 and b.start_at < $3`, args),
@@ -85,8 +90,10 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
     db.query(`select currency, sum(amount)::bigint as total from (
                 select currency, amount_minor as amount from payments
                   where host_id = $1 and kind = 'payment' and paid_at >= $2 and paid_at < $3 and status in ('paid', 'refund_pending', 'refunded')
-                union all select currency, -refunded_minor from payments
-                  where host_id = $1 and kind = 'payment' and status = 'refunded' and refunded_at >= $2 and refunded_at < $3
+                union all select p.currency, -(p.refunded_minor - coalesce((select sum(r.amount_minor) from payment_refunds r where r.payment_id = p.id), 0)) from payments p
+                  where p.host_id = $1 and p.kind = 'payment' and p.status = 'refunded' and p.refunded_at >= $2 and p.refunded_at < $3
+                union all select p.currency, -r.amount_minor from payment_refunds r join payments p on p.id = r.payment_id
+                  where p.host_id = $1 and p.kind = 'payment' and r.refunded_at >= $2 and r.refunded_at < $3
                 union all select currency, price_minor from package_purchases where host_id = $1 and status = 'paid' and paid_at >= $2 and paid_at < $3
                 union all select p.currency, p.amount_minor from payments p join bookings b on b.id = p.booking_id join invitees i on i.booking_id = b.id
                   where p.host_id = $1 and p.kind = 'deposit' and p.status = 'paid' and i.no_show_at is not null and b.start_at >= $2 and b.start_at < $3

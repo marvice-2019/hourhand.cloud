@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { focusRing } from "@/components/ui/focus";
 import { formatDate, formatTime, zoneName } from "@/lib/format";
-import { t, tNodes, type GuestKey, type Locale } from "@/lib/i18n/guest";
 import { formatAmount } from "@/lib/money";
+import { t, tNodes, type GuestKey, type Locale } from "@/lib/i18n/guest";
 import { offerLabel } from "@/lib/offers/labels";
 import type { AppliedOffer } from "@/lib/offers/offers";
 import { zoneCheck } from "@/lib/tz-confirm";
@@ -32,7 +32,7 @@ interface Props {
   bookingWindowDays: number;
   questions: FlowQuestion[];
   /** For a priced event: the price as shown ("₹499") and the names Checkout shows the guest. */
-  paid?: { price: string; hostName: string; eventName: string; deposit?: boolean } | null;
+  paid?: { price: string; hostName: string; eventName: string; deposit?: boolean; /** Minor units and currency, for the total of a weekly series. */ priceMinor?: number; currency?: string | null } | null;
   /** Booking through a single-use link: times and the booking go through the link, which is used up by the booking. */
   linkToken?: string;
   /** Open the picker on this suggested time's day. */
@@ -86,7 +86,7 @@ export function BookingFlow({ slug, event, bookingWindowDays, questions, paid = 
   const choosing = durations !== undefined && durations.length > 1;
   const [duration, setDuration] = useState<number | null>(null);
   const chosen = choosing ? durations.find((d) => d.minutes === duration) ?? null : null;
-  const shownPaid = paid && chosen?.price ? { ...paid, price: chosen.price } : paid;
+  const shownPaid = paid && chosen?.price ? { ...paid, price: chosen.price, priceMinor: chosen.priceMinor ?? paid.priceMinor } : paid;
   // Offers follow the chosen length: its list price, and today's campaign price for it (worked out on the server).
   const shownOffers = offers && chosen && chosen.priceMinor != null
     ? { ...offers, listMinor: chosen.priceMinor, campaign: offers.campaign && chosen.campaignMinor != null ? { ...offers.campaign, chargeMinor: chosen.campaignMinor } : offers.campaign }
@@ -141,9 +141,10 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
   const payMinor = offers?.sliding ? Math.round(Number(payRupees) * 100) : null;
   const money = (m: number) => formatAmount(m, offers?.currency ?? "INR");
   /** The price the button shows; the server works out the real one when the order is made. */
-  const shownPrice = paid && offers
-    ? money(offers.sliding ? (Number.isFinite(payMinor) && payMinor! > 0 ? payMinor! : offers.sliding.suggestedMinor) : quote?.chargeMinor ?? offers.campaign?.chargeMinor ?? offers.listMinor)
-    : paid?.price ?? "";
+  const unitMinor = paid && offers
+    ? (offers.sliding ? (Number.isFinite(payMinor) && payMinor! > 0 ? payMinor! : offers.sliding.suggestedMinor) : quote?.chargeMinor ?? offers.campaign?.chargeMinor ?? offers.listMinor)
+    : paid?.priceMinor ?? null;
+  const shownPrice = paid && offers && unitMinor !== null ? money(unitMinor) : paid?.price ?? "";
 
   async function applyCode() {
     const c = code.trim();
@@ -220,6 +221,8 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
   const [weeks, setWeeks] = useState(1);
   const [weeksTaken, setWeeksTaken] = useState<string[] | null>(null);
   const [packageRefused, setPackageRefused] = useState<string | null>(null);
+  // A priced weekly series is paid in one go: the button shows the per-session price (after any offer) for every week.
+  const seriesPrice = paid && !paid.deposit && weeks > 1 && unitMinor ? formatAmount(unitMinor * weeks, offers?.currency ?? paid.currency) : shownPrice;
   const [showGuests, setShowGuests] = useState(false);
   // The intake answers so far, so a conditional question appears as soon as the earlier answer matches.
   const [intake, setIntake] = useState<RawAnswers>({});
@@ -427,7 +430,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
           <Button type="button" loading={busy} onClick={() => { const h = held; setHeld(null); void pay(h); }}>{t(locale, "pay", { price: offers ? money(held.payment.amount) : paid?.price ?? "" })}</Button>
         </div>
       ) : (
-        <Button type="submit" loading={busy}>{busy ? t(locale, "booking") : paid ? t(locale, paid.deposit ? "continuePayDeposit" : "continuePay", { price: shownPrice }) : packageToken ? (weeks > 1 ? t(locale, "bookSessions", { n: weeks }) : t(locale, "bookWithPackage")) : t(locale, "bookThisTime")}</Button>
+        <Button type="submit" loading={busy}>{busy ? t(locale, "booking") : paid ? t(locale, paid.deposit ? "continuePayDeposit" : "continuePay", { price: seriesPrice }) : packageToken ? (weeks > 1 ? t(locale, "bookSessions", { n: weeks }) : t(locale, "bookWithPackage")) : t(locale, "bookThisTime")}</Button>
       )}
     </form>
   );

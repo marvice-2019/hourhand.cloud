@@ -368,6 +368,30 @@ describe.skipIf(!BASE)("offers (Postgres)", () => {
     }
   });
 
+  it("a paid weekly series: a campaign comes off every week, a first-session discount doesn't apply", async () => {
+    await pool.query("update event_types set max_repeats = 3 where id = $1", [et.id]);
+    et = (await store.listEventTypes(priya.id)).find((e) => e.id === et.id)!;
+    try {
+      const open = await freeSlots(store, priya, et, new Date(), new Date(Date.now() + 50 * DAY), new Date());
+      const set = new Set(open.map((d) => d.getTime()));
+      const seriesStart = () => open.find((d) => set.has(d.getTime() + 7 * DAY) && set.has(d.getTime() + 14 * DAY) && set.delete(d.getTime()))!;
+      // A first-session discount alone: a new client's single booking gets it, their series doesn't.
+      await saveFirstSession(pool, priya.id, { kind: "percent", value: 10 }, true);
+      const plain = await handleCreateBooking(store, { ...(await request()), start: seriesStart().toISOString(), weeks: 3 }, new Date(), undefined, deps());
+      expect(plain.status).toBe(201);
+      expect((plain.body as Created).payment.amount).toBe(3 * 118_000);
+      // A campaign: 10% off each of the three weeks.
+      await createCampaign(pool, priya.id, { name: "Diwali offer", banner: "10% off", discount: { kind: "percent", value: 10 }, startsOn: today(-1), endsOn: today(1), eventTypeIds: [], packageIds: [] });
+      const r = await handleCreateBooking(store, { ...(await request()), start: seriesStart().toISOString(), weeks: 3 }, new Date(), undefined, deps());
+      expect(r.status).toBe(201);
+      expect((r.body as Created).payment.amount).toBe(3 * 106_200);
+      expect((await pool.query("select sessions, amount_minor from payments where booking_id = $1", [(r.body as Created).bookingId])).rows[0]).toEqual({ sessions: 3, amount_minor: 318_600 });
+    } finally {
+      await pool.query("update event_types set max_repeats = 1 where id = $1", [et.id]);
+      et = (await store.listEventTypes(priya.id)).find((e) => e.id === et.id)!;
+    }
+  });
+
   it("only one adjustment: the best of coupon, first session and campaign, never stacked", async () => {
     await saveFirstSession(pool, priya.id, { kind: "percent", value: 10 }, true);
     await createCampaign(pool, priya.id, { name: "Diwali offer", banner: "20% off till 5 Nov", discount: { kind: "percent", value: 15 }, startsOn: today(-1), endsOn: today(1), eventTypeIds: [], packageIds: [] });

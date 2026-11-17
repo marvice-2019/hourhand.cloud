@@ -14,6 +14,7 @@ import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
 import { queueWaitlistFor } from "../waitlist";
 import { classKeyOf, localDay, weekOf } from "../slots";
+import { queueRefunds } from "../payments/series";
 import { hostDisplayName } from "../display-name";
 import {
   DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type AvailabilityRule, type BookingLink,
@@ -513,7 +514,8 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
             for (let i = 2; i <= weeks; i++) {
               const weekId = await insertBooking(client, { ...input, startAt: new Date(input.startAt.getTime() + (i - 1) * WEEK), idempotencyKey: `${input.idempotencyKey}#${i}` }, null, null);
               await client.query("update bookings set series_id = $2, series_index = $3 where id = $1", [weekId, newId, i]);
-              await queueBookingNotifications(client, weekId, "booked", new Date(), { confirm: false });
+              // A held (paid) series says nothing until the payment lands; applyCapturedPayment queues these then.
+              if (!input.holdUntil) await queueBookingNotifications(client, weekId, "booked", new Date(), { confirm: false });
             }
           }
           if (purchaseId) await client.query("update bookings set package_purchase_id = $2 where id = $1 or series_id = $1", [newId, purchaseId]);
@@ -586,7 +588,8 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
           await queueBookingNotifications(client, newId, "rescheduled", new Date());
           await queueWaitlistFor(client, bookingId, new Date()); // the old time is free now
           // The guest already paid for the old time: the payment follows the booking, with no refund and no new charge.
-          await client.query("update payments set booking_id = $2, updated_at = now() where booking_id = $1 and status = 'paid'", [bookingId, newId]);
+          // A series payment stays on the series' first booking, which every week points at.
+          await client.query("update payments set booking_id = $2, updated_at = now() where booking_id = $1 and status = 'paid' and sessions = 1", [bookingId, newId]);
           return newId;
         });
         kickJobs();
@@ -598,16 +601,17 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
     async cancelBooking(hostId, bookingId, by, reason, opts = {}) {
       if (!isId(hostId) || !isId(bookingId)) throw new NotFoundError("Booking");
       const cancelled = await tx(async (client) => {
+        let later: { id: string }[] = [];
         const { rowCount } = await client.query(
           "update bookings set status = 'cancelled', cancelled_at = now(), cancelled_by = $3, cancel_reason = $4 where id = $1 and host_id = $2 and status = 'confirmed'",
           [bookingId, hostId, by, reason ?? null]);
         if (rowCount && opts.laterWeeks) {
           // The series' later weeks still to come, cancelled at the same instant (now() is fixed per transaction), which
           // is how the cancellation email finds them. Each still loses its reminders and calendar event.
-          const { rows: later } = await client.query(
+          ({ rows: later } = await client.query(
             `update bookings w set status = 'cancelled', cancelled_at = now(), cancelled_by = $3, cancel_reason = $4
              from bookings b where b.id = $1 and b.host_id = $2 and b.series_id is not null and w.series_id = b.series_id and w.series_index > b.series_index
-               and w.status = 'confirmed' and w.start_at > now() returning w.id`, [bookingId, hostId, by, reason ?? null]);
+               and w.status = 'confirmed' and w.start_at > now() returning w.id`, [bookingId, hostId, by, reason ?? null]));
           for (const w of later) {
             await queueBookingNotifications(client, w.id, "cancelled", new Date(), { confirm: false });
             await queueWaitlistFor(client, w.id, new Date());
@@ -616,8 +620,9 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
         if (rowCount) {
           await queueBookingNotifications(client, bookingId, "cancelled", new Date());
           await queueWaitlistFor(client, bookingId, new Date());
-          // A paid booking is refunded in full (the guest cancel cutoff is enforced before this); the job runner does the refund.
-          await client.query("update payments set status = 'refund_pending', updated_at = now(), checked_at = null where booking_id = $1 and status = 'paid'", [bookingId]);
+          // A paid booking is refunded in full, a week of a paid series by its share (the guest cancel cutoff is enforced
+          // before this); the job runner does the refund.
+          await queueRefunds(client, [bookingId, ...later.map((w) => w.id)], new Date());
         }
         return Boolean(rowCount);
       });

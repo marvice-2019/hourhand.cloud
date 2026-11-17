@@ -44,7 +44,7 @@ export const bookings: Record<keyof typeof en, string> = {
   "bookings.phone": "फ़ोन",
 
   // Messages the page reports after an action
-  "bookings.doneCancelled": "बुकिंग कैंसल हो गई। हमने मेहमान को ईमेल कर दिया है, और अगर पेमेंट हुआ था तो पूरा पैसा रिफ़ंड हो जाएगा।",
+  "bookings.doneCancelled": "बुकिंग कैंसल हो गई। हमने मेहमान को ईमेल कर दिया है, और जो भी रिफ़ंड बनता है वह भेजा जा रहा है।",
   "bookings.doneRescheduled": "बुकिंग का समय बदल गया। हमने मेहमान को नया समय ईमेल कर दिया है।",
   "bookings.doneNoShow": "नो-शो मार्क कर दिया।",
   "bookings.doneNoShowUndone": "नो-शो हटा दिया।",
@@ -92,7 +92,12 @@ export const bookings: Record<keyof typeof en, string> = {
   "bookings.reasonLabel": "{name} को बताने के लिए वजह (ज़रूरी नहीं)",
   "bookings.alsoCancelNextWeek": "इस सीरीज़ का अगला हफ़्ता भी कैंसल करें",
   "bookings.alsoCancelLaterWeeks": "इस सीरीज़ के बाद वाले {n} हफ़्ते भी कैंसल करें",
-  "bookings.cancelNote": "हम {name} को ईमेल कर देंगे कि आपने कैंसल किया है। अगर पेमेंट हुआ था, तो पूरा पैसा रिफ़ंड हो जाएगा।",
+  "bookings.cancelNote": "हम {name} को ईमेल कर देंगे कि आपने कैंसल किया है।",
+  "bookings.seriesRefunded": "अब तक {amount} रिफ़ंड हुए।",
+  "bookings.seriesRefundDue": "मेहमान को {amount} रिफ़ंड हो रहे हैं।",
+  "bookings.seriesAmount": "{n} साप्ताहिक सेशन के लिए {total} (हर एक {each})",
+  "bookings.cancelRefundWithLater": "मेहमान को {amount} वापस मिलेंगे (बाद के हफ़्ते भी कैंसल करें तो {withLater}), आपके {provider} अकाउंट से रिफ़ंड।",
+  "bookings.cancelRefund": "मेहमान को {amount} वापस मिलेंगे, आपके {provider} अकाउंट से रिफ़ंड।",
   "bookings.yesCancel": "हाँ, कैंसल करें",
   "bookings.keepIt": "रहने दें",
   "bookings.cancelBooking": "बुकिंग कैंसल करें",

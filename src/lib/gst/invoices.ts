@@ -121,10 +121,38 @@ async function queueInvoiceEmail(db: Db, hostId: string, invoiceId: string, to: 
      values (null, $1, 'email', 'invoice_guest', $2, $3, $4) on conflict (dedupe_key) do nothing`, [hostId, to, now, `invoice:${invoiceId}`]);
 }
 
+/**
+ * The invoice line for a booking: "Coaching (60 min), 12 Oct 2026", or for a paid weekly series the per-session price
+ * times the count: "Coaching (60 min) × 4 weekly sessions at ₹1,000.00 each, from 12 Oct 2026".
+ */
+export function bookingLine(b: { eventName: string; minutes: number; startAt: Date; sessions: number; amountMinor: number }): string {
+  const what = `${b.eventName} (${b.minutes} min)`;
+  if (b.sessions <= 1) return `${what}, ${istDate(b.startAt)}`;
+  const each = (b.amountMinor / b.sessions / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${what} × ${b.sessions} weekly sessions at ₹${each} each, from ${istDate(b.startAt)}`;
+}
+
+/** A paid series' offer is recorded per session; its invoice shows it for every week the payment covers. */
+function seriesOffer(offer: AppliedOffer | null, sessions: number): AppliedOffer | null {
+  if (!offer || sessions <= 1) return offer;
+  return { ...offer, listMinor: offer.listMinor * sessions, discountMinor: offer.discountMinor * sessions, chargeMinor: offer.chargeMinor * sessions };
+}
+
+/**
+ * The discount columns of a credit note for `total` of an invoice: the invoice's own for a full refund, its share of
+ * them for a partial one (some weeks of a paid series), so the note shows the same discount the refunded weeks got.
+ */
+function creditDiscount(v: { total_minor: number; gross_minor: number | null; discount_minor: number | null; discount_label: string | null }, total: number): [number | null, number | null, string | null] {
+  if (v.gross_minor == null || v.discount_minor == null) return [null, null, null];
+  if (total === v.total_minor) return [v.gross_minor, v.discount_minor, v.discount_label];
+  const share = total / v.total_minor;
+  return [Math.round(v.gross_minor * share), Math.round(v.discount_minor * share), v.discount_label];
+}
+
 /** A tax invoice for a captured booking payment (not a deposit). At most one per payment. */
 export async function invoiceForPayment(db: Db, paymentId: string, now: Date): Promise<string | null> {
   const { rows: [p] } = await db.query(
-    `select p.host_id, p.booking_id, coalesce(p.collected_by, p.host_id) as issuer_id, h.name as host_name, p.amount_minor, p.kind, p.currency, i.name, i.email, e.name as event_name, e.duration_minutes, b.start_at,
+    `select p.host_id, p.booking_id, coalesce(p.collected_by, p.host_id) as issuer_id, h.name as host_name, p.amount_minor, p.kind, p.sessions, p.currency, i.name, i.email, e.name as event_name, b.start_at, b.end_at,
        exists (select 1 from invoices v where v.payment_id = p.id and v.kind = 'invoice') as done
      from payments p join bookings b on b.id = p.booking_id join invitees i on i.booking_id = b.id join event_types e on e.id = b.event_type_id
        join users h on h.id = p.host_id
@@ -132,8 +160,8 @@ export async function invoiceForPayment(db: Db, paymentId: string, now: Date): P
   // Indian GST invoices are for rupee payments (Razorpay). Stripe sends its own receipts for other currencies.
   if (!p || p.kind !== "payment" || p.done || p.currency !== "INR") return null;
   return issue(db, {
-    hostId: p.host_id, totalMinor: p.amount_minor, buyerName: p.name, buyerEmail: p.email, paymentId, issuer: { id: p.issuer_id, practitionerName: p.host_name }, offer: await offerForBooking(db, p.booking_id),
-    description: `${p.event_name} (${p.duration_minutes} min), ${istDate(new Date(p.start_at))}`,
+    hostId: p.host_id, totalMinor: p.amount_minor, buyerName: p.name, buyerEmail: p.email, paymentId, issuer: { id: p.issuer_id, practitionerName: p.host_name }, offer: seriesOffer(await offerForBooking(db, p.booking_id), p.sessions),
+    description: bookingLine({ eventName: p.event_name, minutes: Math.round((new Date(p.end_at).getTime() - new Date(p.start_at).getTime()) / 60_000), startAt: new Date(p.start_at), sessions: p.sessions, amountMinor: p.amount_minor }),
   }, now);
 }
 
@@ -168,14 +196,22 @@ export async function invoiceForMembershipGrant(db: Db, grantId: string, now: Da
 }
 
 /**
- * A credit note reversing a refunded payment's invoice in full (CGST Act s.34), numbered in its own series. Uses the
- * invoice's own figures and supplier details, so it mirrors exactly what was charged. None if the payment had no invoice.
+ * A credit note reversing a refunded payment's invoice (CGST Act s.34), numbered in its own series. Without `amountMinor`,
+ * or for the whole invoice, it uses the invoice's own figures and supplier details, so it mirrors exactly what was
+ * charged. A partial refund (some weeks of a paid series) gets a note for that amount, its tax split the same way the
+ * invoice's was; the notes never add up to more than the invoice. None if the payment had no invoice.
  */
-export async function creditNoteForRefund(db: Db, paymentId: string, now: Date): Promise<string | null> {
+export async function creditNoteForRefund(db: Db, paymentId: string, now: Date, amountMinor?: number): Promise<string | null> {
   const { rows: [v] } = await db.query(
-    `select v.* from invoices v where v.payment_id = $1 and v.kind = 'invoice'
-       and not exists (select 1 from invoices c where c.original_invoice_id = v.id)`, [paymentId]);
+    `select v.*, coalesce((select sum(c.total_minor) from invoices c where c.original_invoice_id = v.id), 0)::int as credited
+     from invoices v where v.payment_id = $1 and v.kind = 'invoice' for update of v`, [paymentId]);
   if (!v) return null;
+  const left = v.total_minor - v.credited;
+  const total = Math.min(amountMinor ?? left, left);
+  if (total <= 0) return null;
+  const split = total === v.total_minor
+    ? { taxableMinor: v.taxable_minor, cgstMinor: v.cgst_minor, sgstMinor: v.sgst_minor, igstMinor: v.igst_minor, totalMinor: v.total_minor }
+    : splitInclusive(total, v.rate_bp, v.igst_minor > 0);
   const fy = financialYear(now);
   const seq = await nextSeq(db, v.host_id, "credit_note", fy);
   const prefix = String(v.number).split("/")[0].slice(0, 2);
@@ -184,8 +220,8 @@ export async function creditNoteForRefund(db: Db, paymentId: string, now: Date):
        description, sac, rate_bp, taxable_minor, cgst_minor, sgst_minor, igst_minor, total_minor, gross_minor, discount_minor, discount_label)
      values ($1, 'credit_note', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) returning id`,
     [v.host_id, `CN${prefix}/${fy}/${String(seq).padStart(6, "0")}`, fy, seq, now, paymentId, v.id, v.buyer_name, v.buyer_email, JSON.stringify(v.supplier),
-      v.place_of_supply, `Refund of ${v.description}`, v.sac, v.rate_bp, v.taxable_minor, v.cgst_minor, v.sgst_minor, v.igst_minor, v.total_minor,
-      v.gross_minor, v.discount_minor, v.discount_label]);
+      v.place_of_supply, `${total === v.total_minor ? "Refund" : "Part refund"} of ${v.description}`, v.sac, v.rate_bp, split.taxableMinor, split.cgstMinor, split.sgstMinor, split.igstMinor, split.totalMinor,
+      ...creditDiscount(v, total)]);
   await queueInvoiceEmail(db, v.host_id, c.id, v.buyer_email, now);
   return c.id as string;
 }

@@ -49,10 +49,19 @@ export const MONEY_SOURCES: MoneySourceQuery[] = [
           where p.host_id = $1 and p.kind = 'payment' and p.status in ('paid', 'refund_pending', 'refunded') and p.paid_at >= $2 and p.paid_at < $3`,
   },
   {
+    // The refund that completes a payment, dated on the payment, less any weeks of a paid series refunded before it.
     type: "refund", source: "booking",
-    sql: `select p.currency, p.refunded_minor::bigint as amount_minor, p.refunded_at as at, ${COLS}
+    sql: `select p.currency, (p.refunded_minor - coalesce((select sum(r.amount_minor) from payment_refunds r where r.payment_id = p.id), 0))::bigint as amount_minor, p.refunded_at as at, ${COLS}
           from payments p join bookings b on b.id = p.booking_id join event_types e on e.id = b.event_type_id ${INVITEE}
-          where p.host_id = $1 and p.kind = 'payment' and p.status = 'refunded' and p.refunded_minor > 0 and p.refunded_at >= $2 and p.refunded_at < $3`,
+          where p.host_id = $1 and p.kind = 'payment' and p.status = 'refunded' and p.refunded_minor - coalesce((select sum(r.amount_minor) from payment_refunds r where r.payment_id = p.id), 0) > 0
+            and p.refunded_at >= $2 and p.refunded_at < $3`,
+  },
+  {
+    // Some weeks of a paid series refunded on their own, each in the month it was made. The fee stays on the sale.
+    type: "refund", source: "booking",
+    sql: `select p.currency, r.amount_minor::bigint as amount_minor, r.refunded_at as at, ${WHO}, null::bigint as fee_minor, null::bigint as fee_tax_minor
+          from payment_refunds r join payments p on p.id = r.payment_id join bookings b on b.id = p.booking_id join event_types e on e.id = b.event_type_id ${INVITEE}
+          where p.host_id = $1 and p.kind = 'payment' and r.refunded_at >= $2 and r.refunded_at < $3`,
   },
   {
     type: "sale", source: "package",

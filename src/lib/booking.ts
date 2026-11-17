@@ -12,6 +12,7 @@ import { smsNumber } from "./sms/config";
 import { BOOKING_LIMITS, type createRateLimiter } from "./rate-limit";
 import type { Plan } from "./billing/plans";
 import { startPaidBooking } from "./payments/booking-payments";
+import { seriesCharge } from "./payments/series";
 import { parseOfferInput, resolvePrice } from "./offers/offers";
 import { chargeableCurrency, startStripeBooking, type StripeDeps } from "./payments/stripe-checkout";
 import { stripeReady } from "./payments/stripe-connect";
@@ -341,9 +342,9 @@ export async function handleCreateBooking(
   }
   if (req.packageToken && found.linkToken) return { status: 400, body: { error: "invalid_request", fields: { packageToken: "Use your package link or the single-use link, not both." } } };
   // A package buyer may book their sessions weekly (up to what's left, checked in the write); otherwise the host's setting
-  // rules, and a price or deposit holds one booking at a time.
+  // rules. A priced series is paid in one go for every week; a deposit holds one booking at a time.
   const maxWeeks = req.packageToken ? 12 : eventType.maxRepeats;
-  if (req.weeks > 1 && (req.weeks > maxWeeks || found.linkToken || (!req.packageToken && (eventType.priceMinor || eventType.depositMinor)))) {
+  if (req.weeks > 1 && (req.weeks > maxWeeks || found.linkToken || (!req.packageToken && eventType.priceMinor === null && eventType.depositMinor))) {
     return { status: 400, body: { error: "invalid_request", fields: { weeks: maxWeeks > 1 ? `Book up to ${maxWeeks} weeks at a time.` : "This event can't be repeated." } } };
   }
 
@@ -355,11 +356,13 @@ export async function handleCreateBooking(
   const priced = !req.packageToken && eventType.priceMinor !== null && payments
     ? await resolvePrice(payments.pool, {
       hostId: host.id, plan: await payments.planFor(host.id), item: { kind: "event_type", id: eventType.id, listMinor: priceFor(found.eventType, minutes) ?? eventType.priceMinor, currency: eventType.currency ?? "INR" },
-      email: req.email, ...parseOfferInput(input), idempotencyKey: req.idempotencyKey, now, limit, reserve: true,
+      email: req.email, ...parseOfferInput(input), idempotencyKey: req.idempotencyKey, now, limit, reserve: true, sessions: req.weeks,
     })
     : null;
   if (priced && !priced.ok) return { status: priced.status, body: priced.body };
-  const priceMinor = req.packageToken ? null : priced?.chargeMinor ?? priceFor(found.eventType, minutes) ?? eventType.depositMinor;
+  // A weekly series pays every week at that per-session price in one go.
+  const unitMinor = priced?.chargeMinor ?? priceFor(found.eventType, minutes);
+  const priceMinor = req.packageToken ? null : unitMinor !== null ? seriesCharge(unitMinor, req.weeks) : eventType.depositMinor;
   const paymentKind = eventType.priceMinor === null ? "deposit" as const : "payment" as const;
   // A priced repeat goes through startPaidBooking below instead, so a still-held booking gets its payment details back.
   if (existing && !priceMinor) return { status: 200, body: { bookingId: existing.id, manageToken: existing.invitee.manageToken } };
@@ -433,7 +436,8 @@ export async function handleCreateBooking(
         { pool: p.stripe.deps.pool, store, api: p.stripe.deps.api, host: p.host },
         {
           ...bookingInput, priceMinor, kind: paymentKind,
-          productName: paymentKind === "deposit" ? `Refundable deposit: ${eventType.name} with ${host.name}` : `${eventType.name} with ${host.name}`,
+          productName: paymentKind === "deposit" ? `Refundable deposit: ${eventType.name} with ${host.name}`
+            : `${eventType.name} with ${host.name}${req.weeks > 1 ? `, ${req.weeks} weekly sessions` : ""}`,
           urls: (b) => {
             const page = `${base}/${host.slug}/${eventType.slug}/booked/${b.id}`;
             // Stripe fills in {CHECKOUT_SESSION_ID}; the booked page reads that session back from Stripe before confirming.

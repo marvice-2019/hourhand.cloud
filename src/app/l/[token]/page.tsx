@@ -47,7 +47,7 @@ export default async function LinkPage({ params }: { params: Promise<{ token: st
       {eventType.description && <p className="mt-2 text-text">{eventType.description}</p>}
       <BookingFlow
         slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} linkToken={token} durations={guestDurations(eventType, (m) => formatAmount(m, eventType.currency))} bookingWindowDays={eventType.bookingWindowDays} questions={questions} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)}
-        paid={eventType.priceMinor !== null ? { price: formatAmount(eventType.priceMinor, eventType.currency), hostName: host.name, eventName: eventType.name }
+        paid={eventType.priceMinor !== null ? { price: formatAmount(eventType.priceMinor, eventType.currency), priceMinor: eventType.priceMinor, currency: eventType.currency, hostName: host.name, eventName: eventType.name }
           : eventType.depositMinor !== null ? { price: formatAmount(eventType.depositMinor, eventType.currency), hostName: host.name, eventName: eventType.name, deposit: true } : null}
       />
       <BookingFooter hostId={host.id} />

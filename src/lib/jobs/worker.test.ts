@@ -232,6 +232,58 @@ describe.skipIf(!BASE)("email queue (TEST_DATABASE_URL)", () => {
     expect(cancelMails.every((m) => m.text.includes("Also cancelled (2)"))).toBe(true);
   });
 
+  describe("a paid weekly series", () => {
+    /** A 4-week series with one paid payment of ₹2,000 (₹500 a week) on its first booking, its booking emails sent. */
+    async function paidSeries(start: Date, hostId = priya.id, eventTypeId = coaching.id) {
+      const first = await store.createBooking({ eventTypeId, startAt: start, idempotencyKey: `jobs-paid-${Math.random()}`, weeks: 4, invitee: guest });
+      await pool.query(
+        `insert into payments (booking_id, host_id, provider, provider_order_id, provider_payment_id, amount_minor, currency, status, kind, sessions, paid_at)
+         values ($1, $2, 'razorpay', $3, $4, 200000, 'INR', 'paid', 'payment', 4, now())`, [first.id, hostId, `order_${first.id}`, `pay_${first.id}`]);
+      await processDueNotifications(pool, fakeMailer().mailer, { baseUrl });
+      const { rows: weeks } = await pool.query("select id from bookings where series_id = $1 order by series_index", [first.id]);
+      return weeks.map((w) => w.id as string);
+    }
+    const cancelMails = async () => {
+      const { mailer, sent } = fakeMailer();
+      await processDueNotifications(pool, mailer, { baseUrl });
+      return sent.filter((m) => m.subject.startsWith("Cancelled"));
+    };
+
+    it("cancelling one week says that week's share is refunded, not the whole series", async () => {
+      const weeks = await paidSeries(new Date(Date.UTC(2033, 2, 7, 4, 0)));
+      await store.cancelBooking(priya.id, weeks[1], "guest");
+      const mails = await cancelMails();
+      const toGuest = mails.find((m) => m.to === guest.email)!;
+      expect(toGuest.text).toContain("₹500 for the cancelled sessions is being refunded");
+      expect(toGuest.text).not.toContain("₹2,000");
+      expect(mails.find((m) => m.to !== guest.email)!.text).toContain("₹500 for the cancelled session is being refunded to the guest");
+    });
+
+    it("cancelling the first week and the rest says all four shares, matching what was queued", async () => {
+      const weeks = await paidSeries(new Date(Date.UTC(2033, 5, 6, 4, 0)));
+      await store.cancelBooking(priya.id, weeks[0], "guest", undefined, { laterWeeks: true });
+      const toGuest = (await cancelMails()).find((m) => m.to === guest.email)!;
+      expect(toGuest.text).toContain("₹2,000 for the cancelled sessions is being refunded");
+      expect(toGuest.text).toContain("Also cancelled (3)");
+      expect((await pool.query("select status from payments where booking_id = $1", [weeks[0]])).rows[0].status).toBe("refund_pending");
+    });
+
+    it("closing an account emails each week once, each naming only its own share", async () => {
+      const { rows: [host] } = await pool.query(
+        "insert into users (email, name, slug) values ('closing-series@example.com', 'Dev Rao', 'closing-series') returning id");
+      const { rows: [et] } = await pool.query(
+        "insert into event_types (user_id, name, slug, duration_minutes, price_minor, currency, max_repeats) values ($1, 'Chat', 'chat', 30, 50000, 'INR', 4) returning id", [host.id]);
+      await paidSeries(new Date(Date.UTC(2033, 8, 5, 4, 0)), host.id, et.id);
+      await store.deleteAccount(host.id);
+      const toGuest = (await cancelMails()).filter((m) => m.to === guest.email);
+      expect(toGuest).toHaveLength(4);
+      for (const m of toGuest) {
+        expect(m.text).toContain("₹500 for the cancelled sessions is being refunded");
+        expect(m.text).not.toContain("Also cancelled");
+      }
+    });
+  });
+
   it("a guest's own cancel offers no other times", async () => {
     const b = await book();
     await store.cancelBooking(priya.id, b.id, "guest");

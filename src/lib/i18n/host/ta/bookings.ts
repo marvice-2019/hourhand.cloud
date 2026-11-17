@@ -44,7 +44,7 @@ export const bookings: Record<keyof typeof en, string> = {
   "bookings.phone": "போன்",
 
   // Messages the page reports after an action
-  "bookings.doneCancelled": "புக்கிங் கேன்சல் ஆனது. விருந்தினருக்கு ஈமெயில் அனுப்பிவிட்டோம்; பணம் செலுத்திய புக்கிங்குக்கு முழுத் தொகையும் ரீஃபண்ட் ஆகும்.",
+  "bookings.doneCancelled": "புக்கிங் கேன்சல் ஆனது. விருந்தினருக்கு ஈமெயில் அனுப்பிவிட்டோம்; திருப்பித் தர வேண்டிய தொகை ரீஃபண்ட் செய்யப்படுகிறது.",
   "bookings.doneRescheduled": "புக்கிங் நேரம் மாற்றப்பட்டது. புதிய நேரத்தை விருந்தினருக்கு ஈமெயில் செய்துவிட்டோம்.",
   "bookings.doneNoShow": "'வரவில்லை' எனக் குறிக்கப்பட்டது.",
   "bookings.doneNoShowUndone": "'வரவில்லை' குறி நீக்கப்பட்டது.",
@@ -92,7 +92,12 @@ export const bookings: Record<keyof typeof en, string> = {
   "bookings.reasonLabel": "{name} அவர்களுக்குத் தெரிவிக்கும் காரணம் (விருப்பத்தேர்வு)",
   "bookings.alsoCancelNextWeek": "இந்தத் தொடரின் அடுத்த வாரத்தையும் கேன்சல் செய்",
   "bookings.alsoCancelLaterWeeks": "இந்தத் தொடரின் அடுத்த {n} வாரங்களையும் கேன்சல் செய்",
-  "bookings.cancelNote": "நீங்கள் கேன்சல் செய்ததை {name} அவர்களுக்கு ஈமெயில் செய்வோம். பணம் செலுத்திய புக்கிங்குக்கு முழுத் தொகையும் ரீஃபண்ட் ஆகும்.",
+  "bookings.cancelNote": "நீங்கள் கேன்சல் செய்ததை {name} அவர்களுக்கு ஈமெயில் செய்வோம்.",
+  "bookings.seriesRefunded": "இதுவரை {amount} ரீஃபண்ட் செய்யப்பட்டது.",
+  "bookings.seriesRefundDue": "விருந்தினருக்கு {amount} ரீஃபண்ட் செய்யப்படுகிறது.",
+  "bookings.seriesAmount": "{n} வாராந்திர அமர்வுகளுக்கு {total} (ஒவ்வொன்றும் {each})",
+  "bookings.cancelRefundWithLater": "விருந்தினருக்கு {amount} திரும்பக் கிடைக்கும் (அடுத்த வாரங்களையும் கேன்சல் செய்தால் {withLater}), உங்கள் {provider} கணக்கில் இருந்து ரீஃபண்ட்.",
+  "bookings.cancelRefund": "விருந்தினருக்கு {amount} திரும்பக் கிடைக்கும், உங்கள் {provider} கணக்கில் இருந்து ரீஃபண்ட்.",
   "bookings.yesCancel": "ஆம், கேன்சல் செய்",
   "bookings.keepIt": "வேண்டாம், வைத்திரு",
   "bookings.cancelBooking": "புக்கிங்கை கேன்சல் செய்",

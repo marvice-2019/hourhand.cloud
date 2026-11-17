@@ -34,6 +34,16 @@ describe("WhatsApp messages", () => {
     const cancelled = templateMessage("cancelled_guest", ctx, "91").template;
     expect(cancelled.name).toBe("hh_booking_changed");
     expect(cancelled.components[0].parameters[3].text).toBe("it has been cancelled");
+    // A refund goes in the same variable, so the approved template itself is unchanged.
+    const refunded = templateMessage("cancelled_guest", { ...ctx, refundMinor: 50_000 }, "91").template;
+    expect(refunded.name).toBe("hh_booking_changed");
+    expect(refunded.components[0].parameters[3].text).toBe("it has been cancelled, and ₹500 is being refunded to the way you paid");
+    const hi = templateMessage("cancelled_guest", { ...ctx, locale: "hi", refundMinor: 150_000 }, "91").template.components[0].parameters[3].text;
+    expect(hi).toBe("यह रद्द हो गया है और ₹1,500 उसी तरीके से लौटाए जा रहे हैं जिससे आपने भुगतान किया था");
+    expect(hi.length).toBeLessThanOrEqual(120); // never cut short by the variable limit
+    expect(templateMessage("cancelled_guest", { ...ctx, refundMinor: null }, "91").template.components[0].parameters[3].text).toBe("it has been cancelled");
+    // Only cancellations mention money.
+    expect(templateMessage("rescheduled_guest", { ...ctx, refundMinor: 50_000 }, "91").template.components[0].parameters[3].text).not.toContain("₹");
     expect(templateMessage("rescheduled_guest", { ...ctx, locale: "hi" }, "91").template.components[0].parameters[3].text).toMatch(/^अब यह .* को है$/);
   });
 
@@ -158,6 +168,42 @@ describe.skipIf(!BASE)("WhatsApp sending (Postgres)", () => {
     expect(rows.map((r) => [r.kind, r.status])).toEqual([["booked_guest", "skipped"], ["cancelled_guest", "queued"], ["reminder_guest", "skipped"]]);
     await run();
     expect(sent.map((s) => (s.body.template as { name: string }).name)).toEqual(["hh_booking_changed"]);
+  });
+
+  const fourth = () => ((sent[0].body.template as { components: { parameters: { text: string }[] }[] }).components[0].parameters[3].text);
+  /** Gives a booking a paid payment row, as Razorpay checkout would have left it. */
+  const pay = (bookingId: string, amount: number, sessions = 1) => pool.query(
+    `insert into payments (booking_id, host_id, provider, provider_order_id, provider_payment_id, amount_minor, currency, status, kind, sessions, paid_at)
+     values ($1, $2, 'razorpay', $3, $4, $5, 'INR', 'paid', 'payment', $6, now())`, [bookingId, priya.id, `order_${bookingId}`, `pay_${bookingId}`, amount, sessions]);
+
+  it("a cancelled paid booking says what is being refunded", async () => {
+    const b = await book();
+    await pay(b.id, 49_900);
+    await store.cancelBooking(priya.id, b.id, "host");
+    await run();
+    expect(fourth()).toBe("it has been cancelled, and ₹499 is being refunded to the way you paid");
+  });
+
+  it("a cancelled week of a paid series names its own share, the same amount as its email", async () => {
+    n++;
+    const first = await store.createBooking({
+      eventTypeId: coaching.id, startAt: new Date(Date.now() + 30 * 86_400_000 + n * 3 * 3_600_000), idempotencyKey: `wa-series-${n}`, weeks: 4,
+      invitee: { name: "Kiran Rao", email: `kiran${n}@example.in`, timezone: "Asia/Kolkata", phone: "+91 98765 43210", answers: [], whatsappOptIn: true },
+    });
+    await pay(first.id, 200_000, 4);
+    const { rows: weeks } = await pool.query("select id from bookings where series_id = $1 order by series_index", [first.id]);
+    await store.cancelBooking(priya.id, weeks[1].id, "guest", undefined, { laterWeeks: true });
+    await pool.query("update notifications set status = 'skipped' where channel = 'whatsapp' and kind <> 'cancelled_guest'");
+    await run();
+    expect(sent).toHaveLength(1);
+    expect(fourth()).toBe("it has been cancelled, and ₹1,500 is being refunded to the way you paid");
+  });
+
+  it("a free booking's cancellation says nothing about money", async () => {
+    const b = await book();
+    await store.cancelBooking(priya.id, b.id, "host");
+    await run();
+    expect(fourth()).toBe("it has been cancelled");
   });
 
   it("sends nothing for a host on the free plan, and stops at the monthly limit", async () => {

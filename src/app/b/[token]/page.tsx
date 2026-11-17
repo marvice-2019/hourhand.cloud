@@ -18,6 +18,8 @@ import { authEnabled, resolveBaseUrl } from "@/lib/auth/auth";
 import { DataRequest } from "@/components/DataRequest";
 import { getPool } from "@/lib/data/pg-store";
 import { openRequestsForToken } from "@/lib/privacy/rights";
+import { paidShareFor, refundPreview } from "@/lib/payments/series";
+import { formatAmount } from "@/lib/money";
 import { pt } from "@/lib/i18n/portal";
 import { videoJoinUrl } from "@/lib/video/links";
 import { SmsToggle } from "@/components/SmsToggle";
@@ -52,6 +54,12 @@ export default async function ManageBookingPage({ params, searchParams }: { para
   // Requests already open with the host (a copy, deletion), so the guest sees the deadline instead of asking twice.
   const openRequests = authEnabled() ? (await openRequestsForToken(getPool(process.env.DATABASE_URL as string), token)).map((r) => ({ kind: r.kind, dueAt: r.dueAt.toISOString() })) : null;
   const laterWeeks = series.filter((b) => (b.seriesIndex ?? 0) > (booking.seriesIndex ?? 0) && b.status === "confirmed" && b.startAt > now).length;
+  // What cancelling gives back, when it's still allowed (inside the cutoff the guest can't cancel online at all).
+  const canCancel = booking.status === "confirmed" && booking.startAt.getTime() - now.getTime() >= eventType.cancelCutoffMinutes * 60_000;
+  const share = canCancel && authEnabled() ? await paidShareFor(getPool(process.env.DATABASE_URL as string), booking.id) : null;
+  const preview = refundPreview(share, laterWeeks);
+  const money = (minor: number) => (minor > 0 ? formatAmount(minor, share?.currency) : null);
+  const refund = preview ? { thisOnly: money(preview.thisOnly), withLater: money(preview.withLater) } : null;
 
   return (
     <main lang={locale} className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
@@ -93,7 +101,7 @@ export default async function ManageBookingPage({ params, searchParams }: { para
         />
         {canSayRunningLate(booking.startAt, new Date()) && <RunningLate token={token} hostName={host.name} told={booking.invitee.runningLateMinutes} locale={locale} />}
         {textNumber && <SmsToggle token={token} phone={maskedPhone(textNumber)} on={booking.invitee.smsOptIn === true} locale={locale} />}
-        <ManageBooking token={token} slug={host.slug} event={eventType.slug} bookingWindowDays={eventType.bookingWindowDays} hostName={host.name} laterWeeks={laterWeeks} locale={locale} langQuery={q} cancelPolicy={eventType.cancelPolicy} groupSeat={booking.classKey !== null} />
+        <ManageBooking token={token} slug={host.slug} event={eventType.slug} bookingWindowDays={eventType.bookingWindowDays} hostName={host.name} laterWeeks={laterWeeks} locale={locale} langQuery={q} cancelPolicy={eventType.cancelPolicy} groupSeat={booking.classKey !== null} refund={refund} />
         </>
       )}
       {authEnabled() && (

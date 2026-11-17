@@ -253,7 +253,6 @@ export function checkEventType(form: EventTypeForm, takenSlugs: readonly string[
   if (price === "invalid") fail("price", "priceInvalid");
   const priceMinor = price === "invalid" ? null : price;
   const maxRepeats = number("maxRepeats", 1, MAX_WEEKS, "repeatsRange", { max: MAX_WEEKS });
-  if (!errors.maxRepeats && maxRepeats > 1 && priceMinor !== null) fail("maxRepeats", "repeatsPaid");
   const deposit = parsePrice(form.deposit);
   if (deposit === "invalid") fail("deposit", "priceInvalid");
   const depositMinor = deposit === "invalid" ? null : deposit;

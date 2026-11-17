@@ -4,6 +4,7 @@ import type { BookingWithInvitee, CreateBookingInput, DataStore } from "../data/
 import { creditNoteForRefund } from "../gst/invoices";
 import { applyPurchasePayment } from "../packages/packages";
 import { applyCapturedPayment, expireHold, PaymentStartError } from "./booking-payments";
+import { recordRefund, REFUND_DUE_SQL, targetOf } from "./series";
 import { applicationFeeMinor, loadHostStripe, STRIPE_API_VERSION, stripeApiBase, type HostStripe } from "./stripe-connect";
 
 // Guests paying a Stripe-connected host. Each payment is a Stripe Checkout Session created on the host's own account
@@ -59,8 +60,11 @@ export interface StripeCheckoutApi {
   /** Closes an open session so nobody can pay on it any more. */
   expireSession(account: string, sessionId: string): Promise<void>;
   listRefunds(account: string, paymentIntentId: string): Promise<StripeRefund[]>;
-  /** A full refund. The idempotency key makes a retried request return the first refund instead of paying twice. */
-  refund(account: string, paymentIntentId: string, o: { refundApplicationFee: boolean; ref: string }, idempotencyKey: string): Promise<StripeRefund>;
+  /**
+   * A refund, in full unless `amountMinor` is given (some weeks of a paid series). The idempotency key makes a retried
+   * request return the first refund instead of paying twice.
+   */
+  refund(account: string, paymentIntentId: string, o: { refundApplicationFee: boolean; ref: string; amountMinor?: number }, idempotencyKey: string): Promise<StripeRefund>;
   /** The fee on the payment's charge, or null until Stripe has made its balance transaction. Optional for fakes. */
   paymentFee?(account: string, paymentIntentId: string): Promise<StripeFee | null>;
 }
@@ -161,6 +165,7 @@ export function stripeCheckoutApi(opts: { secretKey: string; baseUrl?: string; f
       if (!PI_ID.test(paymentIntentId)) throw new BillingApiError("Not a PaymentIntent id", null, false);
       return toRefund(await call(account, "POST", "/refunds", {
         payment_intent: paymentIntentId, metadata: { hourhand_ref: o.ref }, ...(o.refundApplicationFee ? { refund_application_fee: "true" } : {}),
+        ...(o.amountMinor !== undefined ? { amount: String(o.amountMinor) } : {}),
       }, idempotencyKey));
     },
     async paymentFee(account, paymentIntentId) {
@@ -243,7 +248,7 @@ export async function startStripeBooking(
   } catch (error) {
     await pool.query(
       `update bookings set status = 'cancelled', cancelled_at = $2, cancelled_by = 'system', cancel_reason = 'Payment could not start', hold_expires_at = null
-       where id = $1 and status = 'pending_payment' and not exists (select 1 from payments where booking_id = $1)`, [booking.id, now]);
+       where (id = $1 or series_id = $1) and status = 'pending_payment' and not exists (select 1 from payments where booking_id = $1)`, [booking.id, now]);
     throw new PaymentStartError(`Payment could not start: ${(error as Error).message}`, error instanceof BillingApiError && error.retryable);
   }
   const row = await inTx(pool, async (client) => {
@@ -251,9 +256,9 @@ export async function startStripeBooking(
     const raced = await stripeRowFor(client, booking.id);
     if (raced) return raced;
     await client.query(
-      `insert into payments (booking_id, host_id, provider, provider_order_id, checkout_url, amount_minor, currency, status, kind, application_fee_minor)
-       values ($1, $2, 'stripe', $3, $4, $5, $6, 'pending', $7, $8)`,
-      [booking.id, booking.hostId, session.id, session.url, priceMinor, host.currency, kind, fee]);
+      `insert into payments (booking_id, host_id, provider, provider_order_id, checkout_url, amount_minor, currency, status, kind, application_fee_minor, sessions)
+       values ($1, $2, 'stripe', $3, $4, $5, $6, 'pending', $7, $8, $9)`,
+      [booking.id, booking.hostId, session.id, session.url, priceMinor, host.currency, kind, fee, bookingInput.weeks ?? 1]);
     return { provider_order_id: session.id, checkout_url: session.url!, amount_minor: priceMinor, currency: host.currency };
   });
   return { booking, payment: checkout(row) };
@@ -418,22 +423,24 @@ export async function reconcileStripePurchases(deps: StripeDeps, now: Date, limi
 const REFUND_RETRY_MS = 5 * 60_000;
 
 /**
- * Refunds Stripe payments marked refund_pending (a cancelled paid booking, a released deposit, a payment that landed
- * after the slot was released) in full, on the host's own account. Never twice: refunds already on the payment are
- * checked first, and the idempotency key is fixed per payment.
+ * Refunds what Stripe payments owe back, on the host's own account: in full for those marked refund_pending (a
+ * cancelled paid booking, a released deposit, a payment that landed after the slot was released, every remaining week
+ * of a paid series), and the queued share of a series payment some of whose weeks were cancelled. Never twice: refunds
+ * already on the payment are counted first, and the idempotency key is fixed by the total being refunded up to.
  */
 export async function processStripeRefunds(deps: StripeDeps, now: Date, limit = 10): Promise<{ claimed: number; refunded: number; errors: number }> {
   const { pool } = deps;
   const { rows } = await pool.query(
     `with due as (
-       select id from payments where provider = 'stripe' and status = 'refund_pending'
+       select id from payments where provider = 'stripe' and ${REFUND_DUE_SQL}
          and (checked_at is null or checked_at < $1::timestamptz - $3 * interval '1 millisecond')
        order by checked_at nulls first, updated_at limit $2 for update skip locked)
      update payments p set checked_at = $1 from due where p.id = due.id
-     returning p.id, p.booking_id, p.host_id, p.provider_payment_id, p.application_fee_minor`, [now, limit, REFUND_RETRY_MS]);
+     returning p.id, p.booking_id, p.host_id, p.provider_payment_id, p.application_fee_minor, p.status, p.amount_minor, p.refunded_minor, p.refund_due_minor`,
+    [now, limit, REFUND_RETRY_MS]);
   const result = { claimed: rows.length, refunded: 0, errors: 0 };
   const setError = (id: string, message: string) =>
-    pool.query("update payments set last_error = $2, updated_at = $3 where id = $1 and status = 'refund_pending'", [id, message.slice(0, 500), now]);
+    pool.query(`update payments set last_error = $2, updated_at = $3 where id = $1 and ${REFUND_DUE_SQL}`, [id, message.slice(0, 500), now]);
   for (const row of rows) {
     try {
       const host = await deps.accountFor(row.host_id);
@@ -441,16 +448,29 @@ export async function processStripeRefunds(deps: StripeDeps, now: Date, limit = 
         await setError(row.id, "Stripe disconnected");
         continue;
       }
+      const target = targetOf(row);
       const earlier = (await deps.api.listRefunds(host.accountId, row.provider_payment_id)).filter((r) => r.status !== "failed" && r.status !== "canceled");
-      const refund = earlier[0] ?? await deps.api.refund(host.accountId, row.provider_payment_id,
-        { refundApplicationFee: row.application_fee_minor > 0, ref: bookingRef(row.booking_id) }, `hh-refund-${row.id}`);
-      const amount = earlier.length ? earlier.reduce((sum, r) => sum + r.amount, 0) : refund.amount;
+      const done = earlier.reduce((sum, r) => sum + r.amount, 0);
+      let refundId: string;
+      let total: number;
+      if (earlier.length && done >= target) {
+        refundId = earlier[0].id;
+        total = done;
+      } else {
+        // A first refund of the whole payment keeps the original request (no amount, key per payment); anything else
+        // names its amount, keyed by the running total it brings the payment up to.
+        const whole = done === 0 && target === row.amount_minor;
+        const refund = await deps.api.refund(host.accountId, row.provider_payment_id,
+          { refundApplicationFee: row.application_fee_minor > 0, ref: bookingRef(row.booking_id), ...(whole ? {} : { amountMinor: target - done }) },
+          whole ? `hh-refund-${row.id}` : `hh-refund-${row.id}-${target}`);
+        refundId = refund.id;
+        // A full refund (no amount asked) returns everything left on the payment, whatever figure comes back with it.
+        total = whole ? target : done + refund.amount;
+      }
       await inTx(pool, async (client) => {
-        const { rowCount } = await client.query(
-          "update payments set status = 'refunded', refund_id = $2, refunded_minor = $3, last_error = null, updated_at = $4, refunded_at = $4 where id = $1 and status = 'refund_pending'",
-          [row.id, refund.id, amount, now]);
+        const delta = await recordRefund(client, row, refundId, total, now);
         // Only INR payments are ever invoiced, so this finds nothing for Stripe today; kept so the rule lives in one place.
-        if (rowCount) await creditNoteForRefund(client, row.id, now);
+        if (delta > 0) await creditNoteForRefund(client, row.id, now, delta);
       });
       result.refunded += 1;
     } catch (error) {

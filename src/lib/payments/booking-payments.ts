@@ -5,6 +5,7 @@ import type { BookingWithInvitee, CreateBookingInput, DataStore } from "../data/
 import { kickJobs } from "../jobs/kick";
 import { creditNoteForRefund, invoiceForPayment } from "../gst/invoices";
 import type { HostRazorpayAuth } from "./host-razorpay";
+import { recordRefund, REFUND_DUE_SQL, targetOf } from "./series";
 import type { PaymentFee, RazorpayOrders, RazorpayPayment } from "./razorpay-orders";
 
 // Priced bookings: the guest pays the host's own Razorpay account. The booking holds its slot as pending_payment while
@@ -64,6 +65,8 @@ export async function startPaidBooking(
 ): Promise<{ booking: BookingWithInvitee; payment: CheckoutPayment | null }> {
   const { pool, store, auth, orders } = deps;
   const { priceMinor, kind = "payment", ...bookingInput } = input;
+  // A weekly series is paid in one go: priceMinor covers every week, recorded with how many sessions it pays for.
+  const sessions = bookingInput.weeks ?? 1;
   const booking = await store.createBooking({ ...bookingInput, holdUntil: new Date(now.getTime() + HOLD_MINUTES * 60_000) });
   // A repeat of a request whose booking already settled (paid, expired, cancelled): nothing left to pay.
   if (booking.status !== "pending_payment" || !booking.holdExpiresAt) return { booking, payment: null };
@@ -81,7 +84,7 @@ export async function startPaidBooking(
     // Without an order the guest can't pay, so free the slot now rather than holding it until the hold lapses.
     await pool.query(
       `update bookings set status = 'cancelled', cancelled_at = $2, cancelled_by = 'system', cancel_reason = 'Payment could not start', hold_expires_at = null
-       where id = $1 and status = 'pending_payment' and not exists (select 1 from payments where booking_id = $1)`, [booking.id, now]);
+       where (id = $1 or series_id = $1) and status = 'pending_payment' and not exists (select 1 from payments where booking_id = $1)`, [booking.id, now]);
     throw new PaymentStartError(`Payment could not start: ${(error as Error).message}`, error instanceof BillingApiError && error.retryable);
   }
   const row = await inTx(pool, async (client) => {
@@ -90,8 +93,8 @@ export async function startPaidBooking(
     const raced = await paymentFor(client, booking.id);
     if (raced) return raced;
     await client.query(
-      `insert into payments (booking_id, host_id, provider, provider_order_id, amount_minor, currency, status, kind) values ($1, $2, 'razorpay', $3, $4, $5, 'pending', $6)`,
-      [booking.id, booking.hostId, order.id, priceMinor, CURRENCY, kind]);
+      `insert into payments (booking_id, host_id, provider, provider_order_id, amount_minor, currency, status, kind, sessions) values ($1, $2, 'razorpay', $3, $4, $5, 'pending', $6, $7)`,
+      [booking.id, booking.hostId, order.id, priceMinor, CURRENCY, kind, sessions]);
     return { provider_order_id: order.id, amount_minor: priceMinor, currency: CURRENCY };
   });
   return { booking, payment: checkout(row) };
@@ -115,12 +118,15 @@ export async function applyCapturedPayment(pool: pg.Pool, bookingId: string, raz
          where booking_id = $1 and status in ('pending', 'failed')`, [bookingId, razorpayPaymentId, now, fee?.feeMinor ?? null, fee?.taxMinor ?? null]);
       return "refund_pending" as const;
     }
-    await client.query("update bookings set status = 'confirmed', hold_expires_at = null where id = $1", [bookingId]);
+    // A paid series confirms every week together; its first week's confirmation lists them all, as for a free series.
+    const { rows: weeks } = await client.query(
+      "update bookings set status = 'confirmed', hold_expires_at = null where (id = $1 or series_id = $1) and status = 'pending_payment' returning id", [bookingId]);
     const { rows: [paid] } = await client.query(
       `update payments set status = 'paid', provider_payment_id = $2, paid_at = $3, updated_at = $3,
          fee_minor = coalesce($4, fee_minor), fee_tax_minor = coalesce($5, fee_tax_minor) where booking_id = $1 returning id`,
       [bookingId, razorpayPaymentId, now, fee?.feeMinor ?? null, fee?.taxMinor ?? null]);
     await queueBookingNotifications(client, bookingId, "booked", now);
+    for (const w of weeks) if (w.id !== bookingId) await queueBookingNotifications(client, w.id, "booked", now, { confirm: false });
     // A GST-registered host's guest gets a tax invoice with the payment (deposits aren't invoiced).
     if (paid) await invoiceForPayment(client, paid.id, now);
     return "confirmed" as const;
@@ -193,7 +199,7 @@ export async function expireHold(pool: pg.Pool, bookingId: string, now: Date): P
     // Guarded on the status so a payment confirmed meanwhile keeps its booking.
     const { rowCount } = await client.query(
       `update bookings set status = 'cancelled', cancelled_at = $2, cancelled_by = 'system', cancel_reason = 'Payment not completed', hold_expires_at = null
-       where id = $1 and status = 'pending_payment'`, [bookingId, now]);
+       where (id = $1 or series_id = $1) and status = 'pending_payment'`, [bookingId, now]);
     // The payment stays pending: a guest paying in the last seconds may still land, and the late-payment check below
     // finds it and refunds it. It is marked failed once the late window has passed.
     return (rowCount ?? 0) > 0;
@@ -286,38 +292,41 @@ export async function releaseDeposits(pool: pg.Pool, now: Date, limit = 50): Pro
 
 export interface RefundResult { claimed: number; refunded: number; errors: number }
 
-interface RefundRow { id: string; booking_id: string; host_id: string; collected_by: string | null; provider_payment_id: string }
+interface RefundRow {
+  id: string; booking_id: string; host_id: string; collected_by: string | null; provider_payment_id: string; status: string;
+  amount_minor: number; refunded_minor: number; refund_due_minor: number;
+}
 
 // A refund that failed is retried at most every five minutes.
 const REFUND_RETRY_MS = 5 * 60_000;
 
 /**
- * Refunds payments marked refund_pending (a cancelled paid booking, or a payment that landed after the system cancelled
- * the booking), in full, on the host's own Razorpay account.
+ * Refunds what payments owe back, on the host's own Razorpay account: in full for those marked refund_pending (a
+ * cancelled paid booking, a payment that landed after the system cancelled the booking, every remaining week of a paid
+ * series), and the queued share (refund_due_minor) of a series payment some of whose weeks were cancelled.
  */
 export async function processRefunds(deps: PaymentCheckDeps & { pool: pg.Pool }, now: Date, limit = 10): Promise<RefundResult> {
   const { pool } = deps;
   const { rows } = await pool.query<RefundRow>(
     `with due as (
        select id from payments
-       where provider = 'razorpay' and status = 'refund_pending'
+       where provider = 'razorpay' and ${REFUND_DUE_SQL}
          and (checked_at is null or checked_at < $1::timestamptz - $3 * interval '1 millisecond')
        order by checked_at nulls first, updated_at
        limit $2
        for update skip locked)
      update payments p set checked_at = $1 from due where p.id = due.id
-     returning p.id, p.booking_id, p.host_id, p.collected_by, p.provider_payment_id`,
+     returning p.id, p.booking_id, p.host_id, p.collected_by, p.provider_payment_id, p.status, p.amount_minor, p.refunded_minor, p.refund_due_minor`,
     [now, limit, REFUND_RETRY_MS]);
   const result: RefundResult = { claimed: rows.length, refunded: 0, errors: 0 };
   const setError = (row: RefundRow, message: string) =>
-    pool.query("update payments set last_error = $2, updated_at = $3 where id = $1 and status = 'refund_pending'", [row.id, message.slice(0, 500), now]);
-  const markRefunded = async (row: RefundRow, refundId: string, amount: number) => {
+    pool.query("update payments set last_error = $2, updated_at = $3 where id = $1 and (status = 'refund_pending' or refund_due_minor > 0)", [row.id, message.slice(0, 500), now]);
+  /** Records that `total` has now been refunded on the payment, with a credit note for what this refund gave back. */
+  const markRefunded = async (row: RefundRow, refundId: string, total: number) => {
     await inTx(pool, async (client) => {
-      const { rowCount } = await client.query(
-        "update payments set status = 'refunded', refund_id = $2, refunded_minor = $3, last_error = null, updated_at = $4, refunded_at = $4 where id = $1 and status = 'refund_pending'",
-        [row.id, refundId, amount, now]);
-      // An invoiced payment refunded in full is reversed by a credit note, recorded with the refund.
-      if (rowCount) await creditNoteForRefund(client, row.id, now);
+      const delta = await recordRefund(client, row, refundId, total, now);
+      // An invoiced payment is reversed by a credit note for what this refund gave back.
+      if (delta > 0) await creditNoteForRefund(client, row.id, now, delta);
     });
     result.refunded += 1;
   };
@@ -330,18 +339,25 @@ export async function processRefunds(deps: PaymentCheckDeps & { pool: pg.Pool },
         continue;
       }
       const orders = deps.ordersFor(auth);
-      // An earlier attempt may have gone through before we could record it: never refund the same payment twice.
+      const target = targetOf(row);
+      // An earlier attempt may have gone through before we could record it: never refund the same money twice.
       const earlier = (await orders.listRefunds(row.provider_payment_id)).filter((r) => r.status !== "failed");
-      if (earlier.length) {
-        await markRefunded(row, earlier[0].id, earlier.reduce((sum, r) => sum + r.amount, 0));
+      const done = earlier.reduce((sum, r) => sum + r.amount, 0);
+      if (earlier.length && done >= target) {
+        await markRefunded(row, earlier[earlier.length - 1].id, done);
         continue;
       }
-      // The receipt is fixed per payment, so a repeat request is refused ("Duplicate receipt") and the next round
-      // finds the refund in the list above. A refund Razorpay reports as pending has started and counts as done.
-      const refund = await orders.refund(row.provider_payment_id, { receipt: `hh-${row.id}`, notes: { booking_id: row.booking_id } });
-      await markRefunded(row, refund.id, refund.amount);
+      // A first refund of the whole payment keeps the original request (no amount: Razorpay refunds it all). Anything
+      // else names its amount, with a receipt fixed by the running total, so a repeat is refused ("Duplicate receipt")
+      // and the next round finds the refund in the list above. A refund Razorpay reports as pending counts as done.
+      const whole = done === 0 && target === row.amount_minor;
+      const refund = await orders.refund(row.provider_payment_id, whole
+        ? { receipt: `hh-${row.id}`, notes: { booking_id: row.booking_id } }
+        : { amount: target - done, receipt: `r${row.id.replaceAll("-", "")}${target.toString(36)}`, notes: { booking_id: row.booking_id } });
+      // A full refund (no amount asked) returns everything left on the payment, whatever figure comes back with it.
+      await markRefunded(row, refund.id, whole ? target : done + refund.amount);
     } catch (error) {
-      // One host's failing account must not stop the others; the row stays refund_pending and is retried later.
+      // One host's failing account must not stop the others; the row stays due and is retried later.
       result.errors += 1;
       await setError(row, (error as Error).message ?? String(error)).catch(() => undefined);
     }
@@ -349,11 +365,20 @@ export async function processRefunds(deps: PaymentCheckDeps & { pool: pg.Pool },
   return result;
 }
 
-export interface BookingPaymentSummary { amountMinor: number; currency: string; provider: "razorpay" | "stripe"; status: "pending" | "paid" | "failed" | "refunded" | "refund_pending"; lastError: string | null; kind: "payment" | "deposit" }
+export interface BookingPaymentSummary {
+  amountMinor: number; currency: string; provider: "razorpay" | "stripe"; status: "pending" | "paid" | "failed" | "refunded" | "refund_pending"; lastError: string | null; kind: "payment" | "deposit";
+  /** Weeks this payment covers (a paid series); 1 otherwise. */ sessions: number;
+  /** Refunded so far, and queued but not yet refunded (cancelled weeks of a series). */ refundedMinor: number; refundDueMinor: number;
+}
 
 /** The latest payment on one of the host's own bookings, for the host's dashboard. Another host's booking reads as null. */
 export async function bookingPayment(db: Pick<pg.Pool, "query">, hostId: string, bookingId: string): Promise<BookingPaymentSummary | null> {
   const { rows: [p] } = await db.query(
-    `select amount_minor, currency, provider, status, last_error, kind from payments where booking_id = $1 and host_id = $2 order by created_at desc limit 1`, [bookingId, hostId]);
-  return p ? { amountMinor: p.amount_minor, currency: p.currency, provider: p.provider, status: p.status, lastError: p.last_error, kind: p.kind } : null;
+    `select amount_minor, currency, provider, status, last_error, kind, sessions, refunded_minor, refund_due_minor from payments
+     where host_id = $2 and (booking_id = $1 or booking_id = (select series_id from bookings where id = $1 and host_id = $2))
+     order by booking_id = $1 desc, created_at desc limit 1`, [bookingId, hostId]);
+  return p ? {
+    amountMinor: p.amount_minor, currency: p.currency, provider: p.provider, status: p.status, lastError: p.last_error, kind: p.kind, sessions: p.sessions,
+    refundedMinor: p.refunded_minor, refundDueMinor: p.refund_due_minor,
+  } : null;
 }

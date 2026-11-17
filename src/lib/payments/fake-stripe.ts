@@ -131,7 +131,9 @@ export function fakeStripe() {
       const pi = form.payment_intent;
       const paid = [...state.sessions.values()].find((x) => x.account === account && x.payment_intent === pi);
       if (!paid) return noSuch("payment_intent");
-      const r: FakeRefund = { id: `re_${Math.random().toString(36).slice(2, 12)}`, account, payment_intent: pi, amount: paid.amount_total, status: "succeeded", idempotencyKey: key };
+      // Stripe refunds the amount asked for, or whatever is left on the payment.
+      const left = paid.amount_total - state.refunds.filter((x) => x.account === account && x.payment_intent === pi).reduce((sum, x) => sum + x.amount, 0);
+      const r: FakeRefund = { id: `re_${Math.random().toString(36).slice(2, 12)}`, account, payment_intent: pi, amount: form.amount ? Number(form.amount) : left, status: "succeeded", idempotencyKey: key };
       state.refunds.push(r);
       if (key) state.refundKeys.set(key, r.id);
       return json({ object: "refund", id: r.id, amount: r.amount, status: r.status, payment_intent: pi });

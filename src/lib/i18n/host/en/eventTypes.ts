@@ -95,7 +95,7 @@ export const eventTypes = {
   "eventTypes.cancelPolicyPlaceholder": "Free to cancel up to 24 hours before. Later cancellations aren't refunded.",
   "eventTypes.cancelPolicyHint": "Optional. Guests see it before they book and next to Cancel.",
   "eventTypes.maxRepeats": "Weekly repeats",
-  "eventTypes.maxRepeatsHint": "Let guests book the same time every week, up to this many weeks in one go. 1 means no repeats. Free event types only.",
+  "eventTypes.maxRepeatsHint": "Let guests book the same time every week, up to this many weeks in one go. 1 means no repeats. On a priced event the guest pays for every week up front; cancelling a week refunds its share. Not with a deposit.",
   "eventTypes.seats": "Guests per session",
   "eventTypes.seatsHint": "For a group class (yoga, dance, batch tuition): 2 to 500 guests share each time. Leave blank for one-on-one. Free, single-week sessions for now.",
 

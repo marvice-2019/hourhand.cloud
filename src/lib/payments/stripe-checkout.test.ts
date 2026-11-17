@@ -353,6 +353,66 @@ describe.skipIf(!BASE)("Stripe Checkout for hosts (TEST_DATABASE_URL)", () => {
     });
   });
 
+  describe("a paid weekly series", () => {
+    /** A confirmed 4-week series paid in one Checkout Session: $180 for 4 weeks at $45. */
+    async function paidSeries() {
+      const startAt = new Date(Date.UTC(2035, 0, 2, 0, 0) + slot++ * 3 * 3_600_000);
+      const r = await startStripeBooking({ pool, store, api: deps.api, host: host() }, { ...input({ startAt, price: 18_000 }), weeks: 4 }, new Date());
+      const session = fake.pay(r.payment!.url.split("/").pop()!);
+      expect(await settleStripeSession(deps, session.id, new Date())).toBe("confirmed");
+      const { rows: weeks } = await pool.query("select id, status from bookings where series_id = $1 order by series_index", [r.booking.id]);
+      return { r, session, weeks: weeks as { id: string; status: string }[] };
+    }
+    const refundsOn = (pi: string | null) => fake.state.refunds.filter((x) => x.payment_intent === pi);
+
+    it("one Checkout Session pays every week; settling it confirms them all", async () => {
+      const { r, session, weeks } = await paidSeries();
+      expect(session.amount_total).toBe(18_000);
+      expect(weeks.map((w) => w.status)).toEqual(["confirmed", "confirmed", "confirmed", "confirmed"]);
+      expect(await paymentRow(r.booking.id)).toMatchObject({ provider: "stripe", amount_minor: 18_000, sessions: 4, status: "paid" });
+    });
+
+    it("cancelling one week refunds its $45 share on the host's account, once; cancelling the rest refunds what's left", async () => {
+      const { r, session, weeks } = await paidSeries();
+      await store.cancelBooking(priya.id, weeks[1].id, "guest");
+      expect(await paymentRow(r.booking.id)).toMatchObject({ status: "paid", refund_due_minor: 4_500 });
+      expect(await processStripeRefunds(deps, new Date())).toMatchObject({ refunded: 1, errors: 0 });
+      const first = fake.state.requests.filter((q) => q.method === "POST" && q.path === "/v1/refunds");
+      expect(first).toHaveLength(1);
+      expect(first[0].body).toContain("amount=4500");
+      expect(first[0].headers["idempotency-key"]).toBe(`hh-refund-${(await paymentRow(r.booking.id)).id}-4500`);
+      expect(await paymentRow(r.booking.id)).toMatchObject({ status: "paid", refunded_minor: 4_500, refund_due_minor: 0 });
+      expect(await processStripeRefunds(deps, new Date(Date.now() + 10 * 60_000))).toMatchObject({ claimed: 0 });
+
+      await store.cancelBooking(priya.id, weeks[0].id, "guest", undefined, { laterWeeks: true });
+      expect(await paymentRow(r.booking.id)).toMatchObject({ status: "refund_pending" });
+      await processStripeRefunds(deps, new Date());
+      expect(refundsOn(session.payment_intent).map((x) => x.amount)).toEqual([4_500, 13_500]);
+      expect(await paymentRow(r.booking.id)).toMatchObject({ status: "refunded", refunded_minor: 18_000, refund_due_minor: 0 });
+    });
+
+    it("a partial refund that went through before we recorded it is found, not made twice", async () => {
+      const { r, weeks } = await paidSeries();
+      await store.cancelBooking(priya.id, weeks[2].id, "guest");
+      // The refund lands at Stripe, but recording it fails: the next round finds it instead of refunding again.
+      await pool.query("update payments set checked_at = null where booking_id = $1", [r.booking.id]);
+      const pi = (await paymentRow(r.booking.id)).provider_payment_id as string;
+      await deps.api.refund(accountId, pi, { refundApplicationFee: false, ref: `booking:${r.booking.id}`, amountMinor: 4_500 }, "outside");
+      await processStripeRefunds(deps, new Date());
+      expect(refundsOn(pi)).toHaveLength(1);
+      expect(await paymentRow(r.booking.id)).toMatchObject({ refunded_minor: 4_500, refund_due_minor: 0 });
+    });
+
+    it("when Checkout can't start, every week of the series is released at once", async () => {
+      fake.state.failSessions = true;
+      const startAt = new Date(Date.UTC(2035, 6, 2, 0, 0) + slot++ * 3 * 3_600_000);
+      const req = { ...input({ startAt, price: 9_000 }), weeks: 2 };
+      await expect(startStripeBooking({ pool, store, api: deps.api, host: host() }, req, new Date())).rejects.toThrow(/Payment could not start/);
+      const { rows } = await pool.query("select status from bookings where idempotency_key like $1", [`${req.idempotencyKey}%`]);
+      expect(rows.map((x) => x.status)).toEqual(["cancelled", "cancelled"]);
+    });
+  });
+
   describe("booking route, packages and the switching guard", () => {
     const setPrice = async (minor: number | null, currency: string | null) =>
       pool.query("update event_types set price_minor = $2, currency = $3, deposit_minor = null where id = $1", [eventTypeId, minor, currency]);

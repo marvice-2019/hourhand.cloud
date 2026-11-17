@@ -15,6 +15,7 @@ import { focusRing } from "@/components/ui/focus";
 import { zoneName } from "@/lib/format";
 import { getPool } from "@/lib/data/pg-store";
 import { bookingPayment, DEPOSIT_HOLD_MS, type BookingPaymentSummary } from "@/lib/payments/booking-payments";
+import { paidShareFor, refundPreview, seriesRefundState } from "@/lib/payments/series";
 import { LOCATION_KEYS, isLocale, t as guestT } from "@/lib/i18n/guest";
 import type { HostKey } from "@/lib/i18n/host";
 import type { HostI18n } from "@/lib/i18n/host/format";
@@ -99,6 +100,24 @@ export default async function BookingDetailPage({ params, searchParams }: { para
   const classmates = booking.classKey ? allBookings.filter((b) => b.classKey === booking.classKey && (b.status === "confirmed" || b.status === "pending_payment")) : [];
   const seatLimit = booking.classKey ? (await store.getEventType(user.id, booking.eventTypeId))?.seatLimit ?? null : null;
   const laterWeeks = series.filter((b) => (b.seriesIndex ?? 0) > (booking.seriesIndex ?? 0) && b.status === "confirmed" && b.startAt > now).length;
+  // What cancelling refunds, by the rules the cancel itself uses (a host cancel has no cutoff), in the payment's currency.
+  const share = authEnabled() && booking.status === "confirmed" ? await paidShareFor(getPool(process.env.DATABASE_URL as string), booking.id) : null;
+  const preview = refundPreview(share, laterWeeks);
+  const provider = share?.provider === "stripe" ? "Stripe" : "Razorpay";
+  const cancelRefund = share && preview && preview.thisOnly > 0
+    ? (laterWeeks > 0 && preview.withLater > preview.thisOnly
+      ? t("bookings.cancelRefundWithLater", { amount: money(preview.thisOnly, share.currency), withLater: money(preview.withLater, share.currency), provider })
+      : t("bookings.cancelRefund", { amount: money(preview.thisOnly, share.currency), provider }))
+    : null;
+  // A paid series: its total, the count and the price each, and where its refunds stand.
+  const seriesAmount = payment && payment.sessions > 1
+    ? t("bookings.seriesAmount", { total: money(payment.amountMinor, payment.currency), n: payment.sessions, each: money(payment.amountMinor / payment.sessions, payment.currency) })
+    : null;
+  const refundState = payment ? seriesRefundState(payment) : null;
+  const seriesNotes = refundState && (refundState.due > 0 || refundState.refunded > 0)
+    ? [refundState.due > 0 ? t("bookings.seriesRefundDue", { amount: money(refundState.due, payment!.currency) }) : "",
+      refundState.refunded > 0 ? t("bookings.seriesRefunded", { amount: money(refundState.refunded, payment!.currency) }) : ""].filter(Boolean).join(" ")
+    : null;
   // The guest's private after-session feedback (src/lib/follow-ups), if they left any.
   const feedback = authEnabled() ? await feedbackForBooking(getPool(process.env.DATABASE_URL as string), user.id, booking.id) : null;
   return (
@@ -156,11 +175,12 @@ export default async function BookingDetailPage({ params, searchParams }: { para
           <div>
             <dt className="text-sm text-text-muted">{t("bookings.payment")}</dt>
             <dd className="text-text">
-              {t(payment.kind !== "deposit" ? PAYMENT_LINES[payment.status] : payment.status === "paid" && booking.invitee.noShowAt ? "bookings.depositKept" : DEPOSIT_LINES[payment.status], { amount: money(payment.amountMinor, payment.currency) })}
+              {t(payment.kind !== "deposit" ? PAYMENT_LINES[payment.status] : payment.status === "paid" && booking.invitee.noShowAt ? "bookings.depositKept" : DEPOSIT_LINES[payment.status], { amount: seriesAmount ?? money(payment.amountMinor, payment.currency) })}
               {payment.kind === "deposit" && payment.status === "paid" && !booking.invitee.noShowAt && confirmed && (
                 <span className="block text-sm text-text-muted">{t("bookings.depositRefundOn", { date: date(new Date(booking.endAt.getTime() + DEPOSIT_HOLD_MS), tz), time: time(new Date(booking.endAt.getTime() + DEPOSIT_HOLD_MS), tz) })}</span>
               )}
-              {payment.status === "refund_pending" && payment.lastError && (
+              {seriesNotes && <span className="block text-sm text-text-muted">{seriesNotes}</span>}
+              {(payment.status === "refund_pending" || payment.refundDueMinor > 0) && payment.lastError && (
                 <span className="block text-sm text-danger">{t("bookings.refundStuck", { provider: payment.provider === "stripe" ? "Stripe" : "Razorpay", error: payment.lastError.slice(0, 120) })}</span>
               )}
             </dd>
@@ -224,7 +244,7 @@ export default async function BookingDetailPage({ params, searchParams }: { para
                   {laterWeeks === 1 ? t("bookings.alsoCancelNextWeek") : t("bookings.alsoCancelLaterWeeks", { n: laterWeeks })}
                 </label>
               )}
-              <p className="text-sm text-text-muted">{t("bookings.cancelNote", { name: booking.invitee.name })}</p>
+              <p className="text-sm text-text-muted">{t("bookings.cancelNote", { name: booking.invitee.name })}{cancelRefund && ` ${cancelRefund}`}</p>
               <div className="flex flex-wrap gap-2">
                 <Button type="submit" variant="danger">{t("bookings.yesCancel")}</Button>
                 <Link href={`/dashboard/bookings/${booking.id}`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("bookings.keepIt")}</Link>

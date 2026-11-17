@@ -43,7 +43,7 @@ export const bookings = {
   "bookings.phone": "Phone",
 
   // Messages the page reports after an action
-  "bookings.doneCancelled": "Booking cancelled. We've emailed the guest, and a paid booking is refunded in full.",
+  "bookings.doneCancelled": "Booking cancelled. We've emailed the guest, and any refund it's owed is on its way.",
   "bookings.doneRescheduled": "Booking moved. We've emailed the guest the new time.",
   "bookings.doneNoShow": "Marked as a no-show.",
   "bookings.doneNoShowUndone": "No-show undone.",
@@ -91,7 +91,12 @@ export const bookings = {
   "bookings.reasonLabel": "Reason for {name} (optional)",
   "bookings.alsoCancelNextWeek": "Also cancel the next week in this series",
   "bookings.alsoCancelLaterWeeks": "Also cancel the {n} later weeks in this series",
-  "bookings.cancelNote": "We'll email {name} that you cancelled. A paid booking is refunded in full.",
+  "bookings.cancelNote": "We'll email {name} that you cancelled.",
+  "bookings.seriesRefunded": "{amount} refunded so far.",
+  "bookings.seriesRefundDue": "{amount} being refunded to the guest.",
+  "bookings.seriesAmount": "{total} for {n} weekly sessions ({each} each)",
+  "bookings.cancelRefundWithLater": "The guest gets {amount} back ({withLater} if you also cancel the later weeks), refunded from your {provider} account.",
+  "bookings.cancelRefund": "The guest gets {amount} back, refunded from your {provider} account.",
   "bookings.yesCancel": "Yes, cancel",
   "bookings.keepIt": "Keep it",
   "bookings.cancelBooking": "Cancel booking",

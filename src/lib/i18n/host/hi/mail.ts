@@ -31,6 +31,8 @@ export const mail: Record<keyof typeof en, string> = {
   "mail.eventLength": "{event} ({n} मिनट)",
   "mail.reason": "बताई गई वजह: {reason}",
   "mail.refund": "मेहमान के {amount} आपके {provider} अकाउंट से रिफ़ंड हो रहे हैं।",
+  "mail.refundShareMany": "कैंसल किए गए सेशनों के {amount} आपके {provider} अकाउंट से मेहमान को रिफ़ंड हो रहे हैं।",
+  "mail.refundShareOne": "कैंसल किए गए सेशन के {amount} आपके {provider} अकाउंट से मेहमान को रिफ़ंड हो रहे हैं।",
   "mail.openInHourhand": "Hourhand में खोलें",
   "mail.footer": "आपके बुकिंग पेज के बारे में Hourhand ने भेजा।",
   "mail.subjCalDisconnected": "अपना Google Calendar फिर से कनेक्ट करें",

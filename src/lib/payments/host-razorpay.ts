@@ -120,7 +120,7 @@ export async function razorpayStatus(db: Db, userId: string): Promise<{ keyId: s
 export async function disconnectRazorpay(db: Db, userId: string): Promise<void> {
   const { rowCount } = await db.query(
     `delete from integrations where user_id = $1 and provider = 'razorpay'
-       and not exists (select 1 from payments where host_id = $1 and provider = 'razorpay' and status in ('pending', 'refund_pending'))`, [userId]);
+       and not exists (select 1 from payments where host_id = $1 and provider = 'razorpay' and (status in ('pending', 'refund_pending') or refund_due_minor > 0))`, [userId]);
   if (rowCount) return;
   const { rows } = await db.query("select 1 from integrations where user_id = $1 and provider = 'razorpay'", [userId]);
   if (rows.length) throw new RazorpayKeyError("busy", "A guest's payment is still being confirmed or refunded.");

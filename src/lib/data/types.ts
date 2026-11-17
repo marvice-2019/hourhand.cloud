@@ -60,7 +60,7 @@ export interface EventType {
   kind: "one_on_one" | "group" | "one_off";
   /** A group class: how many guests one session takes (2 to 500). null for one-on-one and one-off types. */
   seatLimit: number | null;
-  /** Guests may book the same time weekly for up to this many weeks in one go; 1 = no repeats. Free event types only. */
+  /** Guests may book the same time weekly for up to this many weeks in one go; 1 = no repeats. A priced series is paid in one payment; not with a deposit. */
   maxRepeats: number;
   /** A refundable no-show deposit in paise, on a free event type; null = none. Refunded after the session unless marked a no-show. */
   depositMinor: number | null;

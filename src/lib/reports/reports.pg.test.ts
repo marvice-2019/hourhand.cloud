@@ -202,4 +202,45 @@ describe.skipIf(!BASE)("business reports (Postgres)", () => {
     expect(r.topClients.map((c) => [c.name, c.netMinor])).toEqual([["Meera", 300_000]]);
     expect(r.byEventType.map((l) => [l.eventName, l.membershipsMinor])).toEqual([["Monthly 4", 300_000]]);
   });
+
+  it("a paid weekly series refunded a week at a time: each refund in its own month, reconciling with the credit notes", async () => {
+    const h = (await pool.query("insert into users (email, name, slug) values ('rep-series@example.com', 'Series Host', 'rep-series') returning id")).rows[0].id as string;
+    await pool.query(
+      `insert into tax_profiles (user_id, legal_name, address, state_code, gstin, sac, rate_bp, invoice_prefix) values ($1, 'Host LLP', '1 MG Road, Bengaluru', '29', '29ABCDE1234F1Z5', '999293', 1800, 'SR')`, [h]);
+    const { rows: [e] } = await pool.query("insert into event_types (user_id, name, slug, duration_minutes, price_minor, currency, max_repeats) values ($1, 'Weekly', 'weekly', 60, 50000, 'INR', 4) returning id", [h]);
+    // Four weeks paid in September (₹2,000); one week refunded in October (₹500), the remaining three in November.
+    const first = new Date("2026-10-05T06:00:00Z");
+    const ids: string[] = [];
+    for (let w = 0; w < 4; w++) {
+      const start = new Date(first.getTime() + w * 7 * 86_400_000), end = new Date(start.getTime() + 3_600_000);
+      const { rows: [b] } = await pool.query(
+        `insert into bookings (event_type_id, host_id, start_at, end_at, buffered_start, buffered_end, status, idempotency_key, series_id, series_index)
+         values ($1, $2, $3, $4, $3, $4, 'confirmed', $5, $6, $7) returning id`, [e.id, h, start, end, `rep-series-${w}`, ids[0] ?? null, w === 0 ? null : w + 1]);
+      if (w === 0) await pool.query("update bookings set series_id = id, series_index = 1 where id = $1", [b.id]);
+      await pool.query("insert into invitees (booking_id, host_id, name, email, timezone) values ($1, $2, 'Meera', 'meera@example.in', 'Asia/Kolkata')", [b.id, h]);
+      ids.push(b.id);
+    }
+    const { rows: [pay] } = await pool.query(
+      `insert into payments (booking_id, host_id, provider, amount_minor, currency, status, kind, paid_at, provider_order_id, sessions)
+       values ($1, $2, 'razorpay', 200000, 'INR', 'paid', 'payment', $3, 'order_rep_series', 4) returning id`, [ids[0], h, new Date("2026-09-20T06:00:00Z")]);
+    await invoiceForPayment(pool, pay.id, new Date("2026-09-20T06:00:00Z"));
+    // October: one week back, as recordRefund leaves it.
+    await pool.query("update payments set refunded_minor = 50000 where id = $1", [pay.id]);
+    await pool.query("insert into payment_refunds (payment_id, amount_minor, provider_refund_id, refunded_at) values ($1, 50000, 'rfnd_s1', $2)", [pay.id, oct(12)]);
+    await creditNoteForRefund(pool, pay.id, oct(12), 50_000);
+    // November: the rest.
+    const nov = new Date("2026-11-08T06:00:00Z");
+    await pool.query("update payments set status = 'refunded', refunded_minor = 200000, refunded_at = $2, refund_id = 'rfnd_s2' where id = $1", [pay.id, nov]);
+    await creditNoteForRefund(pool, pay.id, nov, 150_000);
+
+    const r = (await businessReport(pool, h, october(), now))!;
+    expect(r.currencies[0]).toMatchObject({ refundsMinor: 50_000 });
+    expect(r.gst.totalMinor).toBe(-50_000); // one credit note, no invoice in October
+    const novR = (await businessReport(pool, h, resolvePeriod({ month: "2026-11" }, "Asia/Kolkata", new Date("2026-12-15T06:00:00Z")), new Date("2026-12-15T06:00:00Z")))!;
+    expect(novR.currencies[0]).toMatchObject({ refundsMinor: 150_000 });
+    expect(novR.gst.totalMinor).toBe(-150_000);
+    // And the monthly earnings page agrees.
+    expect((await monthlyEarnings(pool, h, "2026-10", now))!.refundsMinor).toBe(50_000);
+    expect((await monthlyEarnings(pool, h, "2026-11", now))!.refundsMinor).toBe(150_000);
+  });
 });

@@ -30,6 +30,8 @@ export const mail = {
   "mail.eventLength": "{event} ({n} min)",
   "mail.reason": "Reason given: {reason}",
   "mail.refund": "The guest's {amount} is being refunded from your {provider} account.",
+  "mail.refundShareMany": "{amount} for the cancelled sessions is being refunded to the guest from your {provider} account.",
+  "mail.refundShareOne": "{amount} for the cancelled session is being refunded to the guest from your {provider} account.",
   "mail.openInHourhand": "Open in Hourhand",
   "mail.footer": "Sent by Hourhand about your booking page.",
   "mail.subjCalDisconnected": "Reconnect your Google Calendar",

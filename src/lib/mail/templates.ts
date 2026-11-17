@@ -43,6 +43,10 @@ export interface BookingMailContext {
   paidProvider?: "razorpay" | "stripe" | null;
   /** The payment was a refundable no-show deposit, not a price. */
   paidIsDeposit?: boolean;
+  /** One week's share of a paid weekly series this booking belongs to (paise), or null. */
+  seriesUnitMinor?: number | null;
+  /** For a cancelled week of a paid series: what this cancellation refunds (its week and those cancelled with it). */
+  refundMinor?: number | null;
   /** The one offer the price got (src/lib/offers): explained next to what was paid. */
   offer?: { kind: AdjustmentKind; label: string; code: string | null; listMinor: number; discountMinor: number } | null;
   /** For reschedules: when the booking used to be. */
@@ -197,12 +201,14 @@ const dashboardLink = (c: BookingMailContext) => ({ label: h(c, "mail.openInHour
 
 function cancelNote(c: BookingMailContext, to: "guest" | "host"): string | undefined {
   if (to === "guest") {
-    const refund = !c.paidMinor ? "" : g(c, c.paidIsDeposit ? "refundDeposit" : "refundPayment", { amount: formatAmount(c.paidMinor, c.paidCurrency) });
+    const refund = c.refundMinor ? g(c, "refundShare", { amount: formatAmount(c.refundMinor, c.paidCurrency) })
+      : !c.paidMinor ? "" : g(c, c.paidIsDeposit ? "refundDeposit" : "refundPayment", { amount: formatAmount(c.paidMinor, c.paidCurrency) });
     return [refund, c.cancelReason ? g(c, "reason", { reason: c.cancelReason }) : ""].filter(Boolean).join(" ") || undefined;
   }
   // A paid booking is refunded in full on cancellation; say so, since that's what each side wants to know first.
   const reason = c.cancelReason ? h(c, "mail.reason", { reason: c.cancelReason }) : "";
-  const refund = !c.paidMinor ? "" : h(c, "mail.refund", { amount: hostMoney(c.paidMinor, c.paidCurrency, hl(c)), provider: providerName(c) });
+  const refund = c.refundMinor ? h(c, c.alsoCancelled?.length ? "mail.refundShareMany" : "mail.refundShareOne", { amount: hostMoney(c.refundMinor, c.paidCurrency, hl(c)), provider: providerName(c) })
+    : !c.paidMinor ? "" : h(c, "mail.refund", { amount: hostMoney(c.paidMinor, c.paidCurrency, hl(c)), provider: providerName(c) });
   return [refund, reason].filter(Boolean).join(" ") || undefined;
 }
 

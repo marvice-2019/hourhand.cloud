@@ -65,6 +65,11 @@ export interface ResolvePriceInput {
    * has booked this host before).
    */
   reserve: boolean;
+  /**
+   * How many sessions this price is for: a weekly series charges it once per week. A first-session discount is for one
+   * session, so a series doesn't get it; campaigns, coupons and a sliding-scale pick apply to each week.
+   */
+  sessions?: number;
 }
 
 /** A purchase refused for its offer (a bad code, too many tries): the handler answers with this status and body. */
@@ -258,7 +263,7 @@ export async function resolvePrice(pool: pg.Pool, input: ResolvePriceInput): Pro
     .filter((c) => appliesTo(c, item))
     .map((c) => ({ kind: "campaign", label: c.name, discount: c.discount, campaignId: c.id }));
   // First session is for a client's first paid session, so it applies to event types, not packages.
-  const first = reserve && item.kind === "event_type" && email ? await firstSessionOffer(pool, hostId) : null;
+  const first = reserve && item.kind === "event_type" && email && (input.sessions ?? 1) <= 1 ? await firstSessionOffer(pool, hostId) : null;
   if (first && await firstSessionEligible(pool, hostId, email, idempotencyKey, now)) candidates.push({ kind: "first_session", label: "First-session discount", discount: first });
 
   let coupon: CouponRow | null = null;
