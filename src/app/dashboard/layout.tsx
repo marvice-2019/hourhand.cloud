@@ -12,6 +12,7 @@ import { getPool } from "@/lib/data/pg-store";
 import { pendingInvite, seatOwner } from "@/lib/seats";
 import { acceptSeatAction, leaveSeatAction, startActingAction, stopActingAction } from "./seat/actions";
 import { authEnabled } from "@/lib/auth/auth";
+import { isPhonePlaceholderEmail } from "@/lib/auth/phone";
 import { signOut } from "@/lib/auth/actions";
 import { Button } from "@/components/ui/Button";
 import { HostI18nProvider } from "@/components/HostI18nProvider";
@@ -71,6 +72,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-2 text-sm text-text lg:px-8">
             <span>{tNodes("nav.acting", { name: <span className="font-semibold">{user.name}</span> })}</span>
             <form action={stopActingAction}><Button type="submit" variant="secondary" size="sm">{t("nav.backToYours")}</Button></form>
+          </div>
+        )}
+        {!acting && isPhonePlaceholderEmail(actor.email) && (
+          <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-2 text-sm text-text lg:px-8">
+            <span>{t("nav.addEmail")}</span>
+            <Link href="/dashboard/settings#add-email" className={`font-semibold text-accent underline ${focusRing}`}>{t("nav.addEmailLink")}</Link>
           </div>
         )}
         {invite && (

@@ -2,11 +2,17 @@ import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { magicLink } from "better-auth/plugins/magic-link";
+import { phoneNumber } from "better-auth/plugins/phone-number";
+import { randomBytes } from "node:crypto";
 import { getPool } from "@/lib/data/pg-store";
 import { rateLimiter, SIGN_IN_LIMITS, trustedProxies } from "@/lib/rate-limit";
 
 export { trustedProxies };
-import { deliverMagicLink } from "./outbox";
+import { deliverEmailConfirmation, deliverMagicLink } from "./outbox";
+import {
+  isCanonicalPhone, isPhonePlaceholderEmail, OTP_CHANNEL_HEADER, otpChannels, otpSmsConfig, phoneEmail, pickOtpChannel, sendOtpSms,
+  sendOtpWhatsApp, whatsappOtpConfig,
+} from "./phone";
 import { uniqueSlug } from "./slug";
 import { onSessionCreated, onUserCreated } from "@/lib/referrals/signup";
 
@@ -22,6 +28,19 @@ export function googleEnabled(): boolean {
 
 export function microsoftEnabled(): boolean {
   return Boolean(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET);
+}
+
+/** Phone sign-in appears once WhatsApp or SMS codes are set up (see lib/auth/phone.ts). */
+export function phoneEnabled(): boolean {
+  return otpChannels().length > 0;
+}
+
+/**
+ * The name a new account's booking-link slug is made from. A phone sign-up has no name and a placeholder email made
+ * of the number's digits; a slug from either would publish the host's phone number in their booking link.
+ */
+export function slugSource(user: { email: string; name?: string | null }): string | null | undefined {
+  return isPhonePlaceholderEmail(user.email) ? `host-${randomBytes(3).toString("hex")}` : user.name;
 }
 
 /** Microsoft's tenant id for personal accounts: there the email is the Microsoft sign-in itself, so Microsoft vouches for it. */
@@ -111,7 +130,11 @@ function createAuth() {
       enabled: process.env.NODE_ENV === "production",
       window: 60,
       max: 100,
-      customRules: { "/sign-in/magic-link": { window: 600, max: 5 }, "/sign-in/social": { window: 60, max: 10 } },
+      customRules: {
+        "/sign-in/magic-link": { window: 600, max: 5 }, "/sign-in/social": { window: 60, max: 10 },
+        "/phone-number/send-otp": { window: 600, max: 5 }, "/phone-number/verify": { window: 600, max: 10 },
+        "/change-email": { window: 600, max: 5 }, "/send-verification-email": { window: 600, max: 3 },
+      },
     },
     advanced: {
       database: { generateId: false }, // Postgres fills uuid ids
@@ -123,6 +146,18 @@ function createAuth() {
       modelName: "users",
       fields: { emailVerified: "email_verified", ...at },
       additionalFields: { slug: { type: "string", required: false, input: false } },
+      // A host who signed up by phone adds an email from Settings. The address changes only when its owner clicks the
+      // link sent to it (updateEmailWithoutVerification stays off), so nobody can claim an inbox that isn't theirs.
+      changeEmail: { enabled: true },
+    },
+    emailVerification: {
+      expiresIn: 60 * 60,
+      sendVerificationEmail: async ({ user, url }) => {
+        if (!rateLimiter.take(`email:${user.email.toLowerCase()}`, SIGN_IN_LIMITS.perEmail)) {
+          throw new APIError("TOO_MANY_REQUESTS", { message: "Too many emails to this address" });
+        }
+        await deliverEmailConfirmation(user.email, url);
+      },
     },
     session: {
       modelName: "auth_sessions",
@@ -151,7 +186,7 @@ function createAuth() {
           // Every host needs a booking-link slug; users.slug is not null.
           before: async (user, ctx) => {
             if (refuseUnverifiedSignUp(user, ctx)) return false;
-            const slug = await uniqueSlug(user.email, user.name, async (candidate) => {
+            const slug = await uniqueSlug(user.email, slugSource(user), async (candidate) => {
               // A practice page (Clinic plan) holds its slug too: hosts and practices share the top-level path.
               const { rowCount } = await pool.query("select 1 from users where slug = $1 union all select 1 from practices where slug = $1", [candidate]);
               return (rowCount ?? 0) > 0;
@@ -183,6 +218,27 @@ function createAuth() {
           await deliverMagicLink(email, url);
         },
       }),
+      ...(otpChannels().length > 0 ? [phoneNumber({
+        otpLength: 6,
+        expiresIn: 5 * 60,
+        allowedAttempts: 3, // per code; with three codes per number per 10 minutes, at most 9 guesses at a 6-digit code
+        // Only the stored form is accepted, so "98765 43210" and "+919876543210" can't become two accounts.
+        phoneNumberValidator: (phone) => isCanonicalPhone(phone),
+        signUpOnVerification: { getTempEmail: phoneEmail, getTempName: () => "" },
+        schema: { user: { fields: { phoneNumber: "phone_number", phoneNumberVerified: "phone_number_verified" } } },
+        sendOTP: async ({ phoneNumber: phone, code }, ctx) => {
+          // Both the sign-in page and direct calls to /api/auth reach here, so the per-number limit lives here. Each text costs money.
+          if (!rateLimiter.take(`phone:${phone}`, SIGN_IN_LIMITS.perPhone)) {
+            throw new APIError("TOO_MANY_REQUESTS", { message: "Too many sign-in codes for this number" });
+          }
+          const requested = (ctx?.headers as Headers | undefined)?.get?.(OTP_CHANNEL_HEADER);
+          const channel = pickOtpChannel(requested, otpChannels());
+          const wa = whatsappOtpConfig(), sms = otpSmsConfig();
+          if (channel === "whatsapp" && wa) return void (await sendOtpWhatsApp(wa, phone, code));
+          if (channel === "sms" && sms) return void (await sendOtpSms(sms, phone, code));
+          throw new APIError("NOT_IMPLEMENTED", { message: "Phone sign-in is not set up" });
+        },
+      })] : []),
       nextCookies(), // must stay last
     ],
   });

@@ -3,7 +3,8 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { isAPIError } from "better-auth/api";
-import { authEnabled, getAuth, googleEnabled, microsoftEnabled } from "@/lib/auth/auth";
+import { authEnabled, getAuth, googleEnabled, microsoftEnabled, phoneEnabled } from "@/lib/auth/auth";
+import { formatPhone, normalizePhone, OTP_CHANNEL_HEADER, otpChannels, pickOtpChannel, type OtpChannel } from "@/lib/auth/phone";
 import { clientIp, rateLimiter, SIGN_IN_LIMITS } from "@/lib/rate-limit";
 
 export type SignInState = { status: "idle" | "sent" | "error"; email?: string; error?: string };
@@ -43,4 +44,51 @@ export async function signInWithMicrosoft(): Promise<void> {
   });
   if (!result.url) redirect("/sign-in");
   redirect(result.url);
+}
+
+export type PhoneSignInState = { step: "phone" | "code"; phone?: string; display?: string; channel?: OtpChannel; error?: string };
+
+const TOO_MANY_CODES = "Too many codes asked for. Wait ten minutes, then try again.";
+
+export async function requestPhoneCode(_prev: PhoneSignInState, form: FormData): Promise<PhoneSignInState> {
+  const raw = String(form.get("phone") ?? "").slice(0, 32);
+  const phone = normalizePhone(raw);
+  if (!phone) return { step: "phone", display: raw, error: "Enter an Indian mobile number, like 98765 43210." };
+  if (!authEnabled() || !phoneEnabled()) return { step: "phone", display: raw, error: "Sign-in by phone isn't available right now. Use your email instead." };
+  const requestHeaders = await headers();
+  if (!rateLimiter.take(`ip-phone:${clientIp(requestHeaders)}`, SIGN_IN_LIMITS.perIp)) return { step: "phone", display: raw, error: TOO_MANY_CODES };
+  const channel = pickOtpChannel(String(form.get("channel") ?? ""), otpChannels());
+  if (!channel) return { step: "phone", display: raw, error: "Sign-in by phone isn't available right now. Use your email instead." };
+  // Better Auth's endpoint takes only the number, so the chosen channel travels to sendOTP as a header.
+  const withChannel = new Headers(requestHeaders);
+  withChannel.set(OTP_CHANNEL_HEADER, channel);
+  try {
+    await getAuth().api.sendPhoneNumberOTP({ body: { phoneNumber: phone }, headers: withChannel });
+  } catch (error) {
+    if (isAPIError(error) && error.status === "TOO_MANY_REQUESTS") return { step: "phone", display: raw, error: TOO_MANY_CODES };
+    console.error(`phone code request failed (${channel})`, error instanceof Error ? error.message : error);
+    const where = channel === "whatsapp" ? "send the code on WhatsApp" : "text the code";
+    return { step: "phone", display: raw, error: `We couldn't ${where} just now. Try again in a minute, or use your email.` };
+  }
+  return { step: "code", phone, display: formatPhone(phone), channel };
+}
+
+export async function verifyPhoneCode(prev: PhoneSignInState, form: FormData): Promise<PhoneSignInState> {
+  // The number comes from the form, not from trust in prev: it is normalised again and must still be an Indian mobile.
+  const phone = normalizePhone(String(form.get("phone") ?? ""));
+  const code = String(form.get("code") ?? "").replace(/\s/g, "");
+  if (!phone) return { step: "phone", error: "Enter your number again." };
+  const back = { step: "code" as const, phone, display: formatPhone(phone) };
+  if (!/^\d{6}$/.test(code)) return { ...back, error: "Enter the 6-digit code from the text." };
+  if (!authEnabled() || !phoneEnabled()) return { step: "phone", error: "Sign-in by phone isn't available right now. Use your email instead." };
+  try {
+    await getAuth().api.verifyPhoneNumber({ body: { phoneNumber: phone, code }, headers: await headers() });
+  } catch (error) {
+    const message = isAPIError(error) ? String(error.body?.code ?? error.message) : "";
+    if (/TOO_MANY_ATTEMPTS|OTP_EXPIRED|OTP_NOT_FOUND|too many attempts|otp expired|otp not found/i.test(message)) return { ...back, error: "That code has expired or had too many tries. Ask for a new one." };
+    if (/INVALID_OTP|invalid otp/i.test(message)) return { ...back, error: "That code isn't right. Check the text and try again." };
+    console.error("phone code check failed", error instanceof Error ? error.message : error);
+    return { ...back, error: "We couldn't sign you in. If your account was closed, it can't be used again." };
+  }
+  redirect("/dashboard/event-types");
 }

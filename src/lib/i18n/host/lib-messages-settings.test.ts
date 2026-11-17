@@ -5,7 +5,9 @@ import { HOST_CATALOGS, type HostKey } from "./index";
 import { decode } from "./lib-messages";
 
 // Same map as src/components/DeleteAccountForm.tsx.
-const KEYS: Record<keyof typeof DELETE_ACCOUNT_MESSAGES, HostKey> = { demo: "settings.errDeleteDemo", email: "settings.errDeleteEmail" };
+const KEYS: Record<keyof typeof DELETE_ACCOUNT_MESSAGES, HostKey> = {
+  demo: "settings.errDeleteDemo", email: "settings.errDeleteEmail", phone: "settings.errDeletePhone",
+};
 
 describe("delete account messages", () => {
   it("has a host line with the same English for every code", () => {

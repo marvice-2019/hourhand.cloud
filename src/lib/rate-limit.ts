@@ -59,6 +59,8 @@ export const rateLimiter = (shared.__hourhandRateLimiter ??= createRateLimiter()
 export const SIGN_IN_LIMITS = {
   perEmail: { max: 3, windowMs: 10 * 60_000 },
   perIp: { max: 10, windowMs: 10 * 60_000 },
+  /** Sign-in codes by SMS: each one is a paid text, and three wrong codes in a row should slow a guesser down. */
+  perPhone: { max: 3, windowMs: 10 * 60_000 },
 } satisfies Record<string, Limit>;
 
 /**
