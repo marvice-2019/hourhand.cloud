@@ -64,6 +64,7 @@ export const clients = {
   "clients.channelBookingPage": "Booking page",
   "clients.channelSingleUseLink": "Single-use link",
   "clients.channelPackageLink": "Package link",
+  "clients.channelHostOnBehalf": "Booked by you for them",
 
   // The client's data: export and erasure
   "clients.dataTitle": "{name}'s data",

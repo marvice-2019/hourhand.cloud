@@ -63,6 +63,13 @@ describe.skipIf(!BASE)("consent log and sealed notes (Postgres)", () => {
     expect(mine[1].statement).toBe("WhatsApp please");
   });
 
+  it("accepts a host-made booking's log (host_on_behalf) in the same write", async () => {
+    const lines = consentFor({ hostName: "Priya", channel: "host_on_behalf", whatsappOptIn: false, whatsappStatement: "", questions: [], answers: [] });
+    const b = await store.createBooking({ eventTypeId: coaching.id, startAt: new Date("2031-06-02T05:30:00Z"), idempotencyKey: "privacy-behalf-0001", invitee: { ...guest, email: "behalf@example.com", whatsappOptIn: false, consent: lines } });
+    const { rows } = await pool.query("select purpose, granted, channel from consent_records where booking_id = $1", [b.id]);
+    expect(rows).toEqual([{ purpose: "booking", granted: true, channel: "host_on_behalf" }]);
+  });
+
   it("shows a client's log to their host only, any email case", async () => {
     expect((await listConsents(pool, priya.id, "meera@example.com")).map((c) => c.purpose).sort()).toEqual(["booking", "booking", "booking", "whatsapp_updates", "whatsapp_updates", "whatsapp_updates"]);
     expect(await listConsents(pool, arun.id, "meera@example.com")).toEqual([]);

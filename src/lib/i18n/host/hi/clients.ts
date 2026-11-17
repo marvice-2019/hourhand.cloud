@@ -65,6 +65,7 @@ export const clients: Record<keyof typeof en, string> = {
   "clients.channelBookingPage": "बुकिंग पेज",
   "clients.channelSingleUseLink": "एक बार चलने वाला लिंक",
   "clients.channelPackageLink": "पैकेज लिंक",
+  "clients.channelHostOnBehalf": "आपने उनके लिए बुक किया",
 
   // The client's data: export and erasure
   "clients.dataTitle": "{name} का डेटा",
