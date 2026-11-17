@@ -27,6 +27,7 @@ import { linkKey } from "../follow-ups/tokens";
 import { hostLocaleOf } from "../i18n/host";
 import { hostMonth, makeHostI18n } from "../i18n/host/format";
 import { hostPriceLine } from "../i18n/host/price";
+import { renderReferralReward } from "../referrals/mail";
 import { isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
 import { ZoomApiError, type ZoomMeetingInput } from "../zoom/client";
 import { withZoomToken, type ZoomDeps } from "../zoom/connection";
@@ -608,7 +609,7 @@ export async function processDueNotifications(
       continue;
     }
     // Host emails about their account rather than a booking.
-    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind) || c.kind === "data_request_host" || c.kind === "membership_guest" || c.kind === "membership_host" || isClinicMail(c.kind);
+    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind) || c.kind === "data_request_host" || c.kind === "membership_guest" || c.kind === "membership_host" || isClinicMail(c.kind) || c.kind === "referral_reward_host";
     if (!isAccountMail) {
       if (!r?.id) { await skip(c, "booking no longer exists"); continue; }
       const why = skipReason(c.kind, r, now);
@@ -690,6 +691,7 @@ export async function processDueNotifications(
           : isPollKind(c.kind) ? await renderPoll(pool, c, opts.baseUrl, now)
           : c.kind === "membership_guest" || c.kind === "membership_host" ? await renderMembership(pool, c, opts.baseUrl, now)
           : isClinicMail(c.kind) ? await renderClinicMail(pool, c, opts.baseUrl, now)
+          : c.kind === "referral_reward_host" ? await renderReferralReward(pool, c, opts.baseUrl)
           : renderBookingMail(c.kind as BookingEmailKind, {
             ...toContext(r, opts.baseUrl, c.kind.endsWith("_host") ? "host" : extraGuestMail(c, r) ? "extra_guest" : "guest"),
             extraGuest: extraGuestMail(c, r),

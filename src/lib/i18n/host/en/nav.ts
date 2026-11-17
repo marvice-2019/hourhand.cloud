@@ -23,6 +23,7 @@ export const nav = {
   "nav.practiceInvited": "{name} invited you to their practice on Hourhand.",
   "nav.practiceSeeInvite": "See the invitation",
   "nav.plan": "Plan",
+  "nav.referrals": "Referrals",
   "nav.settings": "Settings",
   "nav.main": "Main",
   "nav.menu": "Menu",

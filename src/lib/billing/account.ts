@@ -3,6 +3,7 @@ import { billingFor } from "./env";
 import { effectivePlan, LIMITS, PROVIDER_FOR, providerPriceId, type BillingInterval, type Currency, type PaidPlan, type Plan, type Provider, type SubscriptionStatus } from "./plans";
 import { BillingApiError } from "./providers";
 import { syncSubscription } from "./sync";
+import { referralAccessPlan } from "../referrals/rewards";
 import { inLivePractice } from "../clinic/payments";
 
 // What a host can do with their plan. Every change goes to the provider first, then Hourhand re-reads the
@@ -45,7 +46,9 @@ export async function hostPlan(db: Db, userId: string): Promise<Plan> {
   const { rows: [seat] } = await db.query(
     `select o.plan, o.status from seats s join users u on u.id = s.owner_id join subscriptions o on o.user_id = s.owner_id
      where s.member_id = $1 and s.accepted_at is not null and u.deleted_at is null`, [userId]);
-  return seat && effectivePlan({ plan: seat.plan, status: seat.status }) === "duo" ? "duo" : "free";
+  if (seat && effectivePlan({ plan: seat.plan, status: seat.status }) === "duo") return "duo";
+  // A free month from a referral that Razorpay couldn't take off a renewal runs as Solo after the paid plan ends.
+  return (await referralAccessPlan(db, userId)) ?? "free";
 }
 
 /** How many calendars the host's plan checks for conflicts at once. */

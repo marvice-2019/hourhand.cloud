@@ -523,3 +523,19 @@ export function renderMembershipMail(to: "guest" | "host", c: MembershipMailCont
     case "ended": return host("Ended");
   }
 }
+
+/** A referral paid out: the host who shared the link, or the host who signed up through it, gets a free month. */
+export function renderReferralRewardMail(c: { role: "referrer" | "referred"; otherName: string | null; value: string; planUrl: string; hostLocale?: string | null }): RenderedMail {
+  const name = c.otherName?.trim();
+  const v = { name: name ?? "", value: c.value };
+  const intro = c.role === "referrer"
+    ? h(c, name ? "mail.iReferralReferrer" : "mail.iReferralReferrerSomeone", v)
+    : h(c, name ? "mail.iReferralReferred" : "mail.iReferralReferredSomeone", v);
+  return render(h(c, c.role === "referrer" ? "mail.subjReferralReferrer" : "mail.subjReferralReferred"), {
+    heading: h(c, "mail.hReferral"), intro,
+    rows: [[h(c, "mail.rFreeMonth"), h(c, "mail.vFreeMonth", v)], [h(c, "mail.rReferralWhen"), h(c, "mail.vNextRenewal")]],
+    link: { label: h(c, "mail.lReferrals"), url: c.planUrl },
+    note: h(c, "mail.nReferral"),
+    footer: h(c, "mail.footerSubscription"),
+  });
+}
