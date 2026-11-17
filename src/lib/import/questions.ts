@@ -1,4 +1,5 @@
 import type { ImportedQuestion } from "./types";
+import type { QuestionKindIntake } from "../data/types";
 import { text } from "./http";
 import { importMessage, type ImportMessageCode } from "./messages";
 
@@ -18,12 +19,14 @@ export function question(rawLabel: unknown, kind: ImportedQuestion["kind"], requ
     notes.push(importMessage("fewChoices", { label }));
     return { label, kind: "short_text", required, choices: [] };
   }
-  if (changedFrom) notes.push(importMessage(NOW_KIND[kind], { label, from: changedFrom }));
+  const nowKind = NOW_KIND[kind as keyof typeof NOW_KIND];
+  if (changedFrom && nowKind) notes.push(importMessage(nowKind, { label, from: changedFrom }));
   return { label, kind, required, choices };
 }
 
 /** The note for a question that became the nearest Hourhand kind. */
-const NOW_KIND: Record<ImportedQuestion["kind"], ImportMessageCode> = {
+// Providers map only onto the kinds Hourhand had before intake forms; the newer kinds never come from an import.
+const NOW_KIND: Record<Exclude<ImportedQuestion["kind"], QuestionKindIntake>, ImportMessageCode> = {
   short_text: "nowShortText", long_text: "nowLongText", phone: "nowPhone", single_select: "nowSingleSelect",
   multi_select: "nowMultiSelect", consent: "nowConsent",
 };

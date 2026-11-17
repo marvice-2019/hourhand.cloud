@@ -21,7 +21,7 @@ export const clients: Record<keyof typeof en, string> = {
   "clients.sessions": "செஷன்கள்",
   "clients.comingUp": "வரவிருப்பவை",
   "clients.noShows": "வரவில்லை",
-  "clients.since": "கிளையன்ட் ஆனது",
+  "clients.since": "கிளையன்ட் ஆன நாள்",
   "clients.privateNote": "தனிப்பட்ட குறிப்பு",
   "clients.noteHelp": "இது உங்களுக்கு மட்டுமே தெரியும்: இது என்க்ரிப்ட் செய்து சேமிக்கப்படுகிறது, உங்கள் Duo பிளானில் உள்ள இரண்டாவது நபரால் இதைப் படிக்க முடியாது. {name} அவர்களின் ஒவ்வொரு புக்கிங்கிலும் இது காட்டப்படும்.",
   "clients.notePlaceholder": "நீங்கள் சேர்ந்து எதில் வேலை செய்கிறீர்கள், அவர்களின் விருப்பங்கள், என்ன ஒப்புக்கொண்டீர்கள்.",
@@ -50,7 +50,7 @@ export const clients: Record<keyof typeof en, string> = {
 
   // Consent log
   "clients.consentTitle": "ஒப்புதல் பதிவு",
-  "clients.consentIntro": "ஒவ்வொரு முறை புக் செய்தபோதும் {name} எதற்கு ஒப்புக்கொண்டார்கள், அவர்கள் பார்த்த அதே வார்த்தைகளில். இந்தியாவின் தரவுப் பாதுகாப்புச் சட்டத்தின் கீழ் இது உங்கள் பதிவாக வைக்கப்படுகிறது.",
+  "clients.consentIntro": "ஒவ்வொரு முறை புக் செய்தபோதும் {name} எதற்கு ஒப்புக்கொண்டார் என்பது, அவர் பார்த்த அதே வார்த்தைகளில். இந்தியாவின் தரவுப் பாதுகாப்புச் சட்டத்தின் கீழ் இது உங்கள் பதிவாக வைக்கப்படுகிறது.",
   "clients.consentEmpty": "இன்னும் எதுவும் பதிவாகவில்லை. இனிமேல் செய்யப்படும் புக்கிங்குகள் இங்கே பதிவாகும்.",
   "clients.consentPurpose": "{purpose}: ",
   "clients.consentAgreed": "ஒப்புக்கொண்டார்",
@@ -63,7 +63,7 @@ export const clients: Record<keyof typeof en, string> = {
   "clients.purposeSms": "SMS அப்டேட்கள்",
   "clients.purposeHostQuestion": "உங்கள் ஒப்புதல் கேள்வி",
   "clients.channelBookingPage": "புக்கிங் பக்கம்",
-  "clients.channelSingleUseLink": "ஒருமுறை மட்டும் செல்லும் லிங்க்",
+  "clients.channelSingleUseLink": "ஒருமுறை லிங்க்",
   "clients.channelPackageLink": "பேக்கேஜ் லிங்க்",
   "clients.channelHostOnBehalf": "நீங்கள் அவர்களுக்காக புக் செய்தது",
 
@@ -101,7 +101,7 @@ export const clients: Record<keyof typeof en, string> = {
   "clients.requestsOpen": "நிலுவையில்",
   "clients.noOpenRequests": "நிலுவையில் கோரிக்கைகள் இல்லை.",
   "clients.requestLine": "{kind} · கேட்டது {date} · {email}",
-  "clients.respondByLeft": "{date}-க்குள் பதிலளியுங்கள் ({n} நாட்கள் உள்ளன)",
+  "clients.respondByLeft": "{date}-க்குள் பதிலளியுங்கள் ({n} நாட்கள் மீதம்)",
   "clients.respondByOverdue": "{date}-க்குள் பதிலளித்திருக்க வேண்டும் ({n} நாட்கள் தாமதம்)",
   "clients.accessHelp": "கிளையன்ட்டின் பக்கத்திலிருந்து அவர்களின் எக்ஸ்போர்ட்டை டவுன்லோட் செய்து, அவர்களுக்கு அனுப்பி, பிறகு இதை முடிந்ததாகக் குறியுங்கள்.",
   "clients.erasureHelp": "கிளையன்ட்டின் பக்கத்திலிருந்து அவர்களின் தரவை அழியுங்கள் (இது கோரிக்கையை மூடிவிடும்), அல்லது சட்டப்படி நீங்கள் எதையாவது வைத்திருக்க வேண்டியிருந்தால் நிராகரித்து, ஏன் என்று அவர்களிடம் சொல்லுங்கள்.",

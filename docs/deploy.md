@@ -74,11 +74,13 @@ Generate the two random values on your own machine with `openssl rand -hex 32` (
 | `TOKEN_ENCRYPTION_KEY` | random (openssl), never changes | yes |
 | `RESEND_API_KEY` | from Resend | yes |
 | `EMAIL_FROM` | `Hourhand <booking@hourhand.cloud>` | yes |
+| `SUPER_ADMIN_EMAILS` | comma-separated emails of Hourhand's owners, e.g. `you@marvice.in` | for the staff area at /admin. These accounts are super admins and can't be removed from the app; they add other staff at /admin/staff |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | from Google Cloud | for Google sign-in and calendars |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | from Razorpay (test first) | for paid plans |
 | `RAZORPAY_PLAN_SOLO_MONTH`, `_SOLO_YEAR`, `_DUO_MONTH`, `_DUO_YEAR` | the 4 Plan ids | for paid plans |
 | `STRIPE_SECRET_KEY`, `STRIPE_CONNECT_WEBHOOK_SECRET` | from Stripe (sandbox first), Runtime only | for hosts outside India taking payments through Stripe Connect. Both are needed; without them the Stripe option on Integrations says "not set up on this server" |
 | other `STRIPE_*` | only if you get Stripe for Hourhand plans (see backend.md) | no |
+| `RAZORPAY_REFERRAL_OFFER_ID` | the Single Use referral Offer id (README → Referrals) | for referral free months on Razorpay |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | from Entra (section 6) | for Outlook and Sign in with Microsoft |
 | `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ZOOM_WEBHOOK_SECRET` | from the Zoom app (section 6b), as **Runtime** variables | for Zoom links |
 | `TRUSTED_PROXIES` | leave unset (defaults cover Coolify's Docker network) | no |

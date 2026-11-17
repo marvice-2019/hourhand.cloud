@@ -528,8 +528,8 @@ describe.skipIf(!BASE)("paid bookings (Postgres)", () => {
     const deps = (fake = fakeRazorpay(), o: { plan?: Plan; connected?: boolean } = {}): PaymentDeps =>
       ({ pool, authFor: async () => (o.connected === false ? null : auth), ordersFor: () => fake.orders, planFor: async () => o.plan ?? "solo" });
     /** A booking request for the next time the engine offers, with every required question answered. */
-    async function request(key = randomUUID()) {
-      const start = (await freeSlots(store, priya, et, now(), new Date(Date.now() + 14 * 86_400_000), now()))[0];
+    async function request(key = randomUUID(), minutes = et.durationMinutes) {
+      const start = (await freeSlots(store, priya, { ...et, durationMinutes: minutes }, now(), new Date(Date.now() + 14 * 86_400_000), now()))[0];
       const questions = await store.listCustomQuestions(priya.id, eventTypeId);
       const answers = Object.fromEntries(questions.filter((q) => q.required).map((q) => [q.id, "yes"]));
       return { slug: "priya", event: et.slug, start: start.toISOString(), name: "Asha", email: "asha@example.in", timezone: "Asia/Kolkata", answers, idempotencyKey: key };
@@ -612,6 +612,39 @@ describe.skipIf(!BASE)("paid bookings (Postgres)", () => {
       expect(await handleConfirmPayment(store, d, { manageToken: body.manageToken, paymentId: pay.id, signature: sign(pay.order_id, pay.id) }, now()))
         .toEqual({ status: 200, body: { status: "confirmed" } });
       expect((await booking(body.bookingId)).status).toBe("confirmed");
+    });
+
+    it("charges the price of the length the guest picked, and books that length", async () => {
+      // The seeded type's own length plus a longer one with a price of its own.
+      const main = et.durationMinutes;
+      const longer = main + 30;
+      await pool.query("update event_types set duration_options = $2, duration_prices = '{NULL,90000}' where id = $1", [eventTypeId, [main, longer]]);
+      et = (await store.listEventTypes(priya.id)).find((e) => e.id === eventTypeId)!;
+      try {
+        const fake = fakeRazorpay();
+        const long = { ...(await request(undefined, longer)), duration: longer };
+        const res = await handleCreateBooking(store, long, now(), undefined, deps(fake));
+        expect(res.status).toBe(201);
+        const body = res.body as Created & { payment: { amount: number } };
+        expect(body.payment.amount).toBe(90_000);
+        const { rows: [b] } = await pool.query("select start_at, end_at from bookings where id = $1", [body.bookingId]);
+        expect((b.end_at.getTime() - b.start_at.getTime()) / 60_000).toBe(longer);
+        // The default length keeps the event's own price.
+        const short = (await handleCreateBooking(store, await request(), now(), undefined, deps(fake))).body as Created & { payment: { amount: number } };
+        expect(short.payment.amount).toBe(50_000);
+        // A length the host doesn't offer is refused before anything is held.
+        expect(await handleCreateBooking(store, { ...(await request()), duration: main + 5 }, now(), undefined, deps(fake)))
+          .toMatchObject({ status: 400, body: { fields: { duration: expect.any(String) } } });
+      } finally {
+        await pool.query("update event_types set duration_options = '{}', duration_prices = '{}' where id = $1", [eventTypeId]);
+      }
+    });
+
+    it("the database refuses a length's own price on a free event type, and lengths without the main one", async () => {
+      await setPrice(null);
+      const main = et.durationMinutes;
+      await expect(pool.query("update event_types set duration_options = $2, duration_prices = '{NULL,90000}' where id = $1", [eventTypeId, [main, main + 30]])).rejects.toThrow(/duration_prices/);
+      await expect(pool.query("update event_types set duration_options = $2, duration_prices = '{NULL,NULL}' where id = $1", [eventTypeId, [main + 15, main + 30]])).rejects.toThrow(/duration_options/);
     });
 
     it("a free event still books and confirms straight away, with or without payments", async () => {

@@ -7,7 +7,7 @@ import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
 import {
   DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type BookingLink, type BookingWithInvitee,
-  type CreateBookingInput, type DataStore, type EventType, type EventTypeDraft, type Interval,
+  type CreateBookingInput, type CustomQuestion, type DataStore, type EventType, type EventTypeDraft, type Interval,
 } from "./types";
 
 const MIN = 60_000;
@@ -59,7 +59,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
     if (!et) throw new Error(`Unknown event type ${input.eventTypeId}`);
 
     const startAt = input.startAt;
-    const endAt = new Date(startAt.getTime() + et.durationMinutes * MIN);
+    const endAt = new Date(startAt.getTime() + (input.durationMinutes ?? et.durationMinutes) * MIN);
     const bufferedStart = new Date(startAt.getTime() - et.bufferBeforeMinutes * MIN);
     const bufferedEnd = new Date(endAt.getTime() + et.bufferAfterMinutes * MIN);
     // Same rules as the exclusion constraint and the seat count: no two confirmed bookings of one host overlap, buffers
@@ -92,11 +92,12 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
     if (db.eventTypes.some((e) => e.userId === userId && e.slug === slug && e.id !== exceptId)) throw new SlugTakenError();
   }
 
-  function fields(draft: EventTypeDraft): Omit<EventTypeDraft, "location"> {
-    const { name, slug, description, durationMinutes, minNoticeMinutes, bookingWindowDays, startIncrementMinutes, bufferBeforeMinutes, bufferAfterMinutes, dailyLimit, cancelCutoffMinutes, priceMinor, currency, hidden, maxRepeats, depositMinor, redirectUrl, weeklyLimit, cancelPolicy, seatLimit } = draft;
+  function fields(draft: EventTypeDraft): Omit<EventTypeDraft, "location" | "durationOptions"> & Pick<EventType, "durationOptions"> {
+    const { name, slug, description, durationMinutes, minNoticeMinutes, bookingWindowDays, startIncrementMinutes, bufferBeforeMinutes, bufferAfterMinutes, dailyLimit, cancelCutoffMinutes, priceMinor, currency, hidden, maxRepeats, depositMinor, redirectUrl, weeklyLimit, cancelPolicy, seatLimit, durationOptions } = draft;
     return {
       name, slug, description, durationMinutes, minNoticeMinutes, bookingWindowDays, startIncrementMinutes, bufferBeforeMinutes, bufferAfterMinutes, dailyLimit, cancelCutoffMinutes,
       priceMinor, currency: priceMinor === null ? null : currency, hidden, maxRepeats, depositMinor: priceMinor === null ? depositMinor : null, redirectUrl, weeklyLimit, cancelPolicy, seatLimit,
+      durationOptions: (durationOptions ?? []).map((o) => ({ ...o })),
     };
   }
 
@@ -275,7 +276,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
         id: randomUUID(), userId: hostId, scheduleId: db.schedules.find((s) => s.userId === hostId && s.isDefault)?.id ?? null,
         name: input.name.trim(), slug: oneOffSlug(), description: input.description ?? null, durationMinutes: input.durationMinutes,
         minNoticeMinutes: 0, bookingWindowDays: 730, startIncrementMinutes: 30, bufferBeforeMinutes: 0, bufferAfterMinutes: 0, dailyLimit: null,
-        cancelCutoffMinutes: 0, priceMinor: null, currency: null, hidden: true, active: true, position: 0, kind: "one_off", seatLimit: null, maxRepeats: 1, depositMinor: null, redirectUrl: null, weeklyLimit: null, cancelPolicy: null,
+        cancelCutoffMinutes: 0, priceMinor: null, currency: null, hidden: true, active: true, position: 0, kind: "one_off", seatLimit: null, maxRepeats: 1, depositMinor: null, redirectUrl: null, weeklyLimit: null, cancelPolicy: null, durationOptions: [],
       };
       db.eventTypes.push(eventType);
       db.locations.push({ id: randomUUID(), eventTypeId: eventType.id, kind: input.location.kind, value: input.location.value ?? null, position: 0 });
@@ -300,7 +301,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       if (!old) throw new NotFoundError("Booking");
       const { name, email, timezone, phone, answers, guests, locale, whatsappOptIn, smsOptIn } = old.invitee;
       // Both steps run synchronously, so no other request can see the half-done state (one transaction in Postgres).
-      const booking = build({ eventTypeId: old.eventTypeId, startAt, idempotencyKey, invitee: { name, email, timezone, phone, answers: answers.map((a) => ({ ...a })), guests: [...guests], locale, whatsappOptIn, smsOptIn } }, old.id);
+      const booking = build({ eventTypeId: old.eventTypeId, startAt, idempotencyKey, durationMinutes: (old.endAt.getTime() - old.startAt.getTime()) / MIN, invitee: { name, email, timezone, phone, answers: answers.map((a) => ({ ...a })), guests: [...guests], locale, whatsappOptIn, smsOptIn } }, old.id);
       // A moved week stays its series' week.
       Object.assign(booking, { seriesId: old.seriesId, seriesIndex: old.seriesIndex });
       db.bookings.push(booking);
@@ -406,9 +407,15 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       if (!ownsEventType(userId, eventTypeId)) throw new NotFoundError("Event type");
       // Keep a client-sent id only when it already belongs to a question of this event type.
       const own = new Set(db.questions.filter((q) => q.eventTypeId === eventTypeId).map((q) => q.id));
-      const saved = questions.map((q, position) => ({
-        id: q.id !== null && own.has(q.id) ? q.id : randomUUID(), eventTypeId, label: q.label, kind: q.kind, required: q.required, choices: [...q.choices], position,
-      }));
+      const saved: CustomQuestion[] = [];
+      for (const [position, q] of questions.entries()) {
+        // A condition names an earlier question by list position; it is kept by id, as Postgres does.
+        const showIf = q.showIf && saved[q.showIf.questionIndex] ? { questionId: saved[q.showIf.questionIndex].id, values: [...q.showIf.values] } : null;
+        saved.push({
+          id: q.id !== null && own.has(q.id) ? q.id : randomUUID(), eventTypeId, label: q.label, kind: q.kind, required: q.required, choices: [...q.choices], position,
+          showIf, firstBookingOnly: q.firstBookingOnly === true, minValue: q.minValue ?? null, maxValue: q.maxValue ?? null, templateId: q.templateId ?? null,
+        });
+      }
       db.questions = [...db.questions.filter((q) => q.eventTypeId !== eventTypeId), ...saved];
       return saved;
     },

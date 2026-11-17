@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { freeSlots } from "@/lib/booking";
+import { bookedMinutes, withDuration } from "@/lib/durations";
 import { store } from "@/lib/data";
 import { clientKey, sessionNumber } from "@/lib/clients";
 import { briefFor } from "@/lib/session-prep/prep";
@@ -72,7 +73,7 @@ export default async function BookingDetailPage({ params, searchParams }: { para
   const started = confirmed && booking.startAt <= now;
   // Next 14 days of times the host is free, not counting this booking's own slot, grouped by day in the host's zone.
   const eventType = upcoming && query.reschedule ? await store.getEventType(user.id, booking.eventTypeId) : null;
-  const slots = eventType ? await freeSlots(store, user, eventType, now, new Date(now.getTime() + 14 * DAY), now, booking.id) : [];
+  const slots = eventType ? await freeSlots(store, user, withDuration(eventType, bookedMinutes(booking)), now, new Date(now.getTime() + 14 * DAY), now, booking.id) : [];
   const byDay = new Map<string, Date[]>();
   for (const s of slots) byDay.set(date(s, tz), [...(byDay.get(date(s, tz)) ?? []), s]);
   const key = randomUUID();

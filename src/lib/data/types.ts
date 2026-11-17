@@ -69,7 +69,15 @@ export interface EventType {
   weeklyLimit: number | null;
   /** The host's own words on cancelling, shown before booking and next to Cancel; null = none. */
   cancelPolicy: string | null;
+  /**
+   * Lengths the guest picks from (durationMinutes is one of them, the one picked first). Empty = only durationMinutes.
+   * Each may carry its own price; null uses priceMinor.
+   */
+  durationOptions: DurationOption[];
 }
+
+/** One length an event type offers, with its own price in paise (null = the event type's price). */
+export interface DurationOption { minutes: number; priceMinor: number | null }
 
 /** What the host enters for a one-off meeting. */
 export interface OneOffInput {
@@ -108,11 +116,26 @@ export interface CustomQuestion {
   id: string;
   eventTypeId: string;
   label: string;
-  kind: "short_text" | "long_text" | "phone" | "single_select" | "multi_select" | "consent";
+  kind: "short_text" | "long_text" | "phone" | "single_select" | "multi_select" | "consent" | QuestionKindIntake;
   required: boolean;
   choices: string[];
   position: number;
+  /** Asked only when an earlier question's answer is one of `values` (see src/lib/intake). Absent or null: always asked. */
+  showIf?: QuestionCondition | null;
+  /** Asked only the first time a client email books with this host. */
+  firstBookingOnly?: boolean;
+  /** Bounds for a number question; null or absent means no bound. */
+  minValue?: number | null;
+  maxValue?: number | null;
+  /** The host's intake template this question was copied from, if any. */
+  templateId?: string | null;
 }
+
+/** Kinds added for intake forms (roadmap 2.5). */
+export type QuestionKindIntake = "yes_no" | "date" | "number" | "email";
+
+/** Show a question only when the answer to `questionId` (an earlier select or yes/no question) is one of `values`. */
+export interface QuestionCondition { questionId: string; values: string[] }
 
 export interface Booking {
   id: string;
@@ -215,6 +238,8 @@ export interface CreateBookingInput {
   now?: Date;
   /** Book the same time this many weeks running (2+), all or none. The returned booking is the first week. */
   weeks?: number;
+  /** The length the guest picked (one of the event type's options); defaults to the event type's own. */
+  durationMinutes?: number;
   /** Pay with a session package (its buyer's token): one credit per booking, checked and used in the same write. Postgres only. */
   packageToken?: string;
   invitee: { name: string; email: string; timezone: string; phone: string | null; answers: InviteeAnswer[]; guests?: string[]; locale?: string; whatsappOptIn?: boolean; smsOptIn?: boolean;
@@ -416,11 +441,19 @@ export interface DataStore {
 export type EventTypeDraft = Pick<EventType,
   "name" | "slug" | "description" | "durationMinutes" | "minNoticeMinutes" | "bookingWindowDays" | "startIncrementMinutes" |
   "bufferBeforeMinutes" | "bufferAfterMinutes" | "dailyLimit" | "cancelCutoffMinutes" | "priceMinor" | "currency" | "hidden" | "maxRepeats" | "depositMinor" | "redirectUrl" | "weeklyLimit" | "cancelPolicy" | "seatLimit"> & {
+  /** Left out = only durationMinutes (no choice). */
+  durationOptions?: DurationOption[];
   location: { kind: LocationKind; value: string | null } | null;
 };
 
-/** A question as edited; `id` is null for a new one. */
-export type QuestionDraft = Pick<CustomQuestion, "label" | "kind" | "required" | "choices"> & { id: string | null };
+/** A question as edited; `id` is null for a new one. A condition names its earlier question by list position, since new ones have no id yet. */
+export type QuestionDraft = Pick<CustomQuestion, "label" | "kind" | "required" | "choices"> & {
+  id: string | null;
+  showIf?: DraftCondition | null;
+} & Partial<Pick<CustomQuestion, "firstBookingOnly" | "minValue" | "maxValue" | "templateId">>;
+
+/** A condition in a draft: `questionIndex` is the earlier question's place in the same list. */
+export interface DraftCondition { questionIndex: number; values: string[] }
 
 export class SlugTakenError extends Error {
   readonly code = "slug_taken";
