@@ -14,6 +14,7 @@ import { translator } from "@/lib/i18n/host/lib-messages";
 import { getHostI18n } from "@/lib/i18n/host/server";
 import { getFirstSession, listCampaigns, listCoupons, listSlidingScales } from "@/lib/offers/manage";
 import { campaignLive, describeDiscount, DISCOUNT_MESSAGES, type Discount } from "@/lib/offers/pricing";
+import { listMembershipPlans } from "@/lib/memberships/memberships";
 import { listPackages } from "@/lib/packages/packages";
 
 export const dynamic = "force-dynamic";
@@ -30,15 +31,21 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
   const plan = db ? await hostPlan(db, user.id) : "free";
   const now = new Date();
   const today = dayKey(now, user.timezone);
-  const [eventTypes, packages, coupons, campaigns, first, sliding] = await Promise.all([
-    store.listEventTypes(user.id), db ? listPackages(db, user.id) : [], db ? listCoupons(db, user.id, now) : [], db ? listCampaigns(db, user.id) : [],
+  const [eventTypes, packages, membershipPlans, coupons, campaigns, first, sliding] = await Promise.all([
+    store.listEventTypes(user.id), db ? listPackages(db, user.id) : [], db ? listMembershipPlans(db, user.id) : [], db ? listCoupons(db, user.id, now) : [], db ? listCampaigns(db, user.id) : [],
     db ? getFirstSession(db, user.id) : null, db ? listSlidingScales(db, user.id) : new Map(),
   ]);
   const paid = eventTypes.filter((e) => e.priceMinor !== null).map(({ id, name, priceMinor }) => ({ id, name, priceMinor: priceMinor! }));
   const pkgs = packages.filter((p) => p.active).map(({ id, name }) => ({ id, name }));
-  const names = new Map<string, string>([...eventTypes.map((e) => [e.id, e.name] as const), ...packages.map((p) => [p.id, t("offers.packageName", { name: p.name })] as const)]);
-  const forWhat = (o: { eventTypeIds: string[]; packageIds: string[] }) =>
-    o.eventTypeIds.length + o.packageIds.length === 0 ? t("offers.forEverything") : [...o.eventTypeIds, ...o.packageIds].map((id) => names.get(id) ?? t("offers.removedItem")).join(", ");
+  const plans = membershipPlans.filter((m) => m.active).map(({ id, name }) => ({ id, name }));
+  const names = new Map<string, string>([
+    ...eventTypes.map((e) => [e.id, e.name] as const), ...packages.map((p) => [p.id, t("offers.packageName", { name: p.name })] as const),
+    ...membershipPlans.map((m) => [m.id, t("offers.membershipName", { name: m.name })] as const),
+  ]);
+  const forWhat = (o: { eventTypeIds: string[]; packageIds: string[]; membershipPlanIds: string[] }) => {
+    const all = [...o.eventTypeIds, ...o.packageIds, ...o.membershipPlanIds];
+    return all.length === 0 ? t("offers.forEverything") : all.map((id) => names.get(id) ?? t("offers.removedItem")).join(", ");
+  };
 
   const usage = (c: { used: number; maxUses: number | null; reserved: number; maxUsesPerEmail: number | null }) => {
     let line = c.maxUses !== null ? t("offers.usedOf", { used: c.used, max: c.maxUses }) : t("offers.used", { used: c.used });
@@ -66,7 +73,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
 
       <section aria-labelledby="of-codes" className="mt-8">
         <h2 id="of-codes" className="font-semibold text-text">{t("offers.codesTitle")}</h2>
-        <Card className="mt-3 max-w-xl"><CouponForm eventTypes={paid} packages={pkgs} /></Card>
+        <Card className="mt-3 max-w-xl"><CouponForm eventTypes={paid} packages={pkgs} plans={plans} /></Card>
         {coupons.length > 0 && (
           <ul className="mt-4 grid max-w-xl gap-3">
             {coupons.map((c) => (
@@ -102,7 +109,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
       <section aria-labelledby="of-camp" className="mt-8">
         <h2 id="of-camp" className="font-semibold text-text">{t("offers.campaignsTitle")}</h2>
         <p className="mt-1 max-w-xl text-sm text-text-muted">{t("offers.campaignsIntro", { timezone: user.timezone })}</p>
-        <Card className="mt-3 max-w-xl"><CampaignForm eventTypes={paid} packages={pkgs} today={today} /></Card>
+        <Card className="mt-3 max-w-xl"><CampaignForm eventTypes={paid} packages={pkgs} plans={plans} today={today} /></Card>
         {campaigns.length > 0 && (
           <ul className="mt-4 grid max-w-xl gap-3">
             {campaigns.map((c) => {

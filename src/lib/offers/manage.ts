@@ -63,9 +63,13 @@ const ids = (list: string[]) => [...new Set(list.filter((x) => UUID.test(x)))];
 
 export interface CouponInput {
   code: string; discount: Discount; expiresOn: string | null; maxUses: number | null; maxUsesPerEmail: number | null; eventTypeIds: string[]; packageIds: string[];
+  membershipPlanIds?: string[];
 }
 
-export function validateCouponForm(form: { code: string; kind: string; value: string; expiresOn: string; maxUses: string; maxUsesPerEmail: string; eventTypeIds: string[]; packageIds: string[] }, today: string):
+type ItemLists = { eventTypeIds: string[]; packageIds: string[]; membershipPlanIds?: string[] };
+const itemLists = (form: ItemLists) => ({ eventTypeIds: ids(form.eventTypeIds), packageIds: ids(form.packageIds), membershipPlanIds: ids(form.membershipPlanIds ?? []) });
+
+export function validateCouponForm(form: { code: string; kind: string; value: string; expiresOn: string; maxUses: string; maxUsesPerEmail: string } & ItemLists, today: string):
   { ok: true; value: CouponInput } | { ok: false; errors: Errors } {
   const errors: Errors = {};
   const code = normaliseCode(form.code);
@@ -76,7 +80,7 @@ export function validateCouponForm(form: { code: string; kind: string; value: st
   const maxUses = whole(form.maxUses, "maxUses", errors);
   const maxUsesPerEmail = whole(form.maxUsesPerEmail, "maxUsesPerEmail", errors);
   if (Object.keys(errors).length > 0 || !discount) return { ok: false, errors };
-  return { ok: true, value: { code, discount, expiresOn, maxUses, maxUsesPerEmail, eventTypeIds: ids(form.eventTypeIds), packageIds: ids(form.packageIds) } };
+  return { ok: true, value: { code, discount, expiresOn, maxUses, maxUsesPerEmail, ...itemLists(form) } };
 }
 
 /** The first moment after `day` ends in the host's zone: a coupon "valid until 5 Nov" stops at midnight going into the 6th. */
@@ -85,13 +89,16 @@ export function endOfDay(day: string, timezone: string): Date {
   return new Date(new TZDate(y, m - 1, d + 1, 0, 0, 0, timezone).getTime());
 }
 
-/** Keeps only ids of the host's own priced event types and packages, so a coupon can't name somebody else's. */
-async function ownItems(db: Db, hostId: string, eventTypeIds: string[], packageIds: string[]): Promise<{ eventTypeIds: string[]; packageIds: string[] }> {
+/** Keeps only ids of the host's own priced event types, packages and membership plans, so an offer can't name somebody else's. */
+async function ownItems(db: Db, hostId: string, input: ItemLists): Promise<{ eventTypeIds: string[]; packageIds: string[]; membershipPlanIds: string[] }> {
+  const plans = input.membershipPlanIds ?? [];
   const { rows: [r] } = await db.query(
     `select coalesce((select array_agg(id) from event_types where user_id = $1 and id = any($2::uuid[]) and price_minor is not null), '{}') as e,
-            coalesce((select array_agg(id) from packages where user_id = $1 and id = any($3::uuid[])), '{}') as p`, [hostId, eventTypeIds, packageIds]);
-  if (r.e.length !== eventTypeIds.length || r.p.length !== packageIds.length) throw new NotFoundError("Event type or package");
-  return { eventTypeIds: r.e, packageIds: r.p };
+            coalesce((select array_agg(id) from packages where user_id = $1 and id = any($3::uuid[])), '{}') as p,
+            coalesce((select array_agg(id) from membership_plans where user_id = $1 and id = any($4::uuid[])), '{}') as m`,
+    [hostId, input.eventTypeIds, input.packageIds, plans]);
+  if (r.e.length !== input.eventTypeIds.length || r.p.length !== input.packageIds.length || r.m.length !== plans.length) throw new NotFoundError("Event type or package");
+  return { eventTypeIds: r.e, packageIds: r.p, membershipPlanIds: r.m };
 }
 
 export class DuplicateCodeError extends Error {
@@ -100,13 +107,13 @@ export class DuplicateCodeError extends Error {
 
 export async function createCoupon(db: Db, hostId: string, timezone: string, input: CouponInput): Promise<string> {
   if (!UUID.test(hostId)) throw new NotFoundError("Host");
-  const items = await ownItems(db, hostId, input.eventTypeIds, input.packageIds);
+  const items = await ownItems(db, hostId, input);
   try {
     const { rows: [r] } = await db.query(
-      `insert into offer_coupons (user_id, code, discount_kind, discount_value, expires_at, max_uses, max_uses_per_email, event_type_ids, package_ids)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
+      `insert into offer_coupons (user_id, code, discount_kind, discount_value, expires_at, max_uses, max_uses_per_email, event_type_ids, package_ids, membership_plan_ids)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
       [hostId, input.code, input.discount.kind, input.discount.value, input.expiresOn ? endOfDay(input.expiresOn, timezone) : null,
-        input.maxUses, input.maxUsesPerEmail, items.eventTypeIds, items.packageIds]);
+        input.maxUses, input.maxUsesPerEmail, items.eventTypeIds, items.packageIds, items.membershipPlanIds]);
     return r.id as string;
   } catch (error) {
     if ((error as { code?: string }).code === "23505") throw new DuplicateCodeError();
@@ -116,19 +123,20 @@ export async function createCoupon(db: Db, hostId: string, timezone: string, inp
 
 export interface CouponSummary {
   id: string; code: string; discount: Discount; expiresAt: Date | null; maxUses: number | null; maxUsesPerEmail: number | null;
-  eventTypeIds: string[]; packageIds: string[]; active: boolean; used: number; reserved: number;
+  eventTypeIds: string[]; packageIds: string[]; membershipPlanIds: string[]; active: boolean; used: number; reserved: number;
 }
 
 export async function listCoupons(db: Db, hostId: string, now: Date): Promise<CouponSummary[]> {
   if (!UUID.test(hostId)) return [];
   const { rows } = await db.query(
-    `select id, code, discount_kind, discount_value, expires_at, max_uses, max_uses_per_email, event_type_ids, package_ids, active
+    `select id, code, discount_kind, discount_value, expires_at, max_uses, max_uses_per_email, event_type_ids, package_ids, membership_plan_ids, active
      from offer_coupons where user_id = $1 order by created_at desc`, [hostId]);
   return Promise.all(rows.map(async (r) => {
     const uses = await couponUses(db, r.id, now);
     return {
       id: r.id, code: r.code, discount: { kind: r.discount_kind, value: r.discount_value }, expiresAt: r.expires_at, maxUses: r.max_uses,
-      maxUsesPerEmail: r.max_uses_per_email, eventTypeIds: r.event_type_ids, packageIds: r.package_ids, active: r.active, used: uses.used, reserved: uses.reserved,
+      maxUsesPerEmail: r.max_uses_per_email, eventTypeIds: r.event_type_ids, packageIds: r.package_ids,
+      membershipPlanIds: r.membership_plan_ids, active: r.active, used: uses.used, reserved: uses.reserved,
     };
   }));
 }
@@ -193,9 +201,11 @@ export async function listSlidingScales(db: Db, hostId: string): Promise<Map<str
   return new Map(rows.map((r) => [r.event_type_id as string, { minMinor: r.min_minor, suggestedMinor: r.suggested_minor, maxMinor: r.max_minor, note: r.note ?? null }]));
 }
 
-export interface CampaignInput { name: string; banner: string; discount: Discount; startsOn: string; endsOn: string; eventTypeIds: string[]; packageIds: string[] }
+export interface CampaignInput {
+  name: string; banner: string; discount: Discount; startsOn: string; endsOn: string; eventTypeIds: string[]; packageIds: string[]; membershipPlanIds?: string[];
+}
 
-export function validateCampaignForm(form: { name: string; banner: string; kind: string; value: string; startsOn: string; endsOn: string; eventTypeIds: string[]; packageIds: string[] }, today: string):
+export function validateCampaignForm(form: { name: string; banner: string; kind: string; value: string; startsOn: string; endsOn: string } & ItemLists, today: string):
   { ok: true; value: CampaignInput } | { ok: false; errors: Errors } {
   const errors: Errors = {};
   const name = form.name.trim(), banner = form.banner.trim(), startsOn = form.startsOn.trim(), endsOn = form.endsOn.trim();
@@ -207,16 +217,16 @@ export function validateCampaignForm(form: { name: string; banner: string; kind:
   else if (endsOn < today) errors.endsOn = M.endsPassed;
   else if (DATE.test(startsOn) && endsOn < startsOn) errors.endsOn = M.endsBeforeStart;
   if (Object.keys(errors).length > 0 || !discount) return { ok: false, errors };
-  return { ok: true, value: { name, banner, discount, startsOn, endsOn, eventTypeIds: ids(form.eventTypeIds), packageIds: ids(form.packageIds) } };
+  return { ok: true, value: { name, banner, discount, startsOn, endsOn, ...itemLists(form) } };
 }
 
 export async function createCampaign(db: Db, hostId: string, input: CampaignInput): Promise<string> {
   if (!UUID.test(hostId)) throw new NotFoundError("Host");
-  const items = await ownItems(db, hostId, input.eventTypeIds, input.packageIds);
+  const items = await ownItems(db, hostId, input);
   const { rows: [r] } = await db.query(
-    `insert into offer_campaigns (user_id, name, banner, discount_kind, discount_value, starts_on, ends_on, event_type_ids, package_ids)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
-    [hostId, input.name, input.banner, input.discount.kind, input.discount.value, input.startsOn, input.endsOn, items.eventTypeIds, items.packageIds]);
+    `insert into offer_campaigns (user_id, name, banner, discount_kind, discount_value, starts_on, ends_on, event_type_ids, package_ids, membership_plan_ids)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
+    [hostId, input.name, input.banner, input.discount.kind, input.discount.value, input.startsOn, input.endsOn, items.eventTypeIds, items.packageIds, items.membershipPlanIds]);
   return r.id as string;
 }
 
@@ -224,10 +234,10 @@ export async function listCampaigns(db: Db, hostId: string): Promise<Campaign[]>
   if (!UUID.test(hostId)) return [];
   const { rows } = await db.query(
     `select id, name, banner, discount_kind, discount_value, to_char(starts_on, 'YYYY-MM-DD') as starts_on, to_char(ends_on, 'YYYY-MM-DD') as ends_on,
-       event_type_ids, package_ids, active from offer_campaigns where user_id = $1 order by starts_on desc`, [hostId]);
+       event_type_ids, package_ids, membership_plan_ids, active from offer_campaigns where user_id = $1 order by starts_on desc`, [hostId]);
   return rows.map((r) => ({
     id: r.id, name: r.name, banner: r.banner, discount: { kind: r.discount_kind, value: r.discount_value }, startsOn: r.starts_on, endsOn: r.ends_on,
-    eventTypeIds: r.event_type_ids, packageIds: r.package_ids, active: r.active,
+    eventTypeIds: r.event_type_ids, packageIds: r.package_ids, membershipPlanIds: r.membership_plan_ids, active: r.active,
   }));
 }
 

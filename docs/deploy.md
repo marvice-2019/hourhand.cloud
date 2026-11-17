@@ -403,6 +403,39 @@ Who gets texts: a guest who gives an **Indian mobile** (+91, starting 6–9) and
 
 Set them in Coolify as **Runtime** variables, not Build variables, then redeploy.
 
+#### Sign-in by phone (optional): WhatsApp and/or SMS codes
+
+Hosts can sign in, or sign up, with an Indian mobile number and a 6-digit code. The code goes on **WhatsApp** when that is set up (the default), with "Text it to me instead" on the page when SMS is set up too. Either channel alone also works. With neither, the sign-in page doesn't offer phone sign-in.
+
+**WhatsApp codes: `WHATSAPP_OTP_TEMPLATE`.** Needs the four `WHATSAPP_*` variables above, plus one template in WhatsApp Manager → Message templates → Create:
+
+- Category **Authentication**, type **One-time passcode**, delivery **Copy code**, name `hh_sign_in_code`, language **English**.
+- Tick "Add security recommendation". Set the code expiry to **5 minutes**: it is checked for 5 minutes on our side too.
+- Meta writes the body text itself ("*{{1}}* is your verification code. For your security, do not share this code."), so there's nothing to type.
+
+| Variable | Value | Required for WhatsApp codes |
+| --- | --- | --- |
+| `WHATSAPP_OTP_TEMPLATE` | the template's name, `hh_sign_in_code` | yes |
+| `WHATSAPP_OTP_TEMPLATE_LANG` | the template's language code if not `en` (for example `en_US`) | no |
+
+Meta accepting a message doesn't mean it arrived (the number may not be on WhatsApp), which is why the page offers SMS too.
+
+**SMS codes: `MSG91_TEMPLATE_OTP`.**
+
+It needs `SMS_PROVIDER=msg91` and `MSG91_AUTH_KEY` (above) plus one more DLT template, registered in the **Service Implicit (OTP)** category under the same header. Phone sign-in doesn't need the four booking templates. Until `MSG91_TEMPLATE_OTP` is set, the sign-in page doesn't offer it.
+
+Register this text word for word (MSG91 shows the slot as `##VAR1##`, the DLT portal as `{#var#}`):
+
+```
+{#var#} is your Hourhand sign-in code. It expires in 5 minutes. Do not share it with anyone.
+```
+
+| Variable | Value | Required for phone sign-in |
+| --- | --- | --- |
+| `MSG91_TEMPLATE_OTP` | MSG91's template id for the OTP template above | yes |
+
+Limits (both channels together): 3 codes per number and 10 per client address every 10 minutes, and 3 tries per code. Each code is a paid message. A host who signs up by phone has a placeholder email (`<digits>@phone.invalid`) until they add one. No email is sent to that address. A banner on every dashboard page sends them to Settings → "Add your email", which emails a confirmation link; the address is saved only when that link is opened (an address another account already uses gets no link). Until then, booking and reminder emails for that host stay unsent. They close their account by typing their phone number instead of the placeholder. Migration `0053_phone_sign_in` (adds `users.phone_number`) runs by itself when the container starts.
+
 Steps (you; Claude never signs in to a DLT portal or MSG91):
 
 1. **DLT entity.** On one operator's DLT portal (Jio TrueConnect, Airtel, Vi, BSNL, Tata, SmartPing/Videocon or PingConnect; any one covers all networks), register Marvice Media Private Limited as a Principal Entity (PE). You need the PAN, GST certificate, a letter of authorisation and the signatory's ID. You get a 19-digit Entity ID. MSG91 lists portal fees of about ₹5,000 + GST and also says PingConnect is free; check the portal before you pay.

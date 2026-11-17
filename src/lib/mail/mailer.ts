@@ -129,5 +129,17 @@ export function createMailer(env: Env = process.env): Mailer {
 
 let cached: Mailer | undefined;
 export function getMailer(): Mailer {
-  return (cached ??= createMailer());
+  return (cached ??= refusePlaceholderAddresses(createMailer()));
+}
+
+/**
+ * Hosts who signed up by phone have a placeholder email on the reserved .invalid domain until they add one. Mail to it
+ * fails as not retryable, so the outbox marks it failed instead of sending it and collecting a bounce.
+ */
+export function refusePlaceholderAddresses(inner: Mailer): Mailer {
+  return {
+    send: (mail) => (/@phone\.invalid$/i.test(mail.to.trim())
+      ? Promise.reject(new MailError("No email address on file (phone sign-up)", false))
+      : inner.send(mail)),
+  };
 }

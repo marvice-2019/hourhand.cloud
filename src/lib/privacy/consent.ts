@@ -10,7 +10,8 @@ import type { CustomQuestion, InviteeAnswer } from "../data/types";
 export const PRIVACY_NOTICE_VERSION = "2026-11-15";
 
 export type ConsentPurpose = "booking" | "whatsapp_updates" | "sms_updates" | "host_question";
-export type ConsentChannel = "booking_page" | "single_use_link" | "package_link";
+/** host_on_behalf: the host (or their Duo second person) booked for the client from the dashboard; the client saw nothing. */
+export type ConsentChannel = "booking_page" | "single_use_link" | "package_link" | "host_on_behalf";
 
 /** One line of the log as the booking supplies it; the store adds the booking, client and time. */
 export interface ConsentInput {
@@ -40,11 +41,20 @@ export const CHANNEL_LABELS: Record<ConsentChannel, string> = {
   booking_page: "Booking page",
   single_use_link: "Single-use link",
   package_link: "Package link",
+  host_on_behalf: "Booked by you for them",
 };
 
 /** The booking purpose: the guest's details go to the host to arrange and run this booking (DPDP s.7(a) legitimate use). */
 export function bookingStatement(hostName: string): string {
   return `My name, email, phone (if given) and answers go to ${hostName || "the host"} to arrange and run this booking, as described in the Hourhand privacy notice.`;
+}
+
+/**
+ * The booking purpose when the host booked for the client. The client was shown nothing, so this records the host's act,
+ * not the client's agreement; the booking still rests on DPDP s.7(a) legitimate use.
+ */
+export function onBehalfStatement(hostName: string): string {
+  return `Booked by ${hostName || "the host"} on the client's behalf. The client's name, email, phone (if given) and answers are used to arrange and run this booking, as described in the Hourhand privacy notice. The client did not see or tick anything.`;
 }
 
 /**
@@ -65,6 +75,13 @@ export function consentFor(opts: {
 }): ConsentInput[] {
   const noticeVersion = opts.noticeVersion ?? PRIVACY_NOTICE_VERSION;
   const base = { noticeVersion, channel: opts.channel };
+  if (opts.channel === "host_on_behalf") {
+    // Nobody can agree for the client: no WhatsApp or SMS opt-in, and each consent question is logged as not given.
+    return [
+      { ...base, purpose: "booking", granted: true, statement: onBehalfStatement(opts.hostName) },
+      ...opts.questions.filter((x) => x.kind === "consent").map((q) => ({ ...base, purpose: "host_question" as const, granted: false, statement: q.label.slice(0, 2000) })),
+    ];
+  }
   const lines: ConsentInput[] = [{ ...base, purpose: "booking", granted: true, statement: bookingStatement(opts.hostName) }];
   if (opts.whatsappOptIn) lines.push({ ...base, purpose: "whatsapp_updates", granted: true, statement: opts.whatsappStatement });
   if (opts.smsOptIn && opts.smsStatement) lines.push({ ...base, purpose: "sms_updates", granted: true, statement: opts.smsStatement });

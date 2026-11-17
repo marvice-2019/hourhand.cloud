@@ -187,6 +187,8 @@ export interface BookingRequest {
   whatsappOptIn: boolean;
   /** Texts (SMS) to `phone`: only with the guest's own tick, and only for an Indian mobile. */
   smsOptIn: boolean;
+  /** Asked for by the host's "book for them": honoured only for a signed-in actor on this host's account. */
+  onBehalf: boolean;
 }
 
 export type Validation = { ok: true; value: BookingRequest } | { ok: false; fields: Record<string, string> };
@@ -218,6 +220,8 @@ export function validateBookingRequest(input: unknown): Validation {
   const whatsappOptIn = body.whatsappOptIn === true;
   if (whatsappOptIn && !fields.phone && !waNumber(phone)) fields.phone = "For WhatsApp updates, enter your number with country code, like +91 98765 43210.";
   const smsOptIn = body.smsOptIn === true;
+  // The host booking for a client from their dashboard. Only a request; the route checks who is signed in.
+  const onBehalf = body.onBehalf === true;
   if (smsOptIn && !fields.phone && !smsNumber(phone)) fields.smsOptIn = "Text updates go to Indian mobile numbers only, like +91 98765 43210.";
   const weeks = body.weeks === undefined ? 1 : body.weeks;
   if (!Number.isInteger(weeks) || (weeks as number) < 1 || (weeks as number) > 12) fields.weeks = "Pick 1 to 12 weeks.";
@@ -258,7 +262,7 @@ export function validateBookingRequest(input: unknown): Validation {
   if (Object.keys(fields).length > 0 || !start) return { ok: false, fields };
   return {
     ok: true,
-    value: { slug: str("slug"), event: str("event"), linkToken: linkToken || null, start, name, email, timezone: body.timezone as string, phone: phone || null, answers, idempotencyKey, weeks: weeks as number, packageToken: packageToken || null, durationMinutes: duration as number | null, guests, locale: isLocale(body.locale) ? body.locale : "en", whatsappOptIn, smsOptIn },
+    value: { slug: str("slug"), event: str("event"), linkToken: linkToken || null, start, name, email, timezone: body.timezone as string, phone: phone || null, answers, idempotencyKey, weeks: weeks as number, packageToken: packageToken || null, durationMinutes: duration as number | null, guests, locale: isLocale(body.locale) ? body.locale : "en", whatsappOptIn, smsOptIn, onBehalf },
   };
 }
 
@@ -309,13 +313,19 @@ function report(reporter: FunnelReporter | undefined, step: FunnelStep): void {
  * POST /api/bookings. With `limit`, new bookings are rate limited per client address (see clientIp) and per guest
  * email; the route always passes it, unit tests of the booking rules leave it out. A priced event also needs `payments`:
  * its booking is held as pending_payment and the response carries what Razorpay Checkout needs.
+ *
+ * `actor` is the account the signed-in person works on (their own, or the owner's for a Duo second person), checked by
+ * the route from the session. A request marked onBehalf is refused unless that account is this booking's host.
  */
 export async function handleCreateBooking(
   store: DataStore, input: unknown, now: Date, limit?: { clientKey: string; limiter: Limiter }, payments?: PaymentDeps | null, funnel?: FunnelReporter,
+  actor?: { hostId: string } | null,
 ): Promise<HandlerResult> {
   const v = validateBookingRequest(input);
   if (!v.ok) return { status: 400, body: { error: "invalid_request", fields: v.fields } };
-  const req = v.value;
+  const parsed = v.value;
+  // Booked by the host for the client: the client ticked nothing, so no WhatsApp or SMS opt-in can be set for them.
+  const req = parsed.onBehalf ? { ...parsed, whatsappOptIn: false, smsOptIn: false } : parsed;
 
   const found = await resolveTarget(store, req.slug, req.event, req.linkToken, now, req.idempotencyKey);
   if (isResult(found)) return found;
@@ -324,6 +334,12 @@ export async function handleCreateBooking(
   const minutes = resolveDuration(found.eventType, req.durationMinutes);
   if (minutes === null) return { status: 400, body: { error: "invalid_request", fields: { duration: "Pick one of the offered lengths." } } };
   const eventType = withDuration(found.eventType, minutes);
+  if (req.onBehalf) {
+    if (!actor || actor.hostId !== host.id) return { status: 403, body: { error: "not_your_booking_page" } };
+    // The host would be the one paying at checkout. Paid sessions go to the client as a link instead.
+    if (!req.packageToken && (eventType.priceMinor !== null || eventType.depositMinor !== null)) return { status: 409, body: { error: "on_behalf_paid" } };
+    if (found.linkToken) return { status: 400, body: { error: "invalid_request", fields: { linkToken: "Book for a client from your own booking page, not a single-use link." } } };
+  }
   if (req.packageToken && found.linkToken) return { status: 400, body: { error: "invalid_request", fields: { packageToken: "Use your package link or the single-use link, not both." } } };
   // A package buyer may book their sessions weekly (up to what's left, checked in the write); otherwise the host's setting
   // rules. A priced series is paid in one go for every week; a deposit holds one booking at a time.
@@ -361,14 +377,19 @@ export async function handleCreateBooking(
   // cheaply whether an email has booked with this host before.
   const questions = await store.listCustomQuestions(host.id, eventType.id);
   const firstBooking = isFirstBooking(hostBookings, req.email, req.idempotencyKey);
-  const precheck = resolveAnswers(questions, req.answers, { firstBooking: null });
+  // The host can't agree for the client: when booking for them, consent questions are neither required nor answered
+  // (any answer sent for one is dropped), and they are logged as not given (consentFor, host_on_behalf).
+  const consentIds = new Set(questions.filter((q) => q.kind === "consent").map((q) => q.id));
+  const intakeQuestions = req.onBehalf ? questions.filter((q) => !consentIds.has(q.id)) : questions;
+  const given = req.onBehalf ? Object.fromEntries(Object.entries(req.answers).filter(([id]) => !consentIds.has(id))) : req.answers;
+  const precheck = resolveAnswers(intakeQuestions, given, { firstBooking: null });
   if (!precheck.ok) return { status: 400, body: { error: "invalid_request", fields: precheck.fields } };
-  const intake = resolveAnswers(questions, req.answers, { firstBooking });
+  const intake = resolveAnswers(intakeQuestions, given, { firstBooking });
   const intakeRefusal: HandlerResult | null = intake.ok ? null : { status: 400, body: { error: "invalid_request", fields: intake.fields } };
 
   // Only checked answers to questions actually asked are stored and logged; a hidden tick box isn't logged as declined.
   const answers = intake.ok ? intake.answers : [];
-  const asked = askedQuestionIds(questions.map(toIntakeQuestion), req.answers, firstBooking);
+  const asked = askedQuestionIds(questions.map(toIntakeQuestion), given, firstBooking);
   const askedQuestions = questions.filter((q) => asked.has(q.id));
   const bookingInput = {
     eventTypeId: eventType.id, startAt: req.start, idempotencyKey: req.idempotencyKey, ...(req.weeks > 1 ? { weeks: req.weeks } : {}),
@@ -381,7 +402,7 @@ export async function handleCreateBooking(
       answers,
       // What the guest agreed to, recorded with the booking (the consent log on the client's record).
       consent: consentFor({
-        hostName: host.name, channel: found.linkToken ? "single_use_link" : req.packageToken ? "package_link" : "booking_page",
+        hostName: host.name, channel: req.onBehalf ? "host_on_behalf" : found.linkToken ? "single_use_link" : req.packageToken ? "package_link" : "booking_page",
         whatsappOptIn: req.whatsappOptIn && req.phone !== null, whatsappStatement: t(isLocale(req.locale) ? req.locale : "en", "whatsappOptIn"),
         smsOptIn: req.smsOptIn && req.phone !== null, smsStatement: t(isLocale(req.locale) ? req.locale : "en", "smsOptIn"), questions: askedQuestions, answers,
       }),

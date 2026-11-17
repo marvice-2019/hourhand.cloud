@@ -3,6 +3,7 @@ import type { HandlerResult } from "../booking";
 import { LIMITS, type Plan } from "../billing/plans";
 import { isNamedError } from "../data/types";
 import type { HostRazorpayAuth } from "../payments/host-razorpay";
+import { parseOfferInput, type OfferRefusedError } from "../offers/offers";
 import { BOOKING_LIMITS, type createRateLimiter } from "../rate-limit";
 import { cancelMembership, publicMembershipPlan, startMembership, type MembershipProviderError } from "./memberships";
 import type { MembershipProvider } from "./provider";
@@ -21,7 +22,10 @@ export interface MembershipDeps {
 /** Whether the host's Hourhand plan includes memberships (Solo and Duo; not Free). */
 export const membershipsAllowed = (plan: Plan) => LIMITS[plan].memberships;
 
-/** POST /api/memberships/[planId]/join with { name, email, phone?, idempotencyKey }: a membership and its subscription. */
+/**
+ * POST /api/memberships/[planId]/join with { name, email, phone?, idempotencyKey, couponCode? }: a membership and its
+ * subscription. A code or campaign takes money off the first month only.
+ */
 export async function handleJoin(deps: MembershipDeps | null, planId: string, input: unknown, limit?: { clientKey: string; limiter: Limiter }): Promise<HandlerResult> {
   const body = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
   const str = (k: string) => (typeof body[k] === "string" ? (body[k] as string).trim() : "");
@@ -37,17 +41,20 @@ export async function handleJoin(deps: MembershipDeps | null, planId: string, in
   const found = await publicMembershipPlan(deps.pool, planId);
   if (!found) return { status: 404, body: { error: "not_found" } };
   // New members need the host on a plan that includes memberships, and their payment account connected.
-  const auth = membershipsAllowed(await deps.planFor(found.host.id)) ? await deps.authFor(found.host.id) : null;
+  const hostPlan = await deps.planFor(found.host.id);
+  const auth = membershipsAllowed(hostPlan) ? await deps.authFor(found.host.id) : null;
   if (!auth) return { status: 409, body: { error: "payments_unavailable" } };
   if (limit && (!limit.limiter.take(`join-ip:${limit.clientKey}`, BOOKING_LIMITS.perIp) || !limit.limiter.take(`join-email:${email.toLowerCase()}`, BOOKING_LIMITS.perEmail))) {
     return { status: 429, body: { error: "too_many_requests" } };
   }
   try {
-    const r = await startMembership({ pool: deps.pool, provider: deps.providerFor(auth) }, { planId, name, email, phone: phone || null, idempotencyKey });
+    const offers = { plan: hostPlan, couponCode: parseOfferInput(input).couponCode, now: new Date(), ...(limit ? { limit } : {}) };
+    const r = await startMembership({ pool: deps.pool, provider: deps.providerFor(auth) }, { planId, name, email, phone: phone || null, idempotencyKey }, offers);
     return { status: 200, body: r };
   } catch (err) {
     if (isNamedError(err, "NotFoundError")) return { status: 404, body: { error: "not_found" } };
     if (isNamedError<MembershipProviderError>(err, "MembershipProviderError")) return { status: 502, body: { error: "payment_unavailable" } };
+    if (isNamedError<OfferRefusedError>(err, "OfferRefusedError")) return { status: err.status, body: err.body };
     throw err;
   }
 }

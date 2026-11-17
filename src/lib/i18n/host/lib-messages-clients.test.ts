@@ -8,7 +8,7 @@ const PURPOSE_KEYS: Record<ConsentPurpose, HostKey> = {
   booking: "clients.purposeBooking", whatsapp_updates: "clients.purposeWhatsapp", sms_updates: "clients.purposeSms", host_question: "clients.purposeHostQuestion",
 };
 const CHANNEL_KEYS: Record<ConsentChannel, HostKey> = {
-  booking_page: "clients.channelBookingPage", single_use_link: "clients.channelSingleUseLink", package_link: "clients.channelPackageLink",
+  booking_page: "clients.channelBookingPage", single_use_link: "clients.channelSingleUseLink", package_link: "clients.channelPackageLink", host_on_behalf: "clients.channelHostOnBehalf",
 };
 
 describe("consent log labels", () => {
