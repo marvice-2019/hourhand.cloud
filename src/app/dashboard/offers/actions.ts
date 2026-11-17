@@ -64,7 +64,7 @@ export async function createCouponAction(_prev: OfferFormState, form: FormData):
   if ("error" in ctx) return { status: "error", errors: { form: ctx.error } };
   const v = validateCouponForm({
     code: field(form, "code"), kind: field(form, "kind"), value: field(form, "value"), expiresOn: field(form, "expiresOn"), maxUses: field(form, "maxUses"),
-    maxUsesPerEmail: field(form, "maxUsesPerEmail"), eventTypeIds: list(form, "eventTypeIds"), packageIds: list(form, "packageIds"),
+    maxUsesPerEmail: field(form, "maxUsesPerEmail"), eventTypeIds: list(form, "eventTypeIds"), packageIds: list(form, "packageIds"), membershipPlanIds: list(form, "membershipPlanIds"),
   }, dayKey(new Date(), ctx.user.timezone));
   if (!v.ok) return { status: "error", errors: inHostLanguage(t, v.errors) };
   try {
@@ -84,7 +84,7 @@ export async function createCampaignAction(_prev: OfferFormState, form: FormData
   if ("error" in ctx) return { status: "error", errors: { form: ctx.error } };
   const v = validateCampaignForm({
     name: field(form, "name"), banner: field(form, "banner"), kind: field(form, "kind"), value: field(form, "value"), startsOn: field(form, "startsOn"),
-    endsOn: field(form, "endsOn"), eventTypeIds: list(form, "eventTypeIds"), packageIds: list(form, "packageIds"),
+    endsOn: field(form, "endsOn"), eventTypeIds: list(form, "eventTypeIds"), packageIds: list(form, "packageIds"), membershipPlanIds: list(form, "membershipPlanIds"),
   }, dayKey(new Date(), ctx.user.timezone));
   if (!v.ok) return { status: "error", errors: inHostLanguage(t, v.errors) };
   try {

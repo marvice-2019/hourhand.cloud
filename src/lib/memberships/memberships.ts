@@ -1,10 +1,12 @@
 import type pg from "pg";
+import type { Plan } from "../billing/plans";
 import { BillingApiError } from "../billing/providers";
 import { NotFoundError } from "../data/types";
 import { parsePrice, PRICE_INVALID } from "../event-types";
 import { invoiceForMembershipGrant } from "../gst/invoices";
 import { fillTemplate } from "../i18n/host/lib-messages";
 import { kickJobs } from "../jobs/kick";
+import { OfferRefusedError, resolvePrice, type AppliedOffer, type ResolvePriceInput } from "../offers/offers";
 import { PackageUnavailableError } from "../packages/packages";
 import { TOTAL_MONTHS, type MembershipEvent, type MembershipProvider, type MembershipStatus } from "./provider";
 
@@ -17,6 +19,7 @@ type Db = Pick<pg.Pool, "query">;
 type Client = Pick<pg.PoolClient, "query">;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const MEMBERSHIP_TOKEN = /^m[0-9a-f]{48}$/;
+const addMonth = (d: Date) => { const n = new Date(d); n.setUTCMonth(n.getUTCMonth() + 1); return n; };
 
 /** A member's link token, which rides in the booking API's packageToken field (package tokens are 48 hex digits). */
 export const isMembershipToken = (token: string) => MEMBERSHIP_TOKEN.test(token);
@@ -251,28 +254,46 @@ export async function memberSessions(db: Db, membershipId: string): Promise<{ id
 
 export interface JoinCheckout { provider: string; publicKey: string; subscriptionId: string; shortUrl: string | null }
 
+/** An offer on joining: the code typed, the host's Hourhand plan (offers need Solo or Duo), and the coupon rate limit. */
+export interface JoinOffers { plan: Plan; couponCode: string | null; now: Date; limit?: ResolvePriceInput["limit"] }
+
 /**
  * Starts a membership: a row here and a subscription on the host's account. The same request key returns the same
  * membership and subscription, so a retry never makes a second mandate. Nothing is granted until a charge is verified.
+ *
+ * With an offer (a code or a campaign), only the first month is discounted: the subscription's first plan charge is
+ * moved a month out and the client pays the discounted month once, upfront, when they approve the mandate. Renewals
+ * are at the plan's price. The first-session discount and pay-what-you-can don't apply to memberships.
  */
 export async function startMembership(
   deps: { pool: pg.Pool; provider: MembershipProvider },
   input: { planId: string; name: string; email: string; phone: string | null; idempotencyKey: string },
-): Promise<{ token: string; status: MembershipStatus; checkout: JoinCheckout | null }> {
+  offers?: JoinOffers,
+): Promise<{ token: string; status: MembershipStatus; checkout: JoinCheckout | null; offer: AppliedOffer | null }> {
   const { pool, provider } = deps;
   const found = await publicMembershipPlan(pool, input.planId);
   if (!found) throw new NotFoundError("Membership plan");
   const { plan } = found;
+  const priced = offers ? await resolvePrice(pool, {
+    hostId: plan.userId, plan: offers.plan, item: { kind: "membership", id: plan.id, listMinor: plan.priceMinor, currency: "INR" },
+    email: input.email, couponCode: offers.couponCode, payMinor: null, idempotencyKey: input.idempotencyKey, now: offers.now, limit: offers.limit, reserve: true,
+  }) : null;
+  if (priced && !priced.ok) throw new OfferRefusedError(priced.status, priced.body);
+  const offer = priced?.offer && priced.offer.discountMinor > 0 ? priced.offer : null;
+  // Whole seconds, as Razorpay's start_at is, so month one ends exactly when the first plan charge falls.
+  const firstPeriodEnd = offer ? new Date(Math.floor(addMonth(offers!.now).getTime() / 1000) * 1000) : null;
   const { rows: [row] } = await pool.query(
-    `insert into memberships (plan_id, host_id, sessions, price_minor, rollover, rollover_cap, guest_name, guest_email, guest_phone, idempotency_key, provider)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `insert into memberships (plan_id, host_id, sessions, price_minor, rollover, rollover_cap, guest_name, guest_email, guest_phone, idempotency_key, provider,
+       first_charge_minor, first_period_end)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      on conflict (idempotency_key) do update set updated_at = memberships.updated_at
-     returning id, plan_id, token, status, provider_subscription_id, short_url`,
-    [plan.id, plan.userId, plan.sessions, plan.priceMinor, plan.rollover, plan.rolloverCap, input.name, input.email, input.phone, input.idempotencyKey, provider.name]);
+     returning id, plan_id, token, status, provider_subscription_id, short_url, first_charge_minor, first_period_end`,
+    [plan.id, plan.userId, plan.sessions, plan.priceMinor, plan.rollover, plan.rolloverCap, input.name, input.email, input.phone, input.idempotencyKey, provider.name,
+      offer?.chargeMinor ?? null, firstPeriodEnd]);
   if (row.plan_id !== plan.id) throw new NotFoundError("Membership plan"); // the same key for another plan is a mistake, not a retry
   const checkout = (subscriptionId: string, shortUrl: string | null): JoinCheckout => ({ provider: provider.name, publicKey: provider.publicKey, subscriptionId, shortUrl });
-  if (row.status !== "created") return { token: row.token, status: row.status, checkout: null };
-  if (row.provider_subscription_id) return { token: row.token, status: row.status, checkout: checkout(row.provider_subscription_id, row.short_url) };
+  if (row.status !== "created") return { token: row.token, status: row.status, checkout: null, offer };
+  if (row.provider_subscription_id) return { token: row.token, status: row.status, checkout: checkout(row.provider_subscription_id, row.short_url), offer };
 
   // Locked while the subscription is made, so a concurrent repeat waits and then reuses it.
   const made = await inTx(pool, async (client) => {
@@ -280,14 +301,20 @@ export async function startMembership(
     if (locked.provider_subscription_id) return { id: locked.provider_subscription_id as string, shortUrl: locked.short_url as string | null };
     let sub;
     try {
-      sub = await provider.createSubscription({ planId: plan.providerPlanId, totalCount: TOTAL_MONTHS, notes: { membership_id: row.id, hourhand_host: plan.userId } });
+      // The row's own first month (a repeat keeps what the first request stored), never the browser's.
+      const firstMonth = row.first_charge_minor !== null
+        ? { startAt: new Date(row.first_period_end), amountMinor: row.first_charge_minor as number, currency: "INR", label: `${plan.name}: first month${offer ? ` (${offer.label})` : ""}` }
+        : undefined;
+      sub = await provider.createSubscription({
+        planId: plan.providerPlanId, totalCount: TOTAL_MONTHS, notes: { membership_id: row.id, hourhand_host: plan.userId }, ...(firstMonth ? { firstMonth } : {}),
+      });
     } catch (error) {
       throw providerError("Membership could not start", error);
     }
     await client.query("update memberships set provider_subscription_id = $2, short_url = $3, updated_at = now() where id = $1", [row.id, sub.id, sub.shortUrl]);
     return { id: sub.id, shortUrl: sub.shortUrl };
   });
-  return { token: row.token, status: "created", checkout: checkout(made.id, made.shortUrl) };
+  return { token: row.token, status: "created", checkout: checkout(made.id, made.shortUrl), offer };
 }
 
 // ---------- Bookings ----------
@@ -356,8 +383,6 @@ async function queueMail(client: Client, m: { id: string; host_id: string; guest
   }
 }
 
-const addMonth = (d: Date) => { const n = new Date(d); n.setUTCMonth(n.getUTCMonth() + 1); return n; };
-
 export type EventOutcome = "granted" | "already_granted" | "updated" | "ignored" | "rejected";
 
 /**
@@ -378,17 +403,35 @@ export async function applyMembershipEvent(client: Client, hostId: string, e: Me
     await client.query(`update memberships set status = $2, status_event_at = $3, updated_at = $4${extra} where id = $1`, [m.id, status, e.createdAt, now, ...params]);
   };
 
-  switch (e.type) {
+  // A discounted first month, paid upfront and not yet credited. It is told apart by its amount: renewals are at the
+  // plan's price, and the offer always takes something off.
+  const hasGrant = async () => Number((await client.query("select count(*)::int as n from membership_grants where membership_id = $1", [m.id])).rows[0].n) > 0;
+  const upfront = m.first_charge_minor !== null && e.payment?.amount === m.first_charge_minor && m.first_charge_minor !== m.price_minor && !(await hasGrant());
+
+  // Razorpay doesn't document which webhook carries the upfront payment, so any event that brings it captured credits
+  // month one: invoice.paid, subscription.charged, or the authenticated/activated event. The payment id stops a second grant.
+  const creditsUpfront = upfront && e.payment?.status === "captured" && ["invoice_paid", "authenticated", "activated"].includes(e.type);
+  const type = creditsUpfront ? "charged" : e.type;
+
+  switch (type) {
+    case "invoice_paid":
+      // Renewals are credited from subscription.charged, which carries the billing cycle; their invoices are ignored.
+      return "ignored";
     case "charged": {
       const p = e.payment;
+      // Already credited from another event (the upfront month can arrive in more than one).
+      if (p && (await client.query("select 1 from membership_grants where provider_payment_id = $1", [p.id])).rowCount) return "already_granted";
       // The amount comes from our own row: a payment of any other amount or currency never buys credits.
-      if (!p || p.status !== "captured" || p.amount !== m.price_minor || p.currency !== m.currency) {
+      if (!p || p.status !== "captured" || (p.amount !== m.price_minor && !upfront) || p.currency !== m.currency) {
         await client.query("update memberships set last_error = $2, updated_at = $3 where id = $1",
           [m.id, `Charge not credited: ${p ? `${p.status} ${p.amount} ${p.currency}` : "no payment in the event"}`.slice(0, 500), now]);
         return "rejected";
       }
-      const periodStart = e.currentStart ?? now;
-      const periodEnd = e.currentEnd && e.currentEnd > periodStart ? e.currentEnd : addMonth(periodStart);
+      // The upfront month runs from payment to the first plan charge; a renewal's period is the provider's billing cycle.
+      const periodStart = upfront ? now : e.currentStart ?? now;
+      const periodEnd = upfront
+        ? (new Date(m.first_period_end) > now ? new Date(m.first_period_end) : addMonth(now))
+        : e.currentEnd && e.currentEnd > periodStart ? e.currentEnd : addMonth(periodStart);
       const { rows: [g] } = await client.query(
         `insert into membership_grants (membership_id, host_id, provider_payment_id, amount_minor, period_start, period_end, credits, expires_at, granted_at)
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9) on conflict (provider_payment_id) do nothing returning id`,
@@ -399,7 +442,8 @@ export async function applyMembershipEvent(client: Client, hostId: string, e: Me
       await client.query(
         `update memberships set paid_through = greatest(coalesce(paid_through, $2), $2), current_period_start = $3, current_period_end = $2,
            last_error = null, updated_at = $4 where id = $1`, [m.id, periodEnd, periodStart, now]);
-      await setStatus(e.status ?? "active");
+      // Before the first plan charge the subscription is still "authenticated"; an invoice event carries no status at all.
+      await setStatus(e.status ?? (upfront ? null : "active"));
       await invoiceForMembershipGrant(client, g.id, now);
       await queueMail(client, m, first ? "joined" : "renewed", g.id, now, first ? ["guest", "host"] : ["guest"]);
       return "granted";

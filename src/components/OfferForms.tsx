@@ -37,10 +37,10 @@ function DiscountFields({ prefix, errors, kind = "percent", value = "" }: { pref
   );
 }
 
-/** Which paid event types and packages an offer is for; none ticked means all of them. */
-function ItemPicker({ prefix, eventTypes, packages }: { prefix: string; eventTypes: Item[]; packages: Item[] }) {
+/** Which paid event types, packages and membership plans an offer is for; none ticked means all of them. */
+function ItemPicker({ prefix, eventTypes, packages, plans }: { prefix: string; eventTypes: Item[]; packages: Item[]; plans: Item[] }) {
   const { t } = useHostI18n();
-  if (eventTypes.length + packages.length === 0) return null;
+  if (eventTypes.length + packages.length + plans.length === 0) return null;
   return (
     <fieldset>
       <legend className="text-sm font-semibold text-text">{t("offers.forLegend")}</legend>
@@ -51,12 +51,15 @@ function ItemPicker({ prefix, eventTypes, packages }: { prefix: string; eventTyp
         {packages.map((p) => (
           <label key={p.id} className="flex min-h-11 items-center gap-2 text-text"><input type="checkbox" name="packageIds" value={p.id} id={`${prefix}-p-${p.id}`} className="size-5 accent-accent" />{t("offers.packageName", { name: p.name })}</label>
         ))}
+        {plans.map((m) => (
+          <label key={m.id} className="flex min-h-11 items-center gap-2 text-text"><input type="checkbox" name="membershipPlanIds" value={m.id} id={`${prefix}-m-${m.id}`} className="size-5 accent-accent" />{t("offers.membershipName", { name: m.name })}</label>
+        ))}
       </div>
     </fieldset>
   );
 }
 
-export function CouponForm({ eventTypes, packages }: { eventTypes: Item[]; packages: Item[] }) {
+export function CouponForm({ eventTypes, packages, plans }: { eventTypes: Item[]; packages: Item[]; plans: Item[] }) {
   const [state, action, pending] = useActionState(createCouponAction, idle);
   const errors = state.status === "error" ? state.errors : {};
   const { t } = useHostI18n();
@@ -70,14 +73,14 @@ export function CouponForm({ eventTypes, packages }: { eventTypes: Item[]; packa
         <div><Label htmlFor="cp-max">{t("offers.totalUses")}</Label><Input id="cp-max" name="maxUses" inputMode="numeric" placeholder="50" error={errors.maxUses} /></div>
         <div><Label htmlFor="cp-per">{t("offers.usesPerClient")}</Label><Input id="cp-per" name="maxUsesPerEmail" inputMode="numeric" placeholder="1" error={errors.maxUsesPerEmail} /></div>
       </div>
-      <ItemPicker prefix="cp" eventTypes={eventTypes} packages={packages} />
+      <ItemPicker prefix="cp" eventTypes={eventTypes} packages={packages} plans={plans} />
       <Outcome state={state} />
       <div><Button type="submit" loading={pending}>{t("offers.createCode")}</Button></div>
     </form>
   );
 }
 
-export function CampaignForm({ eventTypes, packages, today }: { eventTypes: Item[]; packages: Item[]; today: string }) {
+export function CampaignForm({ eventTypes, packages, plans, today }: { eventTypes: Item[]; packages: Item[]; plans: Item[]; today: string }) {
   const [state, action, pending] = useActionState(createCampaignAction, idle);
   const errors = state.status === "error" ? state.errors : {};
   const { t } = useHostI18n();
@@ -90,7 +93,7 @@ export function CampaignForm({ eventTypes, packages, today }: { eventTypes: Item
         <div><Label htmlFor="cm-start">{t("offers.firstDay")}</Label><Input id="cm-start" name="startsOn" type="date" min={today} defaultValue={today} error={errors.startsOn} /></div>
         <div><Label htmlFor="cm-end">{t("offers.lastDay")}</Label><Input id="cm-end" name="endsOn" type="date" min={today} error={errors.endsOn} /></div>
       </div>
-      <ItemPicker prefix="cm" eventTypes={eventTypes} packages={packages} />
+      <ItemPicker prefix="cm" eventTypes={eventTypes} packages={packages} plans={plans} />
       <Outcome state={state} />
       <div><Button type="submit" loading={pending}>{t("offers.scheduleCampaign")}</Button></div>
     </form>

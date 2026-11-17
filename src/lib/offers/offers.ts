@@ -4,12 +4,12 @@ import { LIMITS, type Plan } from "../billing/plans";
 import { COUPON_LIMITS, type createRateLimiter } from "../rate-limit";
 import {
   appliesTo, campaignLive, CODE_PATTERN, FIXED_CURRENCY, normaliseCode, pickBest, slidingCharge, usableIn,
-  type AdjustmentKind, type Candidate, type Discount, type SlidingScale,
+  type AdjustmentKind, type Candidate, type Discount, type ItemKind, type SlidingScale,
 } from "./pricing";
 
-// Offers on paid event types and packages: coupon codes, a first-session discount, sliding-scale prices and dated
-// campaigns. resolvePrice is the one entry point the payment code calls, at the single place each charge is worked out
-// (handleCreateBooking for a booking, startPurchase for a package). Everything here trusts the browser for two things
+// Offers on paid event types, packages and memberships: coupon codes, a first-session discount, sliding-scale prices and
+// dated campaigns. resolvePrice is the one entry point the payment code calls, at the single place each charge is worked
+// out (handleCreateBooking for a booking, startPurchase for a package, startMembership for a membership's first month). Everything here trusts the browser for two things
 // only, the code typed and the sliding-scale amount picked, and checks both.
 
 type Db = Pick<pg.Pool, "query">;
@@ -21,12 +21,15 @@ const MIN = 60_000;
 const UNLINKED_HOLD_MS = 2 * MIN;
 /** A package checkout has no hold of its own; its coupon use is held this long while it is pending. */
 const PACKAGE_HOLD_MS = 20 * MIN;
+/** A membership's mandate takes longer to approve (card e-mandate or UPI Autopay), so its first-month use is held longer. */
+const MEMBERSHIP_HOLD_MS = 30 * MIN;
+const holdFor = (kind: ItemKind) => (kind === "package" ? PACKAGE_HOLD_MS : kind === "membership" ? MEMBERSHIP_HOLD_MS : UNLINKED_HOLD_MS);
 
 /**
  * What is being priced. `currency` is the price's ISO code, INR when left out. Rupee amounts (fixed codes, campaigns,
  * first-session discounts, sliding scales) apply only to INR prices; percent offers apply in any currency.
  */
-export type PriceItem = { kind: "event_type" | "package"; id: string; listMinor: number; currency?: string };
+export type PriceItem = { kind: ItemKind; id: string; listMinor: number; currency?: string };
 const currencyOf = (item: PriceItem) => (item.currency ?? FIXED_CURRENCY).toUpperCase();
 
 /** The adjustment a booking or purchase got, as the guest, the confirmation and the invoice explain it. */
@@ -80,17 +83,20 @@ const refuse = (status: 400 | 429, error: string, fields?: Record<string, string
 /** The order behind an application: the booking (event types) or purchase (packages) made with the same key. */
 const BOOKING = "select 1 from bookings b where a.item_kind = 'event_type' and b.host_id = a.host_id and b.idempotency_key = a.idempotency_key";
 const PURCHASE = "select 1 from package_purchases pp where a.item_kind = 'package' and pp.host_id = a.host_id and pp.idempotency_key = a.idempotency_key";
+const MEMBERSHIP = "select 1 from memberships m where a.item_kind = 'membership' and m.host_id = a.host_id and m.idempotency_key = a.idempotency_key";
 
 /** Used: the payment went through (a late payment on a booking the system had released is refunded, so it isn't). */
 const USED = `(exists (select 1 from bookings b join payments p on p.booking_id = b.id
     where a.item_kind = 'event_type' and b.host_id = a.host_id and b.idempotency_key = a.idempotency_key
       and p.kind = 'payment' and p.paid_at is not null and b.cancelled_by is distinct from 'system')
-  or exists (${PURCHASE} and pp.status = 'paid'))`;
+  or exists (${PURCHASE} and pp.status = 'paid')
+  or exists (${MEMBERSHIP} and exists (select 1 from membership_grants g where g.membership_id = m.id)))`;
 
 /** Reserved at $NOW: checkout under way, or the order not made yet. A lapsed hold or failed payment releases it. */
 const reservedAt = (now: string) => `(exists (${BOOKING} and b.status = 'pending_payment' and b.hold_expires_at > ${now})
   or exists (${PURCHASE} and pp.status = 'pending' and a.reserved_until > ${now})
-  or (a.reserved_until > ${now} and not exists (${BOOKING}) and not exists (${PURCHASE})))`;
+  or exists (${MEMBERSHIP} and m.status in ('created', 'authenticated') and a.reserved_until > ${now})
+  or (a.reserved_until > ${now} and not exists (${BOOKING}) and not exists (${PURCHASE}) and not exists (${MEMBERSHIP})))`;
 
 const liveAt = (now: string) => `(${USED} or ${reservedAt(now)})`;
 
@@ -111,13 +117,17 @@ export async function couponUses(db: Db, couponId: string, now: Date, email = ""
   return { used: r.used, reserved: r.reserved, byEmail: r.by_email };
 }
 
-interface CouponRow { id: string; code: string; discount_kind: Discount["kind"]; discount_value: number; expires_at: Date | null; max_uses: number | null; max_uses_per_email: number | null; event_type_ids: string[]; package_ids: string[] }
+interface CouponRow {
+  id: string; code: string; discount_kind: Discount["kind"]; discount_value: number; expires_at: Date | null; max_uses: number | null;
+  max_uses_per_email: number | null; event_type_ids: string[]; package_ids: string[]; membership_plan_ids: string[];
+}
+const COUPON_COLS = "id, code, discount_kind, discount_value, expires_at, max_uses, max_uses_per_email, event_type_ids, package_ids, membership_plan_ids";
 
 /** Whether a coupon can be used by this email on this item right now (uses counted inside the caller's transaction). */
 async function couponUsable(db: Db, c: CouponRow, item: PriceItem, email: string, now: Date): Promise<boolean> {
   if (c.expires_at && c.expires_at.getTime() <= now.getTime()) return false;
   if (!usableIn({ kind: c.discount_kind, value: c.discount_value }, currencyOf(item))) return false;
-  if (!appliesTo({ eventTypeIds: c.event_type_ids, packageIds: c.package_ids }, item)) return false;
+  if (!appliesTo({ eventTypeIds: c.event_type_ids, packageIds: c.package_ids, membershipPlanIds: c.membership_plan_ids }, item)) return false;
   if (c.max_uses === null && c.max_uses_per_email === null) return true;
   const uses = await couponUses(db, c.id, now, email);
   if (c.max_uses !== null && uses.used + uses.reserved >= c.max_uses) return false;
@@ -141,13 +151,15 @@ const hostTimezone = async (db: Db, hostId: string): Promise<string> =>
   ((await db.query("select timezone from users where id = $1", [hostId])).rows[0]?.timezone as string | undefined) ?? "Asia/Kolkata";
 
 export interface Campaign {
-  id: string; name: string; banner: string; discount: Discount; startsOn: string; endsOn: string; eventTypeIds: string[]; packageIds: string[]; active: boolean;
+  id: string; name: string; banner: string; discount: Discount; startsOn: string; endsOn: string; eventTypeIds: string[]; packageIds: string[];
+  membershipPlanIds: string[]; active: boolean;
 }
 
-const CAMPAIGN = "id, name, banner, discount_kind, discount_value, to_char(starts_on, 'YYYY-MM-DD') as starts_on, to_char(ends_on, 'YYYY-MM-DD') as ends_on, event_type_ids, package_ids, active";
+const CAMPAIGN = "id, name, banner, discount_kind, discount_value, to_char(starts_on, 'YYYY-MM-DD') as starts_on, to_char(ends_on, 'YYYY-MM-DD') as ends_on, event_type_ids, package_ids, membership_plan_ids, active";
 const toCampaign = (r: Record<string, unknown>): Campaign => ({
   id: r.id as string, name: r.name as string, banner: r.banner as string, discount: { kind: r.discount_kind as Discount["kind"], value: r.discount_value as number },
-  startsOn: r.starts_on as string, endsOn: r.ends_on as string, eventTypeIds: r.event_type_ids as string[], packageIds: r.package_ids as string[], active: r.active as boolean,
+  startsOn: r.starts_on as string, endsOn: r.ends_on as string, eventTypeIds: r.event_type_ids as string[], packageIds: r.package_ids as string[],
+  membershipPlanIds: r.membership_plan_ids as string[], active: r.active as boolean,
 });
 
 /** The host's campaigns on today (in their time zone), best first for `item` when given. */
@@ -220,9 +232,8 @@ export async function resolvePrice(pool: pg.Pool, input: ResolvePriceInput): Pro
     // A repeat of the same request: the price it got the first time, whatever has changed since.
     const { rows: [again] } = await pool.query(`${APPLIED} where a.host_id = $1 and a.idempotency_key = $2`, [hostId, idempotencyKey]);
     if (again) return { ok: true, listMinor: again.list_minor, chargeMinor: again.charge_minor, offer: appliedFrom(again) };
-    const { rows: [made] } = await pool.query(
-      item.kind === "event_type" ? "select 1 from bookings where host_id = $1 and idempotency_key = $2" : "select 1 from package_purchases where host_id = $1 and idempotency_key = $2",
-      [hostId, idempotencyKey]);
+    const table = item.kind === "event_type" ? "bookings" : item.kind === "package" ? "package_purchases" : "memberships";
+    const { rows: [made] } = await pool.query(`select 1 from ${table} where host_id = $1 and idempotency_key = $2`, [hostId, idempotencyKey]);
     if (made) return list;
   }
 
@@ -253,8 +264,7 @@ export async function resolvePrice(pool: pg.Pool, input: ResolvePriceInput): Pro
   let coupon: CouponRow | null = null;
   if (code) {
     const { rows: [c] } = await pool.query(
-      `select id, code, discount_kind, discount_value, expires_at, max_uses, max_uses_per_email, event_type_ids, package_ids
-       from offer_coupons where user_id = $1 and code = $2 and active`, [hostId, code]);
+      `select ${COUPON_COLS} from offer_coupons where user_id = $1 and code = $2 and active`, [hostId, code]);
     if (!c || !(await couponUsable(pool, c, item, email, now))) return refuse(400, "coupon_invalid", { couponCode: COUPON_INVALID });
     coupon = c;
     candidates.push({ kind: "coupon", label: `Code ${c.code}`, code: c.code, couponId: c.id, discount: { kind: c.discount_kind, value: c.discount_value } });
@@ -288,8 +298,7 @@ async function record(
   return inTx(pool, async (client) => {
     if (extra.coupon) {
       const { rows: [c] } = await client.query(
-        `select id, code, discount_kind, discount_value, expires_at, max_uses, max_uses_per_email, event_type_ids, package_ids
-         from offer_coupons where id = $1 and active for update`, [extra.coupon.id]);
+        `select ${COUPON_COLS} from offer_coupons where id = $1 and active for update`, [extra.coupon.id]);
       if (!c || !(await couponUsable(client, c, item, email, now))) return refuse(400, "coupon_invalid", { couponCode: COUPON_INVALID }) as Extract<ResolvedPrice, { ok: false }>;
     }
     if (offer.kind === "first_session") {
@@ -297,7 +306,7 @@ async function record(
       // Someone else got there first: no adjustment after all, rather than a second first session.
       if (!(await firstSessionEligible(client, hostId, email, idempotencyKey, now))) return { ok: true as const, offer: null };
     }
-    const holdMs = item.kind === "package" ? PACKAGE_HOLD_MS : UNLINKED_HOLD_MS;
+    const holdMs = holdFor(item.kind);
     const { rows: [inserted] } = await client.query(
       `insert into offer_applications (host_id, idempotency_key, item_kind, item_id, kind, coupon_id, campaign_id, email, label, list_minor, discount_minor, charge_minor, reserved_until)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -315,6 +324,13 @@ export async function offerForBooking(db: Db, bookingId: string): Promise<Applie
   if (!UUID.test(bookingId)) return null;
   const { rows: [r] } = await db.query(
     `${APPLIED} join bookings b on b.host_id = a.host_id and b.idempotency_key = a.idempotency_key where b.id = $1 and a.item_kind = 'event_type'`, [bookingId]);
+  return r ? appliedFrom(r) : null;
+}
+
+export async function offerForMembership(db: Db, membershipId: string): Promise<AppliedOffer | null> {
+  if (!UUID.test(membershipId)) return null;
+  const { rows: [r] } = await db.query(
+    `${APPLIED} join memberships m on m.host_id = a.host_id and m.idempotency_key = a.idempotency_key where m.id = $1 and a.item_kind = 'membership'`, [membershipId]);
   return r ? appliedFrom(r) : null;
 }
 
@@ -347,7 +363,8 @@ export async function pagePricing(db: Db, hostId: string, plan: Plan, item: Pric
   const { rows: [{ coupons }] } = await db.query(
     `select exists (select 1 from offer_coupons where user_id = $1 and active and (expires_at is null or expires_at > $2)
        and ($5 = 'INR' or discount_kind = 'percent')
-       and ((event_type_ids = '{}' and package_ids = '{}') or $3::uuid = any(case when $4 = 'event_type' then event_type_ids else package_ids end))) as coupons`,
+       and ((event_type_ids = '{}' and package_ids = '{}' and membership_plan_ids = '{}')
+         or $3::uuid = any(case $4 when 'event_type' then event_type_ids when 'package' then package_ids else membership_plan_ids end))) as coupons`,
     [hostId, now, item.id, item.kind, currency]);
   const first = item.kind === "event_type" ? await firstSessionOffer(db, hostId) : null;
   return {

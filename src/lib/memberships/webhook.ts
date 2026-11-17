@@ -17,6 +17,8 @@ const aad = (userId: string) => `membership-webhook:${userId}`;
 export const WEBHOOK_EVENTS = [
   "subscription.authenticated", "subscription.activated", "subscription.charged", "subscription.pending",
   "subscription.halted", "subscription.cancelled", "subscription.completed", "subscription.paused", "subscription.resumed",
+  // A discounted first month is paid upfront when the client authenticates; its paid invoice is how that payment arrives.
+  "invoice.paid",
 ] as const;
 
 export const webhookPath = (hostId: string) => `/api/webhooks/memberships/${hostId}`;
