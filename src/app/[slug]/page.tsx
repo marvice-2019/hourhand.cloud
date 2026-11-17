@@ -21,6 +21,11 @@ import { carryQuery } from "@/lib/analytics/source";
 import { CampaignBanner } from "@/components/CampaignBanner";
 import { hostPlan } from "@/lib/billing/account";
 import { campaignBanner } from "@/lib/offers/offers";
+import { PracticePage } from "@/components/clinic/PracticePage";
+import { practicePage } from "@/lib/clinic/page";
+
+/** A Clinic practice's page, when the slug is a practice's rather than a host's. Read once per request. */
+const loadPractice = cache(async (slug: string) => (authEnabled() ? practicePage(getPool(process.env.DATABASE_URL as string), slug) : null));
 
 /** Read once per request; the metadata and the page both need it. */
 const load = cache(async (slug: string) => {
@@ -34,7 +39,12 @@ type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ lang?:
 
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const found = await load((await params).slug);
-  if (!found) return {};
+  if (!found) {
+    const practice = await loadPractice((await params).slug);
+    if (!practice) return {};
+    const description = practice.practice.about?.slice(0, 160) ?? `Book a session with ${practice.practice.name}.`;
+    return { title: practice.practice.name, description, openGraph: { title: practice.practice.name, description } };
+  }
   const { host, profile } = found;
   const locale = resolveLocale((await searchParams).lang, host.locale);
   const description = profile?.headline || profile?.bio ? undefined : t(locale, "metaDescription", { name: host.name });
@@ -46,7 +56,11 @@ export default async function ProfilePage({ params, searchParams }: Props) {
   const query = await searchParams;
   const { lang } = query;
   const found = await load(slug);
-  if (!found) notFound();
+  if (!found) {
+    const practice = await loadPractice(slug);
+    if (!practice) notFound();
+    return <PracticePage data={practice} baseUrl={(resolveBaseUrl() ?? "").replace(/\/+$/, "")} locale={resolveLocale(lang, "en")} />;
+  }
   const { host, profile } = found;
   const locale = resolveLocale(lang, host.locale);
   // Where this visit came from travels on to the event page, which otherwise would only see our own page as referrer.

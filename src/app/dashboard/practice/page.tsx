@@ -9,7 +9,11 @@ import { listMembers, pendingPracticeInvite, practiceContext, practitionerCount,
 import { allowed } from "@/lib/clinic/roles";
 import { getPool } from "@/lib/data/pg-store";
 import { seatFor } from "@/lib/seats";
-import { acceptPracticeAction, changeMemberAction, createPracticeAction, inviteMemberAction, leavePracticeAction, removeMemberAction, updatePracticeAction } from "./actions";
+import { listServices, myServiceLinks } from "@/lib/clinic/services";
+import {
+  acceptPracticeAction, changeMemberAction, createPracticeAction, createServiceAction, deleteServiceAction, inviteMemberAction, leavePracticeAction,
+  linkEventTypeAction, removeMemberAction, updatePracticeAction, updateServiceAction,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +96,10 @@ export default async function PracticePage({ searchParams }: { searchParams: Pro
   }
 
   const { practice, role, live } = ctx;
-  const [members, count, limit] = await Promise.all([listMembers(db, user.id), practitionerCount(db, practice.id), practitionerLimit(db, practice.id)]);
+  const [members, count, limit, services, links] = await Promise.all([
+    listMembers(db, user.id), practitionerCount(db, practice.id), practitionerLimit(db, practice.id), listServices(db, practice.id), myServiceLinks(db, user.id)]);
+  const me = members.find((m) => m.userId === user.id);
+  const field = `mt-1 block h-11 w-full rounded-md border border-border-input bg-card px-3 text-base text-text ${focusRing}`;
   const manage = allowed(role, "members.manage");
   const roleLabel = (r: string) => (r === "owner" ? "Owner" : r === "admin" ? "Admin" : "Practitioner");
   return (
@@ -164,6 +171,60 @@ export default async function PracticePage({ searchParams }: { searchParams: Pro
             </div>
             <div><Button type="submit">Send invitation</Button></div>
           </form>
+        )}
+      </Card>
+
+      <Card className="mt-6 max-w-3xl">
+        <h2 className="font-semibold text-text">Services</h2>
+        <p className="mt-1 text-sm text-text-muted">
+          The practice page lists each service with the practitioners who offer it. Clients waiting for a full day join one waitlist per service
+          and hear about a freed time with any of those practitioners.
+        </p>
+        <ul className="mt-4 divide-y divide-border">
+          {services.map((s) => (
+            <li key={s.id} className="py-3">
+              {allowed(role, "practice.edit") ? (
+                <div className="flex flex-wrap items-end gap-2">
+                  <form action={updateServiceAction} className="flex flex-1 flex-wrap items-end gap-2">
+                    <input type="hidden" name="serviceId" value={s.id} />
+                    <div className="min-w-48 flex-1"><Label htmlFor={`s-${s.id}`}>Name</Label><Input id={`s-${s.id}`} name="name" defaultValue={s.name} required maxLength={120} /></div>
+                    <div className="min-w-48 flex-1"><Label htmlFor={`sd-${s.id}`}>Description</Label><Input id={`sd-${s.id}`} name="description" defaultValue={s.description ?? ""} maxLength={1000} /></div>
+                    <Button type="submit" variant="secondary" size="sm">Save</Button>
+                  </form>
+                  <form action={deleteServiceAction}><input type="hidden" name="serviceId" value={s.id} /><Button type="submit" variant="ghost" size="sm">Delete</Button></form>
+                </div>
+              ) : <p className="text-text">{s.name}</p>}
+            </li>
+          ))}
+        </ul>
+        {allowed(role, "practice.edit") && (
+          <form action={createServiceAction} className="mt-4 flex flex-wrap items-end gap-2">
+            <div className="min-w-48 flex-1"><Label htmlFor="new-service">New service</Label><Input id="new-service" name="name" required maxLength={120} placeholder="Individual therapy" /></div>
+            <div className="min-w-48 flex-1"><Label htmlFor="new-service-d">Description (optional)</Label><Input id="new-service-d" name="description" maxLength={1000} /></div>
+            <Button type="submit">Add</Button>
+          </form>
+        )}
+        {me?.practises && services.length > 0 && links.length > 0 && (
+          <div className="mt-6">
+            <h3 className="font-semibold text-text">Your event types on the practice page</h3>
+            <ul className="mt-2 grid gap-2">
+              {links.map((l) => (
+                <li key={l.eventTypeId}>
+                  <form action={linkEventTypeAction} className="flex flex-wrap items-end gap-2">
+                    <input type="hidden" name="eventTypeId" value={l.eventTypeId} />
+                    <div className="min-w-48 flex-1">
+                      <Label htmlFor={`l-${l.eventTypeId}`}>{l.name}</Label>
+                      <select id={`l-${l.eventTypeId}`} name="serviceId" defaultValue={l.serviceId ?? ""} className={field}>
+                        <option value="">Not under a service</option>
+                        {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <Button type="submit" variant="secondary" size="sm">Save</Button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </Card>
 

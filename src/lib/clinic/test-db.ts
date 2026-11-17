@@ -35,8 +35,8 @@ export async function plan(pool: pg.Pool, userId: string, p: string, status = "a
 }
 
 export async function eventType(pool: pg.Pool, userId: string, name: string, slug: string, extra: { price?: number } = {}): Promise<string> {
-  return (await pool.query("insert into event_types (user_id, name, slug, duration_minutes, price_minor) values ($1, $2, $3, 60, $4) returning id",
-    [userId, name, slug, extra.price ?? null])).rows[0].id;
+  return (await pool.query("insert into event_types (user_id, name, slug, duration_minutes, price_minor, currency) values ($1, $2, $3, 60, $4, $5) returning id",
+    [userId, name, slug, extra.price ?? null, extra.price ? "INR" : null])).rows[0].id;
 }
 
 export async function booking(pool: pg.Pool, hostId: string, eventTypeId: string, start: Date, guest: { name: string; email: string; answers?: unknown[] }): Promise<string> {
