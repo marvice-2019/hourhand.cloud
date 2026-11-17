@@ -13,6 +13,7 @@ import type { HostI18n } from "@/lib/i18n/host/format";
 import { getHostI18n } from "@/lib/i18n/host/server";
 import { hostAddonPriceLine, hostPriceLine } from "@/lib/i18n/host/price";
 import { SeatForm } from "@/components/SeatForm";
+import { ClinicPlanCard } from "@/components/clinic/ClinicPlanCard";
 import { seatFor } from "@/lib/seats";
 import { SmsUsageMeter } from "@/components/SmsUsageMeter";
 import { smsConfig } from "@/lib/sms/config";
@@ -152,6 +153,8 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
           <SeatForm seat={seat} />
         </Card>
       )}
+
+      {live && <ClinicPlanCard userId={user.id} sub={sub} error={params.clinic_error} done={params.clinic_done} />}
 
       {!holding && (
         <>

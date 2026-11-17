@@ -40,6 +40,11 @@ export interface BillingProvider {
   cancelAtPeriodEnd(id: string): Promise<void>;
   pause(id: string): Promise<void>;
   resume(id: string): Promise<void>;
+  /**
+   * Moves a live subscription to another plan now (Clinic: another practitioner count, or Solo/Duo to Clinic).
+   * Razorpay refuses this for UPI AutoPay and eMandate subscriptions; the caller tells the host what to do instead.
+   */
+  changePlan?(id: string, priceId: string): Promise<void>;
   /** The provider's own billing page (card, invoices, plan switch), where it has one. */
   portalUrl?(customerId: string, returnUrl: string): Promise<string>;
 }
@@ -103,6 +108,9 @@ export function razorpayProvider(opts: { keyId: string; keySecret: string; baseU
     async cancelAtPeriodEnd(id) { await call("POST", `/subscriptions/${encodeURIComponent(id)}/cancel`, { cancel_at_cycle_end: true }); },
     async pause(id) { await call("POST", `/subscriptions/${encodeURIComponent(id)}/pause`, { pause_at: "now" }); },
     async resume(id) { await call("POST", `/subscriptions/${encodeURIComponent(id)}/resume`, { resume_at: "now" }); },
+    async changePlan(id, priceId) {
+      await call("PATCH", `/subscriptions/${encodeURIComponent(id)}`, { plan_id: priceId, quantity: 1, schedule_change_at: "now", customer_notify: true });
+    },
   };
 }
 

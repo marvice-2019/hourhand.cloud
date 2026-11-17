@@ -17,6 +17,7 @@ import { whatsappOffered } from "@/lib/whatsapp-offer";
 import { smsOffered } from "@/lib/sms/offer";
 import { razorpayStatus } from "@/lib/payments/host-razorpay";
 import { toIntakeQuestion } from "@/lib/intake/conditions";
+import { paymentAccountFor } from "@/lib/clinic/payments";
 import { countPageView } from "@/lib/analytics/page-view";
 import { pagePricing } from "@/lib/offers/offers";
 import { discountText } from "@/lib/offers/labels";
@@ -58,7 +59,7 @@ export default async function PublicEventPage({ params, searchParams }: { params
   // Packages need Postgres, a paid plan and the host's Razorpay; offered only when a buyer could actually pay.
   const pool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
   const plan = pool ? await hostPlan(pool, host.id) : "free";
-  const canSell = pool ? plan !== "free" && (await razorpayStatus(pool, host.id)) !== null : false;
+  const canSell = pool ? plan !== "free" && (await razorpayStatus(pool, await paymentAccountFor(pool, host.id))) !== null : false;
   const packages = pool && canSell ? await packagesForEventType(pool, host.id, eventType.id) : [];
   // Offers on the price (never a deposit): today's campaign, a sliding scale, a code box, the first-session line.
   // Prices saved before the currency was recorded are rupees. pagePricing checks the plan; Razorpay or Stripe is the

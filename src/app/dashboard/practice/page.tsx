@@ -111,7 +111,8 @@ export default async function PracticePage({ searchParams }: { searchParams: Pro
       </p>
       {message}
       {allowed(role, "bookings.view_all") && (
-        <p className="mt-4"><Link className={`font-semibold text-accent underline ${focusRing}`} href="/dashboard/practice/bookings">See every practitioner&apos;s bookings</Link></p>
+        <p className="mt-4"><Link className={`font-semibold text-accent underline ${focusRing}`} href="/dashboard/practice/bookings">See every practitioner&apos;s bookings</Link>
+          {" · "}<Link className={`font-semibold text-accent underline ${focusRing}`} href="/dashboard/practice/invoices">Practice invoices</Link></p>
       )}
 
       <Card className="mt-6 max-w-3xl">

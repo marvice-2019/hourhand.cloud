@@ -4,6 +4,7 @@ import { effectivePlan, LIMITS, PROVIDER_FOR, providerPriceId, type BillingInter
 import { BillingApiError } from "./providers";
 import { syncSubscription } from "./sync";
 import { referralAccessPlan } from "../referrals/rewards";
+import { inLivePractice } from "../clinic/payments";
 
 // What a host can do with their plan. Every change goes to the provider first, then Hourhand re-reads the
 // subscription from it: the plan row only ever holds what the provider confirmed.
@@ -39,6 +40,8 @@ export async function hostPlan(db: Db, userId: string): Promise<Plan> {
   const s = await getHostSubscription(db, userId);
   const own = effectivePlan(s && s.plan !== "free" ? { plan: s.plan, status: s.status } : null);
   if (own !== "free") return own;
+  // A practitioner or admin in a live Clinic practice gets Clinic on their own account, paid by the practice's owner.
+  if (await inLivePractice(db, userId)) return "clinic";
   // The second person on someone's Duo plan gets Duo too, while that plan is paid (the owner's own subscription only).
   const { rows: [seat] } = await db.query(
     `select o.plan, o.status from seats s join users u on u.id = s.owner_id join subscriptions o on o.user_id = s.owner_id

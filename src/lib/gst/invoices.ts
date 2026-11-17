@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { paymentAccountFor } from "../clinic/payments";
 import { financialYear, GST_STATES, invoiceNumber, isValidGstin, placeOfSupply, splitInclusive, GST_RATES_BP } from "./gst";
 import { offerForBooking, offerForMembership, offerForPurchase, type AppliedOffer } from "../offers/offers";
 
@@ -72,7 +73,11 @@ async function nextSeq(db: Db, hostId: string, series: "invoice" | "credit_note"
   return r.last as number;
 }
 
-interface Sale { hostId: string; totalMinor: number; buyerName: string; buyerEmail: string; description: string; paymentId?: string; purchaseId?: string; membershipGrantId?: string; offer?: AppliedOffer | null }
+interface Sale {
+  hostId: string; totalMinor: number; buyerName: string; buyerEmail: string; description: string; paymentId?: string; purchaseId?: string; membershipGrantId?: string; offer?: AppliedOffer | null;
+  /** Clinic: the practice owner whose account collected the money. The invoice is theirs: their GSTIN, their one series. */
+  issuer?: { id: string; practitionerName: string };
+}
 
 /**
  * A discount given at the time of supply and shown on the invoice is left out of the value GST is charged on (CGST Act
@@ -87,7 +92,10 @@ export function discountLine(offer: AppliedOffer | null | undefined, totalMinor:
   return discountMinor > 0 ? { grossMinor, discountMinor, label: offer.label } : null;
 }
 
-async function issue(db: Db, sale: Sale, now: Date): Promise<string | null> {
+async function issue(db: Db, input: Sale, now: Date): Promise<string | null> {
+  const sale = input.issuer && input.issuer.id !== input.hostId
+    ? { ...input, hostId: input.issuer.id, description: `${input.description}, with ${input.issuer.practitionerName}` }
+    : input;
   const profile = await getTaxProfile(db, sale.hostId);
   if (!profile) return null;
   const fy = financialYear(now);
@@ -144,14 +152,15 @@ function creditDiscount(v: { total_minor: number; gross_minor: number | null; di
 /** A tax invoice for a captured booking payment (not a deposit). At most one per payment. */
 export async function invoiceForPayment(db: Db, paymentId: string, now: Date): Promise<string | null> {
   const { rows: [p] } = await db.query(
-    `select p.host_id, p.booking_id, p.amount_minor, p.kind, p.sessions, p.currency, i.name, i.email, e.name as event_name, b.start_at, b.end_at,
+    `select p.host_id, p.booking_id, coalesce(p.collected_by, p.host_id) as issuer_id, h.name as host_name, p.amount_minor, p.kind, p.sessions, p.currency, i.name, i.email, e.name as event_name, b.start_at, b.end_at,
        exists (select 1 from invoices v where v.payment_id = p.id and v.kind = 'invoice') as done
      from payments p join bookings b on b.id = p.booking_id join invitees i on i.booking_id = b.id join event_types e on e.id = b.event_type_id
+       join users h on h.id = p.host_id
      where p.id = $1`, [paymentId]);
   // Indian GST invoices are for rupee payments (Razorpay). Stripe sends its own receipts for other currencies.
   if (!p || p.kind !== "payment" || p.done || p.currency !== "INR") return null;
   return issue(db, {
-    hostId: p.host_id, totalMinor: p.amount_minor, buyerName: p.name, buyerEmail: p.email, paymentId, offer: seriesOffer(await offerForBooking(db, p.booking_id), p.sessions),
+    hostId: p.host_id, totalMinor: p.amount_minor, buyerName: p.name, buyerEmail: p.email, paymentId, issuer: { id: p.issuer_id, practitionerName: p.host_name }, offer: seriesOffer(await offerForBooking(db, p.booking_id), p.sessions),
     description: bookingLine({ eventName: p.event_name, minutes: Math.round((new Date(p.end_at).getTime() - new Date(p.start_at).getTime()) / 60_000), startAt: new Date(p.start_at), sessions: p.sessions, amountMinor: p.amount_minor }),
   }, now);
 }
@@ -159,12 +168,14 @@ export async function invoiceForPayment(db: Db, paymentId: string, now: Date): P
 /** A tax invoice for a paid session package. At most one per purchase. */
 export async function invoiceForPurchase(db: Db, purchaseId: string, now: Date): Promise<string | null> {
   const { rows: [p] } = await db.query(
-    `select p.host_id, p.price_minor, p.currency, p.guest_name, p.guest_email, p.sessions, k.name as package_name, e.name as event_name,
+    `select p.host_id, p.collected_by, h.name as host_name, p.price_minor, p.currency, p.guest_name, p.guest_email, p.sessions, k.name as package_name, e.name as event_name,
        exists (select 1 from invoices v where v.package_purchase_id = p.id and v.kind = 'invoice') as done
-     from package_purchases p join packages k on k.id = p.package_id join event_types e on e.id = p.event_type_id where p.id = $1`, [purchaseId]);
+     from package_purchases p join packages k on k.id = p.package_id join event_types e on e.id = p.event_type_id join users h on h.id = p.host_id
+     where p.id = $1`, [purchaseId]);
   if (!p || p.done || p.currency !== "INR") return null;
   return issue(db, {
     hostId: p.host_id, totalMinor: p.price_minor, buyerName: p.guest_name, buyerEmail: p.guest_email, purchaseId, offer: await offerForPurchase(db, purchaseId),
+    issuer: { id: p.collected_by ?? await paymentAccountFor(db, p.host_id), practitionerName: p.host_name },
     description: `${p.package_name}: ${p.sessions} × ${p.event_name}`,
   }, now);
 }
