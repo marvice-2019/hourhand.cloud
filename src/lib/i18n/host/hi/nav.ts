@@ -24,6 +24,7 @@ export const nav: Record<keyof typeof en, string> = {
   "nav.practiceInvited": "{name} ने आपको Hourhand पर अपनी प्रैक्टिस में बुलाया है।",
   "nav.practiceSeeInvite": "न्योता देखें",
   "nav.plan": "प्लान",
+  "nav.referrals": "रेफ़रल",
   "nav.settings": "सेटिंग्स",
   "nav.main": "मुख्य मेन्यू",
   "nav.menu": "मेन्यू",
