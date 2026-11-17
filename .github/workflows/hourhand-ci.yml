@@ -14,9 +14,9 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: hourhand-ci-${{ github.ref }}
-  cancel-in-progress: true
+# A newer push to the same branch cancels the older run's tests (i18n, check), but never a deploy that has
+# started: the deploy job has its own queue below. A run-wide cancel here used to stop deploys half way, and with
+# several merges a minute nothing on main ever finished.
 
 jobs:
   # Every guest text catalog has every language (src/lib/i18n/catalogs.test.ts finds the catalogs on its own). Its own
@@ -25,6 +25,9 @@ jobs:
   i18n:
     name: i18n catalogs
     runs-on: ubuntu-latest
+    concurrency:
+      group: hourhand-i18n-${{ github.ref }}
+      cancel-in-progress: true
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +43,9 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    concurrency:
+      group: hourhand-check-${{ github.ref }}
+      cancel-in-progress: true
     services:
       postgres:
         image: postgres:16
@@ -83,9 +89,11 @@ jobs:
           path: e2e/.out/
           retention-days: 7
 
-  # Production deploy: only after `check` and `i18n` pass on a push to main. Coolify's own git auto-deploy
-  # never fired (PR #8 needed a manual Redeploy), so CI triggers it through Coolify's API instead
-  # and waits for the result, so a failed deploy turns this run red.
+  # Production deploy: only after `check` and `i18n` pass on a push to main. This is the only way code goes
+  # live: Coolify's own git auto-deploy is off (it was found on and turned off on 2026-11-17, after it shipped
+  # commits whose checks hadn't run). CI triggers Coolify through its API and waits for the result, so a failed
+  # deploy turns this run red. Deploys queue one at a time (hourhand-deploy) and are never cancelled once
+  # started; if several are waiting, only the newest runs.
   # Needs two secrets in the GitHub Environment "Production": COOLIFY_WEBHOOK (the app's Deploy
   # Webhook URL, from its Webhooks tab in Coolify) and COOLIFY_TOKEN (a Coolify API token with
   # deploy permission). Environment secrets reach a job only when it names that environment.
@@ -101,7 +109,21 @@ jobs:
       group: hourhand-deploy
       cancel-in-progress: false
     steps:
+      # Coolify's deploy webhook builds whatever main points to when it fetches, not a given commit. So deploy only
+      # while main is still this run's commit: if it has moved on, the newer commit's own run deploys it after its
+      # checks, and this one stops here instead of shipping code nobody has tested.
+      - name: Main is still this run's commit
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          now=$(curl -fsS --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/commits/main" | jq -r '.sha')
+          if [ "$now" = "${{ github.sha }}" ]; then echo "current=true" >> "$GITHUB_OUTPUT"
+          else echo "current=false" >> "$GITHUB_OUTPUT"; echo "::notice::main is now $now, not ${{ github.sha }}; its own run deploys it."; fi
       - name: Deploy through Coolify
+        if: steps.head.outputs.current == 'true'
         env:
           COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
@@ -130,10 +152,15 @@ jobs:
           done
           echo "::error::Coolify deployment $id did not finish within 20 minutes"; exit 1
       - name: Check the live site
+        if: steps.head.outputs.current == 'true'
         run: |
           set -euo pipefail
           for p in / /coaches /sign-in /api/health; do
             code=$(curl -sS -o /dev/null -w '%{http_code}' --retry 5 --retry-all-errors --retry-delay 5 "https://hourhand.cloud$p")
             echo "$p $code"; [ "$code" = 200 ] || { echo "::error::$p returned $code"; exit 1; }
           done
-          curl -fsS https://hourhand.cloud/api/health
+          # The live server must be exactly the commit this run checked (main can move between the check above and
+          # Coolify's fetch; if it did, say so loudly rather than pass).
+          live=$(curl -fsS https://hourhand.cloud/api/health | jq -r '.commit')
+          echo "live commit: $live"
+          [ "$live" = "${{ github.sha }}" ] || { echo "::error::Live commit is $live, not the checked ${{ github.sha }}: main moved during the deploy. The newer commit's own run will deploy it once its checks pass."; exit 1; }
