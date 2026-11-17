@@ -216,7 +216,8 @@ describe.skipIf(!BASE)("follow-ups (TEST_DATABASE_URL)", () => {
   describe("one-click unsubscribe (RFC 8058)", () => {
     const call = async (method: "POST" | "GET", token: string) => {
       const { POST, GET } = await import("../../app/api/follow-ups/stop/[token]/route");
-      const req = new NextRequest(`${baseUrl}/api/follow-ups/stop/${token}`, method === "POST"
+      // The address the app sees behind Coolify's proxy, not the public one: a redirect must not be built from it.
+      const req = new NextRequest(`https://0.0.0.0:3000/api/follow-ups/stop/${token}`, method === "POST"
         ? { method, body: "List-Unsubscribe=One-Click", headers: { "content-type": "application/x-www-form-urlencoded" } } : { method });
       return (method === "POST" ? POST : GET)(req, { params: Promise.resolve({ token }) });
     };
@@ -234,7 +235,7 @@ describe.skipIf(!BASE)("follow-ups (TEST_DATABASE_URL)", () => {
       // A link scanner's GET changes nothing: it is sent to the page with the button.
       const get = await call("GET", token!);
       expect(get.status).toBe(303);
-      expect(get.headers.get("location")).toBe(`${baseUrl}/b/stop/${token}`);
+      expect(get.headers.get("location")).toBe(`/b/stop/${token}`);
       expect((await pool.query("select 1 from follow_up_opt_outs where host_id = $1", [priya.id])).rowCount).toBe(0);
       const post = await call("POST", token!);
       expect(post.status).toBe(200);
