@@ -56,7 +56,7 @@ describe("validateEventType", () => {
         name: "30-min strategy call", slug: "strategy", description: "Plan the next quarter.", durationMinutes: 30, minNoticeMinutes: 240,
         bookingWindowDays: 60, startIncrementMinutes: 15, bufferBeforeMinutes: 0, bufferAfterMinutes: 10, dailyLimit: null,
         cancelCutoffMinutes: 120, maxRepeats: 1, depositMinor: null, priceMinor: null, currency: null, location: { kind: "zoom", value: null }, hidden: false,
-        redirectUrl: null, weeklyLimit: null, cancelPolicy: null, seatLimit: null,
+        redirectUrl: null, weeklyLimit: null, cancelPolicy: null, seatLimit: null, durationOptions: [],
       },
     });
   });

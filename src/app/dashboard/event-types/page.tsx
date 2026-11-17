@@ -4,6 +4,7 @@ import { CopyLinkButton } from "@/components/CopyLinkButton";
 import { buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { focusRing } from "@/components/ui/focus";
+import { lengthsLabel, priceRange } from "@/lib/durations";
 import { store, type LocationKind } from "@/lib/data";
 import { getHostContext, requireHost } from "@/lib/auth/session";
 import type { HostKey } from "@/lib/i18n/host";
@@ -40,6 +41,7 @@ export default async function EventTypesPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {!acting && <Link href="/dashboard/event-types/import" className={buttonClasses({ variant: "secondary" })}>{t("eventTypes.importLink")}</Link>}
+          <Link href="/dashboard/event-types/templates" className={buttonClasses({ variant: "secondary" })}>{t("intake.templatesLink")}</Link>
           <Link href="/dashboard/event-types/new" className={buttonClasses()}>{t("eventTypes.new")}</Link>
         </div>
       </div>
@@ -64,7 +66,7 @@ export default async function EventTypesPage() {
                     </h2>
                     <ActiveSwitch id={et.id} name={et.name} active={et.active} />
                   </div>
-                  <p className="text-sm text-text-muted">{t("common.minutes", { n: et.durationMinutes })}{et.priceMinor !== null && ` · ${money(et.priceMinor, et.currency)}`} · {first ? t(locationLabel[first.kind]) : t("eventTypes.noLocation")}</p>
+                  <p className="text-sm text-text-muted">{t("common.minutes", { n: lengthsLabel(et) })}{et.priceMinor !== null && ` · ${priceRange(et, (m) => money(m, et.currency))}`} · {first ? t(locationLabel[first.kind]) : t("eventTypes.noLocation")}</p>
                   <div className="mt-auto flex items-center justify-between gap-3">
                     <span className="truncate font-mono text-xs text-text-muted">{path}</span>
                     <CopyLinkButton path={path} />

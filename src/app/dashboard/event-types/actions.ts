@@ -63,7 +63,8 @@ export async function saveEventType(id: string | null, form: EventTypeForm, ques
       : t(`eventTypes.err${e.code[0].toUpperCase()}${e.code.slice(1)}` as HostKey, e.vars);
     const errors: EventTypeErrors = {};
     if (!details.ok) for (const [field, e] of Object.entries(details.codes)) if (e) errors[field as keyof EventTypeErrors] = say(e);
-    const questionErrors: QuestionErrors = checked.ok ? [] : checked.codes.map((c) => ({ ...(c.label ? { label: say(c.label) } : {}), ...(c.choices ? { choices: say(c.choices) } : {}) }));
+    const questionErrors: QuestionErrors = checked.ok ? [] : checked.codes.map((c) => Object.fromEntries(
+      (["label", "choices", "condition", "range"] as const).filter((k) => c[k]).map((k) => [k, say(c[k]!)])));
     return { ok: false, errors, questionErrors };
   }
   const gate = await priceError(user.id, details.value.priceMinor);
