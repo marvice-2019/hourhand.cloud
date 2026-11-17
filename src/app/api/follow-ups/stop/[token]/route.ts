@@ -26,7 +26,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 }
 
 /** A person (or a scanner) opening the URL: the confirmation page, which changes nothing until its button is pressed. */
-export async function GET(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  return NextResponse.redirect(new URL(`/b/stop/${encodeURIComponent(decodeURIComponent(token))}`, request.url), 303);
+  // A relative Location: behind Coolify's proxy request.url is the container's own address (https://0.0.0.0:3000),
+  // so an absolute redirect built from it sends the guest nowhere. The browser resolves this against the address it used.
+  return new NextResponse(null, { status: 303, headers: { Location: `/b/stop/${encodeURIComponent(decodeURIComponent(token))}` } });
 }

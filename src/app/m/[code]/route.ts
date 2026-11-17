@@ -14,5 +14,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
   const token = process.env.DATABASE_URL ? await manageTokenForCode(getPool(process.env.DATABASE_URL), code) : null;
   if (!token) return new NextResponse("This link isn't valid.", { status: 404, headers: { "content-type": "text/plain" } });
-  return NextResponse.redirect(new URL(`/b/${token}`, request.url), 303);
+  // Relative, not built from request.url: behind the proxy that is the container's own address (https://0.0.0.0:3000).
+  return new NextResponse(null, { status: 303, headers: { Location: `/b/${encodeURIComponent(token)}` } });
 }
