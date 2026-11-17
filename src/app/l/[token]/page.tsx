@@ -4,6 +4,8 @@ import { BookingFooter } from "@/components/BookingFooter";
 import { formatAmount } from "@/lib/money";
 import { store } from "@/lib/data";
 import { whatsappOffered } from "@/lib/whatsapp-offer";
+import { guestDurations, lengthsLabel, priceRange } from "@/lib/durations";
+import { toIntakeQuestion } from "@/lib/intake/conditions";
 import { smsOffered } from "@/lib/sms/offer";
 
 export const dynamic = "force-dynamic";
@@ -33,18 +35,18 @@ export default async function LinkPage({ params }: { params: Promise<{ token: st
   const { host, eventType } = resolved;
   const questions = (await store.listCustomQuestions(host.id, eventType.id))
     .sort((a, b) => a.position - b.position)
-    .map(({ id, label, kind, required }) => ({ id, label, kind, required }));
+    .map(toIntakeQuestion);
   return (
     <main className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
       <p className="text-sm font-semibold text-text-muted">{host.name}</p>
       <h1 className="font-display text-xl text-text">{eventType.name}</h1>
       <p className="mt-2 text-text-muted">
-        {eventType.durationMinutes} min{eventType.priceMinor !== null && ` · ${formatAmount(eventType.priceMinor, eventType.currency)}`}
+        {lengthsLabel(eventType)} min{eventType.priceMinor !== null && ` · ${priceRange(eventType, (m) => formatAmount(m, eventType.currency))}`}
         {eventType.kind === "one_off" ? " · pick one of the times offered" : " · this link works for one booking"}
       </p>
       {eventType.description && <p className="mt-2 text-text">{eventType.description}</p>}
       <BookingFlow
-        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} linkToken={token} bookingWindowDays={eventType.bookingWindowDays} questions={questions} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)}
+        slug={host.slug} event={eventType.slug} host={{ name: host.name, timezone: host.timezone }} linkToken={token} durations={guestDurations(eventType, (m) => formatAmount(m, eventType.currency))} bookingWindowDays={eventType.bookingWindowDays} questions={questions} whatsapp={await whatsappOffered(host.id)} sms={await smsOffered(host.id)}
         paid={eventType.priceMinor !== null ? { price: formatAmount(eventType.priceMinor, eventType.currency), hostName: host.name, eventName: eventType.name }
           : eventType.depositMinor !== null ? { price: formatAmount(eventType.depositMinor, eventType.currency), hostName: host.name, eventName: eventType.name, deposit: true } : null}
       />

@@ -1,4 +1,5 @@
 import { freeSlots, slotTaken, type HandlerResult } from "./booking";
+import { bookedMinutes, withDuration } from "./durations";
 import { isNamedError, type BookingWithInvitee, type DataStore } from "./data/types";
 
 const MIN = 60_000;
@@ -65,8 +66,10 @@ async function moveBooking(store: DataStore, booking: BookingWithInvitee, input:
   // submit still gets its booking back.
   if (by === "host" && booking.startAt.getTime() <= now.getTime()) return { status: 409, body: { error: "not_upcoming" } };
 
-  const [host, eventType] = await Promise.all([store.getUser(booking.hostId), store.getEventType(booking.hostId, booking.eventTypeId)]);
-  if (!host || !eventType) return notFound;
+  const [host, savedType] = await Promise.all([store.getUser(booking.hostId), store.getEventType(booking.hostId, booking.eventTypeId)]);
+  if (!host || !savedType) return notFound;
+  // A move keeps the booking's own length, whichever the guest picked.
+  const eventType = withDuration(savedType, bookedMinutes(booking));
 
   // The new start must be one the engine offers right now, not counting the booking being moved.
   const offered = await freeSlots(store, host, eventType, start, new Date(start.getTime() + MIN), now, booking.id);

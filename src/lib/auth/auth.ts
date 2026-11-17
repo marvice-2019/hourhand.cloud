@@ -14,6 +14,7 @@ import {
   sendOtpWhatsApp, whatsappOtpConfig,
 } from "./phone";
 import { uniqueSlug } from "./slug";
+import { onSessionCreated, onUserCreated } from "@/lib/referrals/signup";
 
 /** Sign-in needs the database. In HOURHAND_DATA=memory (the default for local work) there is no auth instance. */
 export function authEnabled(): boolean {
@@ -91,6 +92,17 @@ export function resolveBaseUrl(env: Record<string, string | undefined> = process
   const url = env.BETTER_AUTH_URL;
   if (!url && env.NODE_ENV === "production") throw new Error("BETTER_AUTH_URL must be set in production (the public https URL of the app)");
   return url;
+}
+
+/** The public booking pages' host name (e.g. hourhand.cloud), for link previews in the dashboard. */
+export function bookingHostName(env: Record<string, string | undefined> = process.env): string {
+  try {
+    const base = resolveBaseUrl(env);
+    if (base) return new URL(base).host;
+  } catch {
+    // a malformed BETTER_AUTH_URL falls through to the default
+  }
+  return "hourhand.cloud";
 }
 
 /**
@@ -175,11 +187,14 @@ function createAuth() {
           before: async (user, ctx) => {
             if (refuseUnverifiedSignUp(user, ctx)) return false;
             const slug = await uniqueSlug(user.email, slugSource(user), async (candidate) => {
-              const { rowCount } = await pool.query("select 1 from users where slug = $1", [candidate]);
+              // A practice page (Clinic plan) holds its slug too: hosts and practices share the top-level path.
+              const { rowCount } = await pool.query("select 1 from users where slug = $1 union all select 1 from practices where slug = $1", [candidate]);
               return (rowCount ?? 0) > 0;
             });
             return { data: { ...user, slug } };
           },
+          // Referrals: credit the link this browser came in through (after the account exists).
+          after: async (user, ctx) => onUserCreated(pool, user, ctx),
         },
       },
       session: {
@@ -189,6 +204,7 @@ function createAuth() {
             const { rows } = await pool.query("select deleted_at from users where id = $1", [session.userId]);
             return rows[0] && rows[0].deleted_at === null ? { data: session } : false;
           },
+          after: async (session, ctx) => onSessionCreated(pool, session.userId, ctx),
         },
       },
     },

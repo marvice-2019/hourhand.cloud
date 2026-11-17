@@ -17,6 +17,7 @@ import { signOut } from "@/lib/auth/actions";
 import { Button } from "@/components/ui/Button";
 import { HostI18nProvider } from "@/components/HostI18nProvider";
 import { getHostI18n } from "@/lib/i18n/host/server";
+import { pendingPracticeInvite } from "@/lib/clinic/practices";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   await connection(); // render per request: the sync light shows minutes since the last check
@@ -26,7 +27,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { t, tNodes, locale } = await getHostI18n();
   const sync = summarizeSync(await store.listCalendarConnections(user.id), new Date());
   const db = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
-  const [invite, owner] = db && !acting ? await Promise.all([pendingInvite(db, actor), seatOwner(db, actor.id)]) : [null, null];
+  const [invite, owner, practiceInvite] = db && !acting ? await Promise.all([pendingInvite(db, actor), seatOwner(db, actor.id), pendingPracticeInvite(db, actor)]) : [null, null, null];
   const brand = (
     <Link href="/dashboard/event-types" className={`inline-flex min-h-11 items-center rounded-sm font-display text-lg text-text ${focusRing}`}>
       Hourhand
@@ -86,6 +87,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <form action={acceptSeatAction}><Button type="submit" size="sm">{t("nav.accept")}</Button></form>
               <form action={leaveSeatAction}><Button type="submit" variant="ghost" size="sm">{t("nav.decline")}</Button></form>
             </span>
+          </div>
+        )}
+        {practiceInvite && (
+          <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-2 text-sm text-text lg:px-8">
+            <span>{tNodes("nav.practiceInvited", { name: <span className="font-semibold">{practiceInvite.practiceName}</span> })}</span>
+            <Link href="/dashboard/practice" className={`font-semibold text-accent underline ${focusRing}`}>{t("nav.practiceSeeInvite")}</Link>
           </div>
         )}
         <main id="main" className="mx-auto max-w-(--hh-content-max) px-4 py-6 lg:px-8">

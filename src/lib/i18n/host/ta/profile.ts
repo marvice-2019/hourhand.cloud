@@ -35,5 +35,5 @@ export const profile: Record<keyof typeof en, string> = {
   "profile.errWhatsapp": "நாட்டுக் குறியீட்டுடன் எண்ணை உள்ளிடுங்கள், எ.கா. +91 98765 43210.",
   "profile.errInstagram": "உங்கள் Instagram பயனர்பெயரை உள்ளிடுங்கள், எ.கா. priya.coaching.",
   "profile.errReviewsUrl": "உங்கள் Google ரிவ்யூக்களின் https லிங்க்கை பேஸ்ட் செய்யுங்கள் (Google Maps அல்லது உங்கள் Business Profile-ன் Share பட்டனிலிருந்து).",
-  "profile.getBookedHint": "இதை Instagram அல்லது உங்கள் Google Business Profile-ல் சேர்க்க, {link} பாருங்கள்.",
+  "profile.getBookedHint": "இதை Instagram அல்லது உங்கள் Google Business Profile-ல் சேர்க்க, {link} பக்கத்தைப் பாருங்கள்.",
 };

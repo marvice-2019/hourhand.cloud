@@ -15,4 +15,5 @@ export const common: Record<keyof typeof en, string> = {
   "common.themeDevice": "சாதனம்",
   "common.themeLight": "லைட்",
   "common.themeDark": "டார்க்",
+  "common.errPriceOther": "விலையை {currency}-இல் உள்ளிடுங்கள், உதாரணமாக 49 அல்லது 49.50 (குறைந்தது {min}).",
 };
