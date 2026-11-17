@@ -81,7 +81,8 @@ export async function afterBillingWebhook(pool: pg.Pool, event: WebhookEvent, bo
  * monthly that is ₹1. Null when the plan's price isn't known (then the renewal can't be checked).
  */
 export function discountedRazorpayCharge(plan: Plan, interval: BillingInterval | null): number | null {
-  if (plan === "free" || !interval) return null;
+  // Clinic is priced per practitioner count (clinic/pricing.ts), so its renewal can't be checked from PRICES.
+  if (plan === "free" || plan === "clinic" || !interval) return null;
   return PRICES[plan][interval].INR - RAZORPAY_REFERRAL_DISCOUNT_INR;
 }
 

@@ -75,3 +75,44 @@ The biggest risk to margin is reminder volume. Cap it at 300 a month and show a 
 **Stripe (international, USD).** Create one Product per plan (`Hourhand Solo`, `Hourhand Duo`, `Hourhand extra person`), each with a monthly and a yearly recurring Price: $7 / $70, $11 / $110, and $4 / $40. Turn on the Customer Portal with cancellation allowed immediately.
 
 Use test mode until `/replica-deploy`. Put the keys only in `.env.local`, never in code or chat.
+
+## Clinic (roadmap 3.9, for owner review)
+
+For therapy clinics and coaching institutes: one practice account, 3 to 10 practitioners, each with their own calendars,
+hours, services, bookings and client notes. One practice page; admins who manage practitioners and see every booking; one
+GST invoice series and one Razorpay account for the practice. Clients choose the practitioner (not round robin).
+
+| practitioners | before GST | 18% GST | total a month |
+| --- | --- | --- | --- |
+| up to 3 | ₹1,499 | ₹269.82 | ₹1,768.82 |
+| 4 | ₹1,898 | ₹341.64 | ₹2,239.64 |
+| 5 | ₹2,297 | ₹413.46 | ₹2,710.46 |
+| 6 | ₹2,696 | ₹485.28 | ₹3,181.28 |
+| 7 | ₹3,095 | ₹557.10 | ₹3,652.10 |
+| 8 | ₹3,494 | ₹628.92 | ₹4,122.92 |
+| 9 | ₹3,893 | ₹700.74 | ₹4,593.74 |
+| 10 | ₹4,292 | ₹772.56 | ₹5,064.56 |
+
+Formula: ₹1,499 + ₹399 × (practitioners − 3), plus 18% GST. Monthly only, INR only (Razorpay).
+
+Against Solo: a 3-person clinic pays ₹500 a practitioner, against ₹399 for Solo, for the shared page, admin view, shared
+waitlist and one invoice series. Each extra place is the Solo price. Gross margin per practitioner tracks Solo's
+(60-72%, see the Solo table above); the practice-level extras add no per-message cost.
+
+**Razorpay Plans to create** (monthly, amounts before GST, as with the other plans), and the env var for each id:
+
+| env var | amount |
+| --- | --- |
+| `RAZORPAY_PLAN_CLINIC_3_MONTH` | ₹1,499 |
+| `RAZORPAY_PLAN_CLINIC_4_MONTH` | ₹1,898 |
+| `RAZORPAY_PLAN_CLINIC_5_MONTH` | ₹2,297 |
+| `RAZORPAY_PLAN_CLINIC_6_MONTH` | ₹2,696 |
+| `RAZORPAY_PLAN_CLINIC_7_MONTH` | ₹3,095 |
+| `RAZORPAY_PLAN_CLINIC_8_MONTH` | ₹3,494 |
+| `RAZORPAY_PLAN_CLINIC_9_MONTH` | ₹3,893 |
+| `RAZORPAY_PLAN_CLINIC_10_MONTH` | ₹4,292 |
+
+One Plan per count because a Razorpay subscription carries one Plan. Changing the count (or switching from Solo or Duo)
+moves the subscription to another Plan with Razorpay's update API. **Razorpay refuses that for subscriptions paid by
+UPI AutoPay or eMandate** ([docs](https://razorpay.com/docs/api/payments/subscriptions/update-subscription/), read
+2026-11-15); those hosts are told to cancel and subscribe to Clinic when the period ends. Their practice and data stay.

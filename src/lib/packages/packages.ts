@@ -345,7 +345,7 @@ export async function reconcilePurchases(deps: PaymentCheckDeps & { pool: pg.Poo
          and (checked_at is null or checked_at < $1::timestamptz - $3 * interval '1 millisecond')
        order by checked_at nulls first, created_at limit $2 for update skip locked)
      update package_purchases p set checked_at = $1 from due where p.id = due.id
-     returning p.id, p.host_id, p.provider_order_id, p.price_minor, p.currency, p.created_at`, [now, limit, RECHECK_MS]);
+     returning p.id, p.host_id, p.collected_by, p.provider_order_id, p.price_minor, p.currency, p.created_at`, [now, limit, RECHECK_MS]);
   const result: PurchaseReconcileResult = { claimed: rows.length, paid: 0, failed: 0, errors: 0 };
   const giveUp = async (r: { id: string; created_at: Date }) => {
     if (now.getTime() - new Date(r.created_at).getTime() <= GIVE_UP_MS) return;
@@ -356,7 +356,8 @@ export async function reconcilePurchases(deps: PaymentCheckDeps & { pool: pg.Poo
     try {
       // Its order never got made: nothing can be paid, so it just times out.
       if (!r.provider_order_id) { await giveUp(r); continue; }
-      const auth = await deps.authFor(r.host_id);
+      // The account that took the money (a Clinic practice's, or the host's own), even if the host has since moved.
+      const auth = deps.accountAuth && r.collected_by ? await deps.accountAuth(r.collected_by) : await deps.authFor(r.host_id);
       if (!auth) {
         await pool.query("update package_purchases set last_error = 'Razorpay disconnected', updated_at = $2 where id = $1", [r.id, now]);
         await giveUp(r);

@@ -8,6 +8,7 @@ import type { HostKey } from "@/lib/i18n/host";
 import { requireHost } from "@/lib/auth/session";
 import { authEnabled } from "@/lib/auth/auth";
 import { hostPlan } from "@/lib/billing/account";
+import { paymentAccountFor } from "@/lib/clinic/payments";
 import { getPool } from "@/lib/data/pg-store";
 import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
 import { getHostI18n } from "@/lib/i18n/host/server";
@@ -31,7 +32,8 @@ async function priceError(userId: string, priceMinor: number | null): Promise<st
   let gate: Parameters<typeof priceGateError>[0] = { priceMinor, demo: true, plan: "free", paymentsReady: false };
   if (authEnabled()) {
     const pool = getPool(process.env.DATABASE_URL as string);
-    const [plan, account] = await Promise.all([hostPlan(pool, userId), paymentAccount(pool, userId)]);
+    // In a Clinic practice the practice's payment account takes the payment, so that's the one that must be ready.
+    const [plan, account] = await Promise.all([hostPlan(pool, userId), paymentAccountFor(pool, userId).then((id) => paymentAccount(pool, id))]);
     gate = { priceMinor, demo: false, plan, paymentsReady: account?.ready === true };
   }
   if (priceGateError(gate) === null) return null;
@@ -43,7 +45,8 @@ async function priceError(userId: string, priceMinor: number | null): Promise<st
 /** Prices are saved in the currency the host's payment provider settles in (INR on Razorpay, the Stripe account's otherwise). */
 async function hostCurrency(userId: string): Promise<string> {
   if (!authEnabled()) return "INR";
-  return priceCurrency(await paymentAccount(getPool(process.env.DATABASE_URL as string), userId));
+  const pool = getPool(process.env.DATABASE_URL as string);
+  return priceCurrency(await paymentAccount(pool, await paymentAccountFor(pool, userId)));
 }
 
 /** Creates the event type when `id` is null, otherwise updates it. Saves details, rules and questions together. */

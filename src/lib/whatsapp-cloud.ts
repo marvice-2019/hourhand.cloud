@@ -27,7 +27,7 @@ export const WHATSAPP_KINDS: readonly WhatsAppKind[] = ["booked_guest", "reminde
 export const isWhatsAppKind = (kind: string): kind is WhatsAppKind => (WHATSAPP_KINDS as readonly string[]).includes(kind);
 
 /** WhatsApp messages a host's guests can get per calendar month (IST). Over it, email still goes. */
-export const WHATSAPP_MONTHLY_LIMITS = { free: 0, solo: 300, duo: 600 } as const;
+export const WHATSAPP_MONTHLY_LIMITS = { free: 0, solo: 300, duo: 600, clinic: 300 } as const; // Clinic: per practitioner, each on their own account
 
 type TemplateLang = "en" | "hi";
 

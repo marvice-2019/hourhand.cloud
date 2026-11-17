@@ -169,11 +169,19 @@ async function captureOnce(orders: RazorpayOrders, paymentId: string, amount: nu
 export interface PaymentCheckDeps {
   authFor(hostId: string): Promise<HostRazorpayAuth | null>;
   ordersFor(auth: HostRazorpayAuth): RazorpayOrders;
+  /**
+   * The Razorpay account that collected a payment (payments.collected_by), as is. Confirming or refunding an existing
+   * payment uses this, so a Clinic practitioner who has since left still has it refunded from the practice's account.
+   */
+  accountAuth?(accountId: string): Promise<HostRazorpayAuth | null>;
 }
+
+const authForPayment = (deps: PaymentCheckDeps, row: { host_id: string; collected_by?: string | null }) =>
+  deps.accountAuth && row.collected_by ? deps.accountAuth(row.collected_by) : deps.authFor(row.host_id);
 
 export interface ReconcileResult { claimed: number; confirmed: number; refundPending: number; expired: number; errors: number }
 
-interface DueRow { booking_id: string; host_id: string; provider_order_id: string; booking_status: string; hold_expires_at: Date | null; cancelled_at: Date | null }
+interface DueRow { booking_id: string; host_id: string; collected_by: string | null; provider_order_id: string; booking_status: string; hold_expires_at: Date | null; cancelled_at: Date | null }
 
 // A payment is only checked once it is a minute old and at most once a minute, so a guest still in Checkout isn't polled.
 const RECHECK_MS = 60_000;
@@ -209,7 +217,7 @@ export async function reconcilePayments(deps: PaymentCheckDeps & { pool: pg.Pool
        for update of p skip locked)
      update payments p set checked_at = $1 from due, bookings b
      where p.id = due.id and b.id = p.booking_id
-     returning p.booking_id, p.host_id, p.provider_order_id, b.status as booking_status, b.hold_expires_at, b.cancelled_at`,
+     returning p.booking_id, p.host_id, p.collected_by, p.provider_order_id, b.status as booking_status, b.hold_expires_at, b.cancelled_at`,
     [now, limit, RECHECK_MS]);
   const result: ReconcileResult = { claimed: rows.length, confirmed: 0, refundPending: 0, expired: 0, errors: 0 };
   const count = (r: "confirmed" | "already" | "refund_pending") => {
@@ -226,7 +234,7 @@ export async function reconcilePayments(deps: PaymentCheckDeps & { pool: pg.Pool
 
   for (const row of rows) {
     try {
-      const auth = await deps.authFor(row.host_id);
+      const auth = await authForPayment(deps, row);
       if (!auth) {
         await setError(row, "Razorpay disconnected");
         // Nobody can pay without the host's account, so a lapsed hold still frees its slot.
@@ -278,7 +286,7 @@ export async function releaseDeposits(pool: pg.Pool, now: Date, limit = 50): Pro
 
 export interface RefundResult { claimed: number; refunded: number; errors: number }
 
-interface RefundRow { id: string; booking_id: string; host_id: string; provider_payment_id: string }
+interface RefundRow { id: string; booking_id: string; host_id: string; collected_by: string | null; provider_payment_id: string }
 
 // A refund that failed is retried at most every five minutes.
 const REFUND_RETRY_MS = 5 * 60_000;
@@ -298,7 +306,7 @@ export async function processRefunds(deps: PaymentCheckDeps & { pool: pg.Pool },
        limit $2
        for update skip locked)
      update payments p set checked_at = $1 from due where p.id = due.id
-     returning p.id, p.booking_id, p.host_id, p.provider_payment_id`,
+     returning p.id, p.booking_id, p.host_id, p.collected_by, p.provider_payment_id`,
     [now, limit, REFUND_RETRY_MS]);
   const result: RefundResult = { claimed: rows.length, refunded: 0, errors: 0 };
   const setError = (row: RefundRow, message: string) =>
@@ -316,7 +324,7 @@ export async function processRefunds(deps: PaymentCheckDeps & { pool: pg.Pool },
 
   for (const row of rows) {
     try {
-      const auth = await deps.authFor(row.host_id);
+      const auth = await authForPayment(deps, row);
       if (!auth) {
         await setError(row, "Razorpay disconnected");
         continue;
