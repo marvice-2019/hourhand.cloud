@@ -9,6 +9,7 @@ export const nav = {
   "nav.eventTypes": "Event types",
   "nav.links": "Links",
   "nav.polls": "Polls",
+  "nav.routing": "Routing forms",
   "nav.getBooked": "Instagram & Google",
   "nav.packages": "Packages",
   "nav.offers": "Offers",
