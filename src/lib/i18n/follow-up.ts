@@ -25,7 +25,7 @@ const en = {
   ratingPoor: "Poor",
   ratingGreat: "Great",
   commentLabel: "Anything you'd like to tell {host}? (optional)",
-  privateNote: "Only {host} sees this. It is never shown publicly.",
+  privateNote: "Only {host} sees this, unless you tick the box below.",
   send: "Send",
   thanksTitle: "Thank you for your feedback",
   thanksBody: "{host} will see it.",
@@ -44,6 +44,9 @@ const en = {
   optOutBody: "You'll still get confirmations and reminders for bookings you make. Only the emails after a session stop.",
   optOutButton: "Stop follow-ups",
   optOutDone: "Done. {host} won't send you follow-up emails any more.",
+  publicOptIn: "Show my rating and comment on {host}'s booking page",
+  publicAnon: "Leave my name off",
+  publicNote: "{host} chooses whether to show it. You can ask them to take it down at any time.",
 };
 
 export type FollowUpKey = keyof typeof en;
@@ -71,7 +74,7 @@ const hi: Catalog = {
   ratingPoor: "खराब",
   ratingGreat: "बहुत अच्छा",
   commentLabel: "{host} से कुछ कहना चाहेंगे? (ज़रूरी नहीं)",
-  privateNote: "इसे सिर्फ़ {host} देखेंगे। यह कभी सार्वजनिक नहीं दिखाया जाता।",
+  privateNote: "इसे सिर्फ़ {host} देखेंगे, जब तक आप नीचे दिया बॉक्स न चुनें।",
   send: "भेजें",
   thanksTitle: "आपकी राय के लिए धन्यवाद",
   thanksBody: "{host} इसे देखेंगे।",
@@ -90,6 +93,9 @@ const hi: Catalog = {
   optOutBody: "आपकी बुकिंग की पुष्टि और रिमाइंडर आते रहेंगे। सिर्फ़ सेशन के बाद वाले ईमेल बंद होंगे।",
   optOutButton: "फ़ॉलो-अप बंद करें",
   optOutDone: "हो गया। {host} अब आपको फ़ॉलो-अप ईमेल नहीं भेजेंगे।",
+  publicOptIn: "मेरी रेटिंग और टिप्पणी {host} के बुकिंग पेज पर दिखाएँ",
+  publicAnon: "मेरा नाम न दिखाएँ",
+  publicNote: "इसे दिखाना है या नहीं, यह {host} तय करेंगे। आप कभी भी इसे हटाने के लिए कह सकते हैं।",
 };
 
 const ta: Catalog = {
@@ -114,7 +120,7 @@ const ta: Catalog = {
   ratingPoor: "மோசம்",
   ratingGreat: "மிகச் சிறப்பு",
   commentLabel: "{host}-இடம் ஏதாவது சொல்ல விரும்புகிறீர்களா? (விருப்பம்)",
-  privateNote: "இதை {host} மட்டுமே பார்ப்பார். இது ஒருபோதும் பொதுவில் காட்டப்படாது.",
+  privateNote: "கீழே உள்ள பெட்டியைத் தேர்ந்தெடுக்காவிட்டால், இதை {host} மட்டுமே பார்ப்பார்.",
   send: "அனுப்பு",
   thanksTitle: "உங்கள் கருத்துக்கு நன்றி",
   thanksBody: "{host} இதைப் பார்ப்பார்.",
@@ -133,6 +139,9 @@ const ta: Catalog = {
   optOutBody: "உங்கள் முன்பதிவுகளுக்கான உறுதிப்படுத்தல்களும் நினைவூட்டல்களும் தொடர்ந்து வரும். அமர்வுக்குப் பிந்தைய மின்னஞ்சல்கள் மட்டுமே நிற்கும்.",
   optOutButton: "பின்தொடர் மின்னஞ்சல்களை நிறுத்து",
   optOutDone: "முடிந்தது. {host} இனி உங்களுக்குப் பின்தொடர் மின்னஞ்சல்களை அனுப்ப மாட்டார்.",
+  publicOptIn: "என் மதிப்பீட்டையும் கருத்தையும் {host} அவர்களின் புக்கிங் பக்கத்தில் காட்டு",
+  publicAnon: "என் பெயரைக் காட்ட வேண்டாம்",
+  publicNote: "அதைக் காட்டலாமா என்பதை {host} முடிவு செய்வார். எப்போது வேண்டுமானாலும் அதை நீக்கச் சொல்லலாம்.",
 };
 
 const te: Catalog = {
@@ -157,7 +166,7 @@ const te: Catalog = {
   ratingPoor: "బాగాలేదు",
   ratingGreat: "చాలా బాగుంది",
   commentLabel: "{host} కి ఏదైనా చెప్పాలనుకుంటున్నారా? (ఐచ్ఛికం)",
-  privateNote: "దీన్ని {host} మాత్రమే చూస్తారు. ఇది ఎప్పుడూ బహిరంగంగా చూపబడదు.",
+  privateNote: "కింది బాక్స్‌ను టిక్ చేయకపోతే, దీన్ని {host} మాత్రమే చూస్తారు.",
   send: "పంపండి",
   thanksTitle: "మీ అభిప్రాయానికి ధన్యవాదాలు",
   thanksBody: "{host} దీన్ని చూస్తారు.",
@@ -176,6 +185,9 @@ const te: Catalog = {
   optOutBody: "మీ బుకింగ్‌ల నిర్ధారణలు, రిమైండర్‌లు వస్తూనే ఉంటాయి. సెషన్ తర్వాతి ఇమెయిల్స్ మాత్రమే ఆగుతాయి.",
   optOutButton: "ఫాలో-అప్‌లు ఆపండి",
   optOutDone: "అయిపోయింది. {host} ఇకపై మీకు ఫాలో-అప్ ఇమెయిల్స్ పంపరు.",
+  publicOptIn: "నా రేటింగ్ మరియు వ్యాఖ్యను {host} బుకింగ్ పేజీలో చూపించండి",
+  publicAnon: "నా పేరు చూపించవద్దు",
+  publicNote: "దాన్ని చూపించాలా వద్దా అనేది {host} నిర్ణయిస్తారు. ఎప్పుడైనా దాన్ని తీసివేయమని అడగవచ్చు.",
 };
 
 const kn: Catalog = {
@@ -200,7 +212,7 @@ const kn: Catalog = {
   ratingPoor: "ಚೆನ್ನಾಗಿಲ್ಲ",
   ratingGreat: "ತುಂಬಾ ಚೆನ್ನಾಗಿದೆ",
   commentLabel: "{host} ಅವರಿಗೆ ಏನಾದರೂ ಹೇಳಲು ಬಯಸುವಿರಾ? (ಐಚ್ಛಿಕ)",
-  privateNote: "ಇದನ್ನು {host} ಅವರು ಮಾತ್ರ ನೋಡುತ್ತಾರೆ. ಇದನ್ನು ಎಂದಿಗೂ ಸಾರ್ವಜನಿಕವಾಗಿ ತೋರಿಸುವುದಿಲ್ಲ.",
+  privateNote: "ಕೆಳಗಿನ ಬಾಕ್ಸ್ ಟಿಕ್ ಮಾಡದಿದ್ದರೆ, ಇದನ್ನು {host} ಅವರು ಮಾತ್ರ ನೋಡುತ್ತಾರೆ.",
   send: "ಕಳುಹಿಸಿ",
   thanksTitle: "ನಿಮ್ಮ ಅಭಿಪ್ರಾಯಕ್ಕೆ ಧನ್ಯವಾದಗಳು",
   thanksBody: "{host} ಅವರು ಇದನ್ನು ನೋಡುತ್ತಾರೆ.",
@@ -219,6 +231,9 @@ const kn: Catalog = {
   optOutBody: "ನಿಮ್ಮ ಬುಕಿಂಗ್‌ಗಳ ದೃಢೀಕರಣ ಮತ್ತು ಜ್ಞಾಪನೆಗಳು ಬರುತ್ತಲೇ ಇರುತ್ತವೆ. ಸೆಷನ್ ನಂತರದ ಇಮೇಲ್‌ಗಳು ಮಾತ್ರ ನಿಲ್ಲುತ್ತವೆ.",
   optOutButton: "ಫಾಲೋ-ಅಪ್ ನಿಲ್ಲಿಸಿ",
   optOutDone: "ಆಯಿತು. {host} ಅವರು ಇನ್ನು ನಿಮಗೆ ಫಾಲೋ-ಅಪ್ ಇಮೇಲ್‌ಗಳನ್ನು ಕಳುಹಿಸುವುದಿಲ್ಲ.",
+  publicOptIn: "ನನ್ನ ರೇಟಿಂಗ್ ಮತ್ತು ಅಭಿಪ್ರಾಯವನ್ನು {host} ಅವರ ಬುಕಿಂಗ್ ಪುಟದಲ್ಲಿ ತೋರಿಸಿ",
+  publicAnon: "ನನ್ನ ಹೆಸರನ್ನು ತೋರಿಸಬೇಡಿ",
+  publicNote: "ಅದನ್ನು ತೋರಿಸಬೇಕೇ ಎಂದು {host} ಅವರು ನಿರ್ಧರಿಸುತ್ತಾರೆ. ಯಾವಾಗ ಬೇಕಾದರೂ ಅದನ್ನು ತೆಗೆಯಲು ಕೇಳಬಹುದು.",
 };
 
 // Marathi (mr): DRAFT, needs native-speaker review before Hourhand is marketed in Marathi. Written from the English source.
@@ -244,7 +259,7 @@ const mr: Catalog = {
   ratingPoor: "वाईट",
   ratingGreat: "उत्तम",
   commentLabel: "{host} यांना काही सांगायचे आहे का? (ऐच्छिक)",
-  privateNote: "हे फक्त {host} पाहतील. हे कधीही सार्वजनिकपणे दाखवले जात नाही.",
+  privateNote: "खालील बॉक्स निवडला नाही तर हे फक्त {host} पाहतील.",
   send: "पाठवा",
   thanksTitle: "तुमच्या अभिप्रायाबद्दल धन्यवाद",
   thanksBody: "{host} हे पाहतील.",
@@ -263,6 +278,9 @@ const mr: Catalog = {
   optOutBody: "तुमच्या बुकिंगची पुष्टी आणि रिमाइंडर येत राहतील. फक्त सेशननंतरचे ईमेल थांबतील.",
   optOutButton: "फॉलो-अप थांबवा",
   optOutDone: "झाले. {host} आता तुम्हाला फॉलो-अप ईमेल पाठवणार नाहीत.",
+  publicOptIn: "माझे रेटिंग आणि टिप्पणी {host} यांच्या बुकिंग पेजवर दाखवा",
+  publicAnon: "माझे नाव दाखवू नका",
+  publicNote: "ते दाखवायचे की नाही हे {host} ठरवतील. तुम्ही कधीही ते काढून टाकायला सांगू शकता.",
 };
 
 // Bengali (bn): DRAFT, needs native-speaker review before Hourhand is marketed in Bengali. Written from the English source.
@@ -288,7 +306,7 @@ const bn: Catalog = {
   ratingPoor: "খারাপ",
   ratingGreat: "দারুণ",
   commentLabel: "{host}-কে কিছু বলতে চান? (ঐচ্ছিক)",
-  privateNote: "এটি শুধু {host} দেখবেন। এটি কখনও প্রকাশ্যে দেখানো হয় না।",
+  privateNote: "নিচের বাক্সে টিক না দিলে এটি শুধু {host} দেখবেন।",
   send: "পাঠান",
   thanksTitle: "আপনার মতামতের জন্য ধন্যবাদ",
   thanksBody: "{host} এটি দেখবেন।",
@@ -307,6 +325,9 @@ const bn: Catalog = {
   optOutBody: "আপনার বুকিংয়ের নিশ্চিতকরণ ও রিমাইন্ডার আসতে থাকবে। শুধু সেশনের পরের ইমেল বন্ধ হবে।",
   optOutButton: "ফলো-আপ বন্ধ করুন",
   optOutDone: "হয়ে গেছে। {host} আর আপনাকে ফলো-আপ ইমেল পাঠাবেন না।",
+  publicOptIn: "আমার রেটিং ও মন্তব্য {host}-এর বুকিং পেজে দেখান",
+  publicAnon: "আমার নাম দেখাবেন না",
+  publicNote: "এটি দেখানো হবে কি না, {host} ঠিক করবেন। আপনি যেকোনো সময় এটি সরাতে বলতে পারেন।",
 };
 
 // Malayalam (ml): DRAFT, needs native-speaker review before Hourhand is marketed in Malayalam. Written from the English source.
@@ -332,7 +353,7 @@ const ml: Catalog = {
   ratingPoor: "മോശം",
   ratingGreat: "മികച്ചത്",
   commentLabel: "{host}-നോട് എന്തെങ്കിലും പറയാനുണ്ടോ? (ഐച്ഛികം)",
-  privateNote: "ഇത് {host} മാത്രമേ കാണൂ. ഇത് ഒരിക്കലും പരസ്യമായി കാണിക്കില്ല.",
+  privateNote: "താഴെയുള്ള ബോക്സ് ടിക് ചെയ്തില്ലെങ്കിൽ, ഇത് {host} മാത്രമേ കാണൂ.",
   send: "അയയ്ക്കുക",
   thanksTitle: "നിങ്ങളുടെ അഭിപ്രായത്തിന് നന്ദി",
   thanksBody: "{host} ഇത് കാണും.",
@@ -351,6 +372,9 @@ const ml: Catalog = {
   optOutBody: "നിങ്ങളുടെ ബുക്കിംഗുകളുടെ സ്ഥിരീകരണങ്ങളും ഓർമ്മപ്പെടുത്തലുകളും തുടർന്നും വരും. സെഷന് ശേഷമുള്ള ഇമെയിലുകൾ മാത്രം നിൽക്കും.",
   optOutButton: "ഫോളോ-അപ്പ് നിർത്തുക",
   optOutDone: "ശരി. {host} ഇനി നിങ്ങൾക്ക് ഫോളോ-അപ്പ് ഇമെയിലുകൾ അയയ്ക്കില്ല.",
+  publicOptIn: "എന്റെ റേറ്റിംഗും അഭിപ്രായവും {host} ന്റെ ബുക്കിംഗ് പേജിൽ കാണിക്കുക",
+  publicAnon: "എന്റെ പേര് കാണിക്കരുത്",
+  publicNote: "അത് കാണിക്കണോ എന്ന് {host} തീരുമാനിക്കും. എപ്പോൾ വേണമെങ്കിലും അത് നീക്കാൻ ആവശ്യപ്പെടാം.",
 };
 
 // Gujarati (gu): DRAFT, needs native-speaker review before Hourhand is marketed in Gujarati. Written from the English source.
@@ -376,7 +400,7 @@ const gu: Catalog = {
   ratingPoor: "ખરાબ",
   ratingGreat: "ઉત્તમ",
   commentLabel: "{host} ને કંઈ કહેવું છે? (વૈકલ્પિક)",
-  privateNote: "આ ફક્ત {host} જોશે. આ ક્યારેય જાહેરમાં બતાવવામાં આવતું નથી.",
+  privateNote: "નીચેનું બૉક્સ ટિક ન કરો ત્યાં સુધી આ ફક્ત {host} જોશે.",
   send: "મોકલો",
   thanksTitle: "તમારા અભિપ્રાય બદલ આભાર",
   thanksBody: "{host} આ જોશે.",
@@ -395,6 +419,9 @@ const gu: Catalog = {
   optOutBody: "તમારા બુકિંગની પુષ્ટિ અને રિમાઇન્ડર આવતા રહેશે. ફક્ત સેશન પછીના ઈમેલ બંધ થશે.",
   optOutButton: "ફોલો-અપ બંધ કરો",
   optOutDone: "થઈ ગયું. {host} હવે તમને ફોલો-અપ ઈમેલ મોકલશે નહીં.",
+  publicOptIn: "મારું રેટિંગ અને ટિપ્પણી {host}ના બુકિંગ પેજ પર બતાવો",
+  publicAnon: "મારું નામ ન બતાવો",
+  publicNote: "તે બતાવવું કે નહીં તે {host} નક્કી કરશે. તમે ક્યારેય પણ તેને દૂર કરવા કહી શકો છો.",
 };
 
 export const FOLLOW_UP_CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn, mr, bn, ml, gu };

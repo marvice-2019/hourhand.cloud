@@ -230,6 +230,10 @@ const en = {
   deleteRequested: "You asked {host} to delete your data. They have until {date} to respond.",
   deleteHint: "If you have a booking coming up, {host} cancels it first. Tax invoices are kept as the law requires, without your contact details.",
   requestFailed: "That didn't go through. Try again, or contact {host} directly.",
+  reviewsHeading: "Reviews",
+  reviewsSummary: "{average} out of 5 · {count} reviews",
+  reviewAnon: "A client",
+  reviewStars: "{rating} out of 5",
 };
 
 export type GuestKey = keyof typeof en;
@@ -440,6 +444,10 @@ const hi: Catalog = {
   deleteRequested: "आपने {host} से अपना डेटा मिटाने को कहा है। उन्हें {date} तक जवाब देना है।",
   deleteHint: "अगर आपकी कोई बुकिंग आने वाली है, तो {host} पहले उसे रद्द करेंगे। टैक्स इनवॉइस क़ानून के अनुसार रखे जाते हैं, आपके संपर्क विवरण के बिना।",
   requestFailed: "यह नहीं पहुँचा। फिर से कोशिश करें, या सीधे {host} से संपर्क करें।",
+  reviewsHeading: "रिव्यू",
+  reviewsSummary: "5 में से {average} · {count} रिव्यू",
+  reviewAnon: "एक क्लाइंट",
+  reviewStars: "5 में से {rating}",
 };
 
 const ta: Catalog = {
@@ -647,6 +655,10 @@ const ta: Catalog = {
   deleteRequested: "உங்கள் தரவை அழிக்கும்படி {host}-இடம் கேட்டுள்ளீர்கள். அவர் {date}-க்குள் பதில் தர வேண்டும்.",
   deleteHint: "வரவிருக்கும் முன்பதிவு இருந்தால், {host} முதலில் அதை ரத்து செய்வார். வரி விலைப்பட்டியல்கள் சட்டப்படி, உங்கள் தொடர்பு விவரங்கள் இல்லாமல் வைக்கப்படும்.",
   requestFailed: "அது போகவில்லை. மீண்டும் முயற்சி செய்யுங்கள், அல்லது {host}-ஐ நேரடியாகத் தொடர்பு கொள்ளுங்கள்.",
+  reviewsHeading: "ரிவ்யூக்கள்",
+  reviewsSummary: "5-இல் {average} · {count} ரிவ்யூக்கள்",
+  reviewAnon: "ஒரு வாடிக்கையாளர்",
+  reviewStars: "5-இல் {rating}",
 };
 
 const te: Catalog = {
@@ -854,6 +866,10 @@ const te: Catalog = {
   deleteRequested: "మీ డేటాను తొలగించమని {host}ని అడిగారు. వారు {date} లోపు స్పందించాలి.",
   deleteHint: "మీకు రాబోయే బుకింగ్ ఉంటే, {host} ముందుగా దాన్ని రద్దు చేస్తారు. పన్ను ఇన్వాయిస్‌లు చట్ట ప్రకారం, మీ సంప్రదింపు వివరాలు లేకుండా ఉంచబడతాయి.",
   requestFailed: "అది వెళ్ళలేదు. మళ్ళీ ప్రయత్నించండి, లేదా నేరుగా {host}ని సంప్రదించండి.",
+  reviewsHeading: "రివ్యూలు",
+  reviewsSummary: "5 లో {average} · {count} రివ్యూలు",
+  reviewAnon: "ఒక క్లయింట్",
+  reviewStars: "5 లో {rating}",
 };
 
 const kn: Catalog = {
@@ -1061,6 +1077,10 @@ const kn: Catalog = {
   deleteRequested: "ನಿಮ್ಮ ಡೇಟಾ ಅಳಿಸಲು {host} ಅವರನ್ನು ಕೇಳಿದ್ದೀರಿ. ಅವರು {date} ಒಳಗೆ ಉತ್ತರಿಸಬೇಕು.",
   deleteHint: "ಮುಂಬರುವ ಬುಕಿಂಗ್ ಇದ್ದರೆ, {host} ಮೊದಲು ಅದನ್ನು ರದ್ದುಗೊಳಿಸುತ್ತಾರೆ. ತೆರಿಗೆ ಇನ್‌ವಾಯ್ಸ್‌ಗಳನ್ನು ಕಾನೂನಿನಂತೆ, ನಿಮ್ಮ ಸಂಪರ್ಕ ವಿವರಗಳಿಲ್ಲದೆ ಇಡಲಾಗುತ್ತದೆ.",
   requestFailed: "ಅದು ಹೋಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ, ಅಥವಾ ನೇರವಾಗಿ {host} ಅವರನ್ನು ಸಂಪರ್ಕಿಸಿ.",
+  reviewsHeading: "ರಿವ್ಯೂಗಳು",
+  reviewsSummary: "5 ರಲ್ಲಿ {average} · {count} ರಿವ್ಯೂಗಳು",
+  reviewAnon: "ಒಬ್ಬ ಕ್ಲೈಂಟ್",
+  reviewStars: "5 ರಲ್ಲಿ {rating}",
 };
 
 // Marathi (mr): DRAFT, needs native-speaker review before Hourhand is marketed in Marathi. Written from the English source.
@@ -1269,6 +1289,10 @@ const mr: Catalog = {
   deleteRequested: "तुम्ही {host} यांना तुमचा डेटा हटवायला सांगितले आहे. त्यांनी {date} पर्यंत उत्तर द्यायचे आहे.",
   deleteHint: "तुमचे एखादे बुकिंग येणार असेल, तर {host} ते आधी रद्द करतील. कर पावत्या कायद्यानुसार ठेवल्या जातात, तुमच्या संपर्क तपशिलांशिवाय.",
   requestFailed: "ते पोहोचले नाही. पुन्हा प्रयत्न करा, किंवा थेट {host} यांच्याशी संपर्क साधा.",
+  reviewsHeading: "रिव्ह्यू",
+  reviewsSummary: "5 पैकी {average} · {count} रिव्ह्यू",
+  reviewAnon: "एक क्लायंट",
+  reviewStars: "5 पैकी {rating}",
 };
 
 // Bengali (bn): DRAFT, needs native-speaker review before Hourhand is marketed in Bengali. Written from the English source.
@@ -1477,6 +1501,10 @@ const bn: Catalog = {
   deleteRequested: "আপনি {host}-কে আপনার ডেটা মুছে ফেলতে বলেছেন। তাঁদের {date}-এর মধ্যে উত্তর দিতে হবে।",
   deleteHint: "আপনার কোনো বুকিং সামনে থাকলে {host} আগে সেটি বাতিল করবেন। কর ইনভয়েস আইন অনুযায়ী রাখা হয়, আপনার যোগাযোগের তথ্য ছাড়া।",
   requestFailed: "এটি পৌঁছায়নি। আবার চেষ্টা করুন, অথবা সরাসরি {host}-এর সঙ্গে যোগাযোগ করুন।",
+  reviewsHeading: "রিভিউ",
+  reviewsSummary: "5-এর মধ্যে {average} · {count}টি রিভিউ",
+  reviewAnon: "একজন ক্লায়েন্ট",
+  reviewStars: "5-এর মধ্যে {rating}",
 };
 
 // Malayalam (ml): DRAFT, needs native-speaker review before Hourhand is marketed in Malayalam. Written from the English source.
@@ -1685,6 +1713,10 @@ const ml: Catalog = {
   deleteRequested: "നിങ്ങളുടെ ഡാറ്റ ഇല്ലാതാക്കാൻ {host}-നോട് ആവശ്യപ്പെട്ടു. {date}-നകം അവർ മറുപടി നൽകണം.",
   deleteHint: "വരാനിരിക്കുന്ന ബുക്കിംഗ് ഉണ്ടെങ്കിൽ {host} ആദ്യം അത് റദ്ദാക്കും. നികുതി ഇൻവോയ്സുകൾ നിയമപ്രകാരം, നിങ്ങളുടെ ബന്ധപ്പെടൽ വിവരങ്ങളില്ലാതെ സൂക്ഷിക്കും.",
   requestFailed: "അത് എത്തിയില്ല. വീണ്ടും ശ്രമിക്കുക, അല്ലെങ്കിൽ {host}-നെ നേരിട്ട് ബന്ധപ്പെടുക.",
+  reviewsHeading: "റിവ്യൂകൾ",
+  reviewsSummary: "5-ൽ {average} · {count} റിവ്യൂകൾ",
+  reviewAnon: "ഒരു ക്ലയന്റ്",
+  reviewStars: "5-ൽ {rating}",
 };
 
 // Gujarati (gu): DRAFT, needs native-speaker review before Hourhand is marketed in Gujarati. Written from the English source.
@@ -1893,6 +1925,10 @@ const gu: Catalog = {
   deleteRequested: "તમે {host} ને તમારો ડેટા કાઢી નાખવા કહ્યું છે. તેમણે {date} સુધીમાં જવાબ આપવાનો છે.",
   deleteHint: "જો તમારું કોઈ બુકિંગ આવનારું હોય, તો {host} પહેલાં તેને રદ કરશે. ટેક્સ ઇન્વૉઇસ કાયદા મુજબ, તમારી સંપર્ક વિગતો વગર રાખવામાં આવે છે.",
   requestFailed: "તે પહોંચ્યું નહીં. ફરી પ્રયાસ કરો, અથવા સીધો {host} નો સંપર્ક કરો.",
+  reviewsHeading: "રિવ્યૂ",
+  reviewsSummary: "5 માંથી {average} · {count} રિવ્યૂ",
+  reviewAnon: "એક ક્લાયન્ટ",
+  reviewStars: "5 માંથી {rating}",
 };
 
 export const CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn, mr, bn, ml, gu };

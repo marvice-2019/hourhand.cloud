@@ -20,7 +20,7 @@ export async function sendFeedback(form: FormData): Promise<void> {
   let key: Buffer;
   try { key = linkKey(); } catch { redirect(page); }
   const result = await submitFeedback(getPool(process.env.DATABASE_URL as string), key, token,
-    { rating: form.get("rating"), comment: form.get("comment") }, "", new Date());
+    { rating: form.get("rating"), comment: form.get("comment"), showPublicly: form.get("showPublicly"), anonymous: form.get("anonymous") }, "", new Date());
   if (result.status === "bad_input") redirect(`${page}?error=${result.field}`);
   redirect(result.status === "saved" ? `${page}?sent=1` : page);
 }

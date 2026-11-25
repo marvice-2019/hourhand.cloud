@@ -12,6 +12,8 @@ import { lengthsLabel, priceRange } from "@/lib/durations";
 import { store } from "@/lib/data";
 import { getPool } from "@/lib/data/pg-store";
 import { getProfile, profileJsonLd, type Profile } from "@/lib/profile";
+import { publicReviews } from "@/lib/follow-ups/public-reviews";
+import { formatDate } from "@/lib/format";
 import { hostMetadata } from "@/lib/share-links";
 import { waLink } from "@/lib/whatsapp";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -75,6 +77,8 @@ export default async function ProfilePage({ params, searchParams }: Props) {
   const button = `inline-flex min-h-11 items-center rounded-md border border-border-input bg-card px-4 font-semibold text-text hover:bg-surface ${focusRing}`;
   const pool = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
   const campaign = pool ? await campaignBanner(pool, host.id, await hostPlan(pool, host.id), new Date()) : null;
+  // Only reviews the guest agreed to show and the host chose to, and only once the host switched reviews on.
+  const reviews = pool ? await publicReviews(pool, host.id) : null;
   const jsonLd = p && profileJsonLd({ baseUrl: (resolveBaseUrl() ?? "").replace(/\/+$/, ""), slug: host.slug, name: host.name, profile: p, services: eventTypes });
   return (
     <main lang={locale} className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
@@ -122,6 +126,24 @@ export default async function ProfilePage({ params, searchParams }: Props) {
           ))}
         </ul>
       </section>
+      {reviews && (
+        <section aria-labelledby="reviews" className="mt-8 max-w-2xl">
+          <h2 id="reviews" className="font-display text-lg text-text">{t(locale, "reviewsHeading")}</h2>
+          <p className="mt-1 text-text-muted">{t(locale, "reviewsSummary", { average: reviews.average.toFixed(1), count: reviews.count })}</p>
+          <ul className="mt-4 grid gap-3">
+            {reviews.reviews.map((r, i) => (
+              <li key={i}>
+                <Card>
+                  <p className="font-semibold text-text"><span aria-hidden="true">{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</span> <span className="sr-only">{t(locale, "reviewStars", { rating: r.rating })}</span></p>
+                  {/* Plain text: React escapes it. */}
+                  {r.comment && <p className="mt-2 whitespace-pre-line break-words text-text">{r.comment}</p>}
+                  <p className="mt-2 text-sm text-text-muted">{r.name ?? t(locale, "reviewAnon")} · {formatDate(r.createdAt, host.timezone, locale)}</p>
+                </Card>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <BookingFooter hostId={host.id} locale={locale} />
     </main>
   );

@@ -85,6 +85,17 @@ export default async function FeedbackPageRoute({ params, searchParams }: { para
         <textarea id="fb-comment" name="comment" rows={4} maxLength={COMMENT_MAX} className="mt-1 block w-full rounded-md border border-border-input bg-card p-3 text-text" aria-describedby="fb-private" />
         <p id="fb-private" className="mt-1 text-sm text-text-muted">{ft(locale, "privateNote", v)}</p>
       </div>
+      <fieldset className="grid gap-2">
+        <label className="flex min-h-11 items-start gap-3 text-text">
+          <input type="checkbox" name="showPublicly" className="mt-1 size-5 shrink-0" aria-describedby="fb-public-note" />
+          {ft(locale, "publicOptIn", v)}
+        </label>
+        <label className="flex min-h-11 items-start gap-3 pl-8 text-text">
+          <input type="checkbox" name="anonymous" className="mt-1 size-5 shrink-0" />
+          {ft(locale, "publicAnon")}
+        </label>
+        <p id="fb-public-note" className="text-sm text-text-muted">{ft(locale, "publicNote", v)}</p>
+      </fieldset>
       <div><Button type="submit">{ft(locale, "send")}</Button></div>
     </form>
   </>);

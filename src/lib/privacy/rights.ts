@@ -246,7 +246,10 @@ export async function eraseClient(pool: Pick<pg.Pool, "connect">, hostId: string
     await client.query("delete from note_revisions where host_id = $1 and (email = $2 or booking_id = any($3::uuid[]))", [hostId, email, bookingIds]);
     await client.query("delete from waitlist where host_id = $1 and email = $2", [hostId, email]);
     // Session follow-ups (2.6): the guest's own words go; the 1-5 rating stays on the now anonymous booking.
-    await client.query("update booking_feedback set comment = null where host_id = $1 and booking_id = any($2::uuid[])", [hostId, bookingIds]);
+    // Erased: the comment goes, and a review shown on the host's page stops showing (consent and name cleared).
+    await client.query(
+      `update booking_feedback set comment = null, public_consent_at = null, public_statement = null, public_name = null, host_shown = false
+       where host_id = $1 and booking_id = any($2::uuid[])`, [hostId, bookingIds]);
     await client.query("delete from follow_up_opt_outs where host_id = $1 and email = $2", [hostId, email]);
     // The client portal (3.2): sign them out and void any emailed sign-in link.
     await client.query("delete from portal_sessions where host_id = $1 and email = $2", [hostId, email]);
