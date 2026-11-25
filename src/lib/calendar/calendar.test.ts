@@ -374,6 +374,41 @@ describe.skipIf(!BASE)("Google Calendar (TEST_DATABASE_URL)", () => {
       expect(await syncDueConnections(pool, { google }, key, new Date(Date.now() + 3 * 3600_000))).toEqual([]);
     });
 
+    it("also alerts the host on WhatsApp, at their verified number, when WhatsApp is set up and their plan covers it", async () => {
+      const revoked = () => new CalendarApiError("invalid_grant", { retryable: false, revoked: true });
+      const graph = { phoneNumberId: "555", accessToken: "graph-access", appSecret: "graph-app", verifyToken: "verify", baseUrl: "https://graph.test" };
+      const sent: Record<string, unknown>[] = [];
+      const fakeFetch = (async (_url: string, init: RequestInit) => {
+        sent.push(JSON.parse(String(init.body)));
+        return Response.json({ messages: [{ id: `wamid.${sent.length}` }] });
+      }) as unknown as typeof fetch;
+      await pool.query("update users set phone_number = '+91 98765 43210', phone_number_verified = true where id = $1", [priya.id]);
+      await pool.query("insert into subscriptions (user_id, plan, status) values ($1, 'solo', 'active') on conflict (user_id) do update set plan = 'solo', status = 'active'", [priya.id]);
+      try {
+        const later = new Date(Date.now() + 2 * 3600_000);
+        const id = await connect(priya);
+        await recordConnectionFailure(pool, id, revoked(), later, { whatsapp: true });
+        const queued = await pool.query("select channel, recipient from notifications where kind = 'calendar_alert_host' and dedupe_key like $1 order by channel", [`calendar:${id}:alert:%`]);
+        expect(queued.rows).toEqual([{ channel: "email", recipient: priya.email }, { channel: "whatsapp", recipient: "919876543210" }]);
+        const { mailer } = recordingMailer();
+        await processDueNotifications(pool, mailer, { baseUrl, now: later, whatsapp: graph, fetch: fakeFetch });
+        expect(sent).toHaveLength(1);
+        expect(sent[0]).toMatchObject({ to: "919876543210", template: { name: "hh_calendar_alert", language: { code: "en" } } });
+        expect(JSON.stringify(sent[0])).toContain("priya@gmail.com");
+
+        // Without a verified number, only the email is queued.
+        await pool.query("update users set phone_number_verified = false where id = $1", [priya.id]);
+        const id2 = await connect(priya);
+        const evenLater = new Date(later.getTime() + 3600_000);
+        await recordConnectionFailure(pool, id2, revoked(), evenLater, { whatsapp: true });
+        const second = await pool.query("select channel from notifications where kind = 'calendar_alert_host' and dedupe_key like $1", [`calendar:${id2}:alert:${evenLater.toISOString()}%`]);
+        expect(second.rows).toEqual([{ channel: "email" }]);
+      } finally {
+        await pool.query("update users set phone_number = null, phone_number_verified = false where id = $1", [priya.id]);
+        await pool.query("delete from subscriptions where user_id = $1", [priya.id]);
+      }
+    });
+
     it("a calendar switched on while a sync is running is synced again straight after, not 5 minutes later", async () => {
       const { google, s } = fakeGoogle();
       const id = await connect(priya);
