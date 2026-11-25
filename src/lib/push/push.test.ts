@@ -2,7 +2,7 @@
 // against its own database <name>_push, dropped and recreated on every run.
 import pg from "pg";
 import webpush from "web-push";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { migrate } from "../../../scripts/migrate";
 import { seed } from "../../../scripts/seed";
 import { createPgStore } from "../data/pg-store";
@@ -197,6 +197,25 @@ describe.skipIf(!BASE)("phone alerts (TEST_DATABASE_URL)", () => {
     await saveSubscription(pool, priya.id, sub("x"), null, new Date());
     await expect(sendToHost(pool, fakePush(() => 400).deps, priya.id, testPushMessage("en"), new Date())).rejects.toMatchObject({ retryable: false });
     await expect(sendToHost(pool, fakePush(() => 429).deps, priya.id, testPushMessage("en"), new Date())).rejects.toMatchObject({ retryable: true });
-    expect(await sendToHost(pool, fakePush().deps, other.id, testPushMessage("en"), new Date())).toEqual({ sent: 0, removed: 0 });
+    expect(await sendToHost(pool, fakePush().deps, other.id, testPushMessage("en"), new Date())).toEqual({ sent: 0, removed: 0, failed: 0 });
+  });
+
+  it("logs a device the push service refused, with its reason, even when another device took the alert", async () => {
+    const apple: PushSubscriptionInput = { endpoint: "https://web.push.apple.com/QK-iphone", keys: { p256dh: P256DH, auth: AUTH } };
+    await saveSubscription(pool, priya.id, sub("mac"), null, new Date());
+    await saveSubscription(pool, priya.id, apple, null, new Date());
+    const deps: PushDeps = {
+      config: pushConfig(env)!,
+      async send(s) {
+        if (s.endpoint === apple.endpoint) throw Object.assign(new Error("refused"), { statusCode: 403, body: '{"reason":"BadJwtToken"}' });
+      },
+    };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(await sendToHost(pool, deps, priya.id, testPushMessage("en"), new Date())).toEqual({ sent: 1, removed: 0, failed: 1 });
+      expect(warn).toHaveBeenCalledWith('[push] web.push.apple.com answered 403 {"reason":"BadJwtToken"}');
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
