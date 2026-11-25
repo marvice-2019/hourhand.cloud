@@ -46,6 +46,12 @@ export const TEMPLATES = {
     en: { body: "Hi {{1}}, your {{2}} with {{3}} has changed: {{4}}. Use the button below for details.", button: "View booking" },
     hi: { body: "नमस्ते {{1}}, {{3}} के साथ आपके {{2}} में बदलाव हुआ है: {{4}}। जानकारी के लिए नीचे का बटन दबाएँ।", button: "बुकिंग देखें" },
   },
+  // Sent to the host, not a guest: {{1}} the host's first name, {{2}} the calendar account. The button is a fixed link to
+  // /dashboard/calendars, so it takes no parameter.
+  hh_calendar_alert: {
+    en: { body: "Hi {{1}}, your calendar {{2}} has stopped syncing with Hourhand, so new bookings can't see when you're busy. Use the button below to reconnect it.", button: "Reconnect calendar" },
+    hi: { body: "नमस्ते {{1}}, आपका कैलेंडर {{2}} Hourhand के साथ सिंक होना बंद हो गया है, इसलिए नई बुकिंग को आपके व्यस्त समय का पता नहीं चलेगा। इसे फिर से जोड़ने के लिए नीचे का बटन दबाएँ।", button: "कैलेंडर जोड़ें" },
+  },
 } as const;
 export type TemplateName = keyof typeof TEMPLATES;
 
@@ -99,6 +105,23 @@ export function templateMessage(kind: WhatsAppKind, c: WhatsAppBookingContext, t
         { type: "body", parameters: [param(first, 60), param(c.eventName, 80), param(c.hostName, 80), param(fourth)].map((text) => ({ type: "text", text })) },
         { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: c.manageToken }] },
       ],
+    },
+  };
+}
+
+/** The host's alert that a calendar stopped syncing, as a Cloud API request body to `to` (digits with country code). */
+export function calendarAlertMessage(c: { hostName: string; accountEmail: string; hostLocale: string }, to: string) {
+  const lang: TemplateLang = c.hostLocale === "hi" ? "hi" : "en";
+  const first = c.hostName.trim().split(/\s+/)[0] || c.hostName;
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "template",
+    template: {
+      name: "hh_calendar_alert" satisfies TemplateName,
+      language: { code: lang },
+      components: [{ type: "body", parameters: [param(first, 60), param(c.accountEmail, 120)].map((text) => ({ type: "text", text })) }],
     },
   };
 }

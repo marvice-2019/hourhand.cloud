@@ -122,7 +122,7 @@ Steps (you; Claude never signs in to Meta or handles the token):
 3. Add a payment method.
 4. Business settings → Users → System users: add one (Admin), assign it the WhatsApp account and the app, generate a token that never expires with `whatsapp_business_messaging` and `whatsapp_business_management`. Paste it straight into Coolify as `WHATSAPP_ACCESS_TOKEN`.
 5. Meta app → WhatsApp → Configuration → Webhook: callback URL `https://hourhand.cloud/api/webhooks/whatsapp`, verify token = your `WHATSAPP_VERIFY_TOKEN`, then subscribe to `messages`. This works only after the variables are set and the app redeployed.
-6. WhatsApp Manager → Message templates: create the six templates below, category **Utility**, exactly as written (the app sends these names and languages). Approval takes from minutes to a few days. Sends fail as "template not found" until each is approved; email still goes meanwhile.
+6. WhatsApp Manager → Message templates: create the eight templates below, category **Utility**, exactly as written (the app sends these names and languages). Approval takes from minutes to a few days. Sends fail as "template not found" until each is approved; email still goes meanwhile.
 
 Plan limits per host per calendar month (IST): Free 0, Solo 300, Duo 600 WhatsApp messages. Over the limit, email still goes. Cost at about ₹0.136 a message including GST (check your INR rate card): roughly ₹0.27 per booking.
 
@@ -376,6 +376,76 @@ Cost (Meta pricing from 1 October 2026): replies are service messages, free for 
           "example": [
             "https://hourhand.cloud/b/3f9c2a7d41e8b6c0"
           ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### hh_calendar_alert (en)
+
+Sent to the host, not a guest, when a connected calendar stops syncing, to the phone number they verified when signing in. Same rules as the booking messages: their plan must include WhatsApp, and email still goes.
+
+```json
+{
+  "name": "hh_calendar_alert",
+  "language": "en",
+  "category": "utility",
+  "components": [
+    {
+      "type": "body",
+      "text": "Hi {{1}}, your calendar {{2}} has stopped syncing with Hourhand, so new bookings can't see when you're busy. Use the button below to reconnect it.",
+      "example": {
+        "body_text": [
+          [
+            "Priya",
+            "priya@gmail.com"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "buttons",
+      "buttons": [
+        {
+          "type": "url",
+          "text": "Reconnect calendar",
+          "url": "https://hourhand.cloud/dashboard/calendars"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### hh_calendar_alert (hi)
+
+```json
+{
+  "name": "hh_calendar_alert",
+  "language": "hi",
+  "category": "utility",
+  "components": [
+    {
+      "type": "body",
+      "text": "नमस्ते {{1}}, आपका कैलेंडर {{2}} Hourhand के साथ सिंक होना बंद हो गया है, इसलिए नई बुकिंग को आपके व्यस्त समय का पता नहीं चलेगा। इसे फिर से जोड़ने के लिए नीचे का बटन दबाएँ।",
+      "example": {
+        "body_text": [
+          [
+            "Priya",
+            "priya@gmail.com"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "buttons",
+      "buttons": [
+        {
+          "type": "url",
+          "text": "कैलेंडर जोड़ें",
+          "url": "https://hourhand.cloud/dashboard/calendars"
         }
       ]
     }

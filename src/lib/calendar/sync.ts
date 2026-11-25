@@ -1,4 +1,6 @@
 import type pg from "pg";
+import { waNumber } from "../whatsapp";
+import { whatsappConfig } from "../whatsapp-cloud";
 import { accessTokenFor } from "./connections";
 import { CalendarApiError, PROVIDER_NAMES, type CalendarProviderId, type CalendarProviders } from "./provider";
 
@@ -106,7 +108,9 @@ async function replaceBusyBlocks(pool: pg.Pool, userId: string, connectionId: st
  * Records a failed sync or calendar write. A revoked grant or missing permission disconnects the connection at once;
  * anything else marks it degraded and retries soon. The host is emailed once per outage.
  */
-export async function recordConnectionFailure(pool: Pick<pg.Pool, "query">, connectionId: string, error: unknown, now: Date): Promise<void> {
+export async function recordConnectionFailure(
+  pool: Pick<pg.Pool, "query">, connectionId: string, error: unknown, now: Date, { whatsapp = whatsappConfig() !== null }: { whatsapp?: boolean } = {},
+): Promise<void> {
   const revoked = error instanceof CalendarApiError && error.revoked;
   const message = (error as Error).message.slice(0, 500);
   const { rows: [c] } = await pool.query(
@@ -118,11 +122,22 @@ export async function recordConnectionFailure(pool: Pick<pg.Pool, "query">, conn
   // Claim the one alert for this outage in a single statement: a sync and a calendar write failing together send one email.
   const claimed = await pool.query("update calendar_connections set alert_sent_at = $2 where id = $1 and alert_sent_at is null", [connectionId, now]);
   if (!claimed.rowCount) return;
-  const { rows: [host] } = await pool.query("select email from users where id = $1 and deleted_at is null", [c.user_id]);
+  const { rows: [host] } = await pool.query(
+    "select email, case when phone_number_verified then phone_number end as phone from users where id = $1 and deleted_at is null", [c.user_id]);
   if (!host) return;
+  const key = `calendar:${connectionId}:alert:${now.toISOString()}`;
   await pool.query(
     `insert into notifications (booking_id, user_id, channel, kind, recipient, send_at, dedupe_key)
      values (null, $1, 'email', 'calendar_alert_host', $2, $3, $4) on conflict (dedupe_key) do nothing`,
-    [c.user_id, host.email, now, `calendar:${connectionId}:alert:${now.toISOString()}`]);
+    [c.user_id, host.email, now, key]);
+  // The same alert on WhatsApp, to the number the host verified when signing in, when WhatsApp is set up on this server.
+  // Whether the host's plan covers it, and whether they replied STOP, is checked when it sends.
+  const phone = whatsapp ? waNumber(host.phone as string | null) : null;
+  if (phone) {
+    await pool.query(
+      `insert into notifications (booking_id, user_id, channel, kind, recipient, send_at, dedupe_key)
+       values (null, $1, 'whatsapp', 'calendar_alert_host', $2, $3, $4) on conflict (dedupe_key) do nothing`,
+      [c.user_id, phone, now, `${key}:wa`]);
+  }
 }
 

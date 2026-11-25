@@ -28,7 +28,7 @@ import { hostLocaleOf } from "../i18n/host";
 import { hostMonth, makeHostI18n } from "../i18n/host/format";
 import { hostPriceLine } from "../i18n/host/price";
 import { renderReferralReward } from "../referrals/mail";
-import { isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
+import { calendarAlertMessage, isWhatsAppKind, sendWhatsApp, templateMessage, WhatsAppError, WHATSAPP_MONTHLY_LIMITS, type WhatsAppConfig } from "../whatsapp-cloud";
 import { ZoomApiError, type ZoomMeetingInput } from "../zoom/client";
 import { withZoomToken, type ZoomDeps } from "../zoom/connection";
 import { ZOOM_READY_SQL } from "../zoom/sql";
@@ -245,7 +245,7 @@ const isVideoJob = (kind: NotificationKind): kind is VideoJobKind => kind === "z
 /** Why a WhatsApp row shouldn't go (checked as it sends), or null: set up here, not opted out, within the host's plan. */
 async function whatsappSkipReason(pool: pg.Pool, c: Claimed, cfg: WhatsAppConfig | null, now: Date): Promise<string | null> {
   if (!cfg) return "WhatsApp is not configured on this server";
-  if (!isWhatsAppKind(c.kind)) return "not a WhatsApp message";
+  if (!isWhatsAppKind(c.kind) && c.kind !== "calendar_alert_host") return "not a WhatsApp message";
   if ((await pool.query("select 1 from whatsapp_opt_outs where phone = $1", [c.recipient])).rowCount) return "guest replied STOP on WhatsApp";
   const limit = WHATSAPP_MONTHLY_LIMITS[await hostPlan(pool, c.user_id)];
   if (limit === 0) return "the host's plan doesn't include WhatsApp";
@@ -493,6 +493,17 @@ async function renderZoomAlertMail(pool: pg.Pool, c: Claimed, baseUrl: string): 
   return renderZoomAlert({ accountEmail: z.account_email ?? null, lastError: z.last_error, integrationsUrl: `${baseUrl}/dashboard/integrations`, hostLocale: z.host_locale });
 }
 
+/** What the WhatsApp calendar alert names, or why it shouldn't go any more (the connection was removed or recovered). */
+async function calendarAlertFor(pool: pg.Pool, c: Claimed): Promise<{ hostName: string; accountEmail: string; hostLocale: string } | { skip: string }> {
+  const connectionId = /^calendar:([0-9a-f-]{36}):alert:/.exec(c.dedupe_key)?.[1];
+  const { rows: [conn] } = connectionId
+    ? await pool.query("select c.account_email, c.status, coalesce(u.name, '') as host_name, u.host_locale from calendar_connections c join users u on u.id = c.user_id where c.id = $1", [connectionId])
+    : { rows: [] };
+  if (!conn) return { skip: "calendar connection removed" };
+  if (conn.status === "ok") return { skip: "calendar connection recovered" };
+  return { hostName: conn.host_name as string, accountEmail: conn.account_email as string, hostLocale: conn.host_locale as string };
+}
+
 async function renderAlert(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
   const connectionId = /^calendar:([0-9a-f-]{36}):alert:/.exec(c.dedupe_key)?.[1];
   const { rows: [conn] } = connectionId
@@ -699,7 +710,11 @@ export async function processDueNotifications(
 
     let providerId: string;
     try {
-      if (c.channel === "whatsapp") {
+      if (c.channel === "whatsapp" && c.kind === "calendar_alert_host") {
+        const alert = await calendarAlertFor(pool, c);
+        if ("skip" in alert) { await skip(c, alert.skip); continue; }
+        ({ id: providerId } = await sendWhatsApp(opts.whatsapp!, calendarAlertMessage(alert, c.recipient), opts.fetch));
+      } else if (c.channel === "whatsapp") {
         const message = templateMessage(c.kind as Parameters<typeof templateMessage>[0], {
           guestName: r.guest_name as string, hostName: r.host_name as string, eventName: r.event_name as string, startAt: new Date(r.start_at as Date),
           guestTimezone: r.guest_timezone as string, locale: (r.guest_locale as string | null) ?? "en", manageToken: r.manage_token as string,
