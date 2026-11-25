@@ -3,6 +3,7 @@ import { NotFoundError } from "../data/types";
 import { formatDate } from "../format";
 import { isLocale, type Locale } from "../i18n/guest";
 import { ft } from "../i18n/follow-up";
+import { publicName } from "./public-reviews";
 import { listUnsubscribeHeaders } from "../mail/mailer";
 import { escapeHtml, type RenderedMail } from "../mail/templates";
 import { feedbackToken, optOutToken, readFeedbackToken, readOptOutToken, readRebookToken, rebookToken } from "./tokens";
@@ -354,16 +355,23 @@ export function validateFeedback(input: { rating: unknown; comment: unknown }): 
  * "already". After saving, the host's Google review link (if they set one and switched the ask on) is offered whatever
  * the rating; only the wording follows it.
  */
-export async function submitFeedback(db: Db, key: Buffer, token: unknown, input: { rating: unknown; comment: unknown }, baseUrl: string, now: Date): Promise<FeedbackResult> {
+export async function submitFeedback(db: Db, key: Buffer, token: unknown, input: { rating: unknown; comment: unknown; showPublicly?: unknown; anonymous?: unknown }, baseUrl: string, now: Date): Promise<FeedbackResult> {
   const t = readFeedbackToken(key, token, now);
   if (!t.ok) return { status: t.reason };
   const b = await feedbackBooking(db, key, t.bookingId, baseUrl, now);
   if (!b) return { status: "invalid" };
   const v = validateFeedback(input);
   if (!v.ok) return { status: "bad_input", field: v.field, locale: b.locale };
+  // Shown on the host's page only with the guest's own tick here (and the host's choice later); the words they agreed to are kept.
+  const ticked = (x: unknown) => x === "on" || x === "1" || x === "true" || x === true;
+  const consent = ticked(input.showPublicly);
+  const name = consent && !ticked(input.anonymous)
+    ? publicName((await db.query("select name from invitees where booking_id = $1", [b.bookingId])).rows[0]?.name ?? "") : null;
   const { rowCount } = await db.query(
-    `insert into booking_feedback (booking_id, host_id, rating, comment, created_at) values ($1, $2, $3, $4, $5) on conflict (booking_id) do nothing`,
-    [b.bookingId, b.hostId, v.rating, v.comment, now]);
+    `insert into booking_feedback (booking_id, host_id, rating, comment, created_at, public_consent_at, public_statement, public_name)
+     values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict (booking_id) do nothing`,
+    [b.bookingId, b.hostId, v.rating, v.comment, now, consent ? now : null,
+      consent ? `${ft(b.locale, "publicOptIn", { host: b.hostName })}${name ? "" : ` (${ft(b.locale, "publicAnon")})`}` : null, name]);
   if (!rowCount) return { status: "already", locale: b.locale, hostName: b.hostName };
   return {
     status: "saved", rating: v.rating, locale: b.locale, hostName: b.hostName, rebookUrl: b.rebookUrl,
@@ -403,16 +411,17 @@ export async function applyOptOut(db: Db, key: Buffer, token: unknown, now: Date
 
 // ---- What the host sees -----------------------------------------------------------------------------------------
 
-export interface FeedbackEntry { bookingId: string; rating: number; comment: string | null; createdAt: Date; guestName: string; guestEmail: string; eventName: string; startAt: Date }
+export interface FeedbackEntry { bookingId: string; rating: number; comment: string | null; createdAt: Date; guestName: string; guestEmail: string; eventName: string; startAt: Date; publicConsent: boolean; publicName: string | null; shown: boolean }
 
-const ENTRY = `select f.booking_id, f.rating, f.comment, f.created_at, i.name as guest_name, i.email as guest_email, e.name as event_name, b.start_at
+const ENTRY = `select f.booking_id, f.rating, f.comment, f.created_at, f.public_consent_at is not null as public_consent, f.public_name, f.host_shown, i.name as guest_name, i.email as guest_email, e.name as event_name, b.start_at
   from booking_feedback f join bookings b on b.id = f.booking_id join invitees i on i.booking_id = b.id join event_types e on e.id = b.event_type_id`;
 const toEntry = (r: Record<string, unknown>): FeedbackEntry => ({
   bookingId: r.booking_id as string, rating: r.rating as number, comment: (r.comment as string | null) ?? null, createdAt: r.created_at as Date,
   guestName: r.guest_name as string, guestEmail: r.guest_email as string, eventName: r.event_name as string, startAt: r.start_at as Date,
+  publicConsent: r.public_consent === true, publicName: (r.public_name as string | null) ?? null, shown: r.host_shown === true,
 });
 
-/** The host's feedback, newest first. Private: only ever shown in their dashboard. */
+/** The host's feedback, newest first, for their dashboard. What may show publicly is in ./public-reviews.ts. */
 export async function listFeedback(db: Db, hostId: string, limit = 200): Promise<{ entries: FeedbackEntry[]; average: number | null; count: number }> {
   if (!UUID.test(hostId)) return { entries: [], average: null, count: 0 };
   const [{ rows }, { rows: [agg] }] = await Promise.all([
