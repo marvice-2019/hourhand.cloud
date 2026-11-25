@@ -19,3 +19,32 @@ self.addEventListener("fetch", (event) => {
   if (event.request.mode !== "navigate") return;
   event.respondWith(fetch(event.request).catch(() => caches.match("/offline")));
 });
+
+// Phone alerts (src/lib/push). The server sends { title, body, url, tag }; a tap opens that dashboard page.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = {};
+  }
+  const url = typeof data.url === "string" && data.url.startsWith("/") && !data.url.startsWith("//") ? data.url : "/dashboard";
+  event.waitUntil(self.registration.showNotification(typeof data.title === "string" ? data.title : "Hourhand", {
+    body: typeof data.body === "string" ? data.body : "",
+    icon: "/icons/192",
+    badge: "/icons/192",
+    tag: typeof data.tag === "string" ? data.tag : undefined,
+    data: { url },
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL((event.notification.data && event.notification.data.url) || "/dashboard", self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      const open = windows.find((w) => w.url === url && "focus" in w);
+      return open ? open.focus() : self.clients.openWindow(url);
+    }),
+  );
+});

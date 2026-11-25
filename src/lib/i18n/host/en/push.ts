@@ -1,0 +1,22 @@
+// Host dashboard words: phone alerts (Settings card and the alerts themselves). English is the source; see docs/i18n-host.md.
+export const push = {
+  "push.title": "Phone alerts",
+  "push.intro": "Get a notification on this phone or computer when someone books, moves or cancels a session.",
+  "push.notSetUp": "Phone alerts aren't set up on this server yet.",
+  "push.unsupported": "This browser can't show alerts. Try Chrome, Edge, Firefox or Safari.",
+  "push.installFirst": "On iPhone and iPad, first add Hourhand to your Home Screen (tap Share, then Add to Home Screen). Open it from there and turn alerts on.",
+  "push.blocked": "Notifications are blocked for Hourhand in this browser. Allow them in the browser's settings for this site, then reload this page.",
+  "push.on": "On for this device.",
+  "push.devices": "Devices with alerts on: {n}",
+  "push.turnOn": "Turn on alerts on this device",
+  "push.turnOff": "Turn off on this device",
+  "push.test": "Send a test alert",
+  "push.testSent": "Test sent. It should show up in a few seconds.",
+  "push.error": "That didn't work. Try again in a moment.",
+  "push.titleBooked": "New booking",
+  "push.titleMoved": "Booking moved",
+  "push.titleCancelled": "Booking cancelled",
+  "push.body": "{guest} · {event} · {when}",
+  "push.testTitle": "Phone alerts are on",
+  "push.testBody": "You'll get one here for each new, moved or cancelled booking.",
+} as const;

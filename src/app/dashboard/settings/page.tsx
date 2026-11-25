@@ -17,6 +17,8 @@ import { hostPlan } from "@/lib/billing/account";
 import { LIMITS } from "@/lib/billing/plans";
 import { getPool } from "@/lib/data/pg-store";
 import { prepClientFromEnv, prepSettings } from "@/lib/session-prep/prep";
+import { PhoneAlerts } from "@/components/PhoneAlerts";
+import { countSubscriptions, pushConfig } from "@/lib/push/push";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const prep = pool ? await prepSettings(pool, user.id) : null;
   const prepPlan = pool ? LIMITS[await hostPlan(pool, user.id)].sessionPrep : false;
   const prepServer = prepClientFromEnv() !== null;
+  const push = pushConfig();
+  const pushDevices = pool && push ? await countSubscriptions(pool, user.id) : 0;
   const phone = isPhonePlaceholderEmail(user.email) ? formatPhone(`+${user.email.split("@")[0]}`) : undefined;
   return (
     <div>
@@ -86,6 +90,22 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </form>
         {saved === "language" && <p role="status" className="mt-2 text-success">{t("settings.languageSaved")}</p>}
       </Card>
+
+      {pool && (
+        <Card id="phone-alerts" className="mt-6 max-w-xl">
+          <h2 className="font-semibold text-text">{t("push.title")}</h2>
+          <p className="mt-1 text-text-muted">{t("push.intro")}</p>
+          {push ? (
+            <PhoneAlerts publicKey={push.publicKey} initialDevices={pushDevices} labels={{
+              unsupported: t("push.unsupported"), installFirst: t("push.installFirst"), blocked: t("push.blocked"), on: t("push.on"),
+              devices: t("push.devices", { n: "{n}" }), turnOn: t("push.turnOn"), turnOff: t("push.turnOff"), test: t("push.test"),
+              testSent: t("push.testSent"), error: t("push.error"),
+            }} />
+          ) : (
+            <p className="mt-3 text-sm text-text">{t("push.notSetUp")}</p>
+          )}
+        </Card>
+      )}
 
       {prep && (
         <Card id="session-prep" className="mt-6 max-w-xl">

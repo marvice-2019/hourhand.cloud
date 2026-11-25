@@ -683,6 +683,22 @@ Not done yet. Until `ZOOM_CLIENT_ID` and `ZOOM_CLIENT_SECRET` are set, the Zoom 
 
 What hosts get: each Zoom booking gets its own scheduled meeting in the host's Zoom (waiting room on, join before host off, passcode per the host's Zoom setting, topic "event name with guest name"). Group class seats share one meeting. Zoom's limit is 100 meetings created or updated per host per day.
 
+## 6c. Phone alerts (a notification on the host's phone for each new, moved or cancelled booking)
+
+Off until all three variables are set. Nothing to sign up for: the keys are a pair you make yourself, once.
+
+1. On any computer with Node, run `npx web-push generate-vapid-keys`. It prints a public key and a private key.
+2. In Coolify (app → Environment Variables), add:
+   - `VAPID_PUBLIC_KEY`: the public key
+   - `VAPID_PRIVATE_KEY`: the private key (keep it private, like a password)
+   - `VAPID_SUBJECT`: `mailto:` and an address the push services can reach you at, for example `mailto:support@hourhand.cloud`
+3. Redeploy. The runtime log's `[jobs] runner started (…)` line then says `phone alerts on`. A malformed key stops the
+   new container at start with a message naming the variable, and Coolify keeps the old one running.
+4. Each host turns alerts on in Dashboard → Settings → Phone alerts, on each phone or computer, and can send a test there.
+   On iPhone and iPad the site has to be added to the Home Screen first (iOS 16.4 or later).
+
+Don't change the keys once hosts use alerts: every device would have to turn them on again.
+
 ## 7. Watch it (first week)
 
 | What | How |
