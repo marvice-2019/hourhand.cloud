@@ -8,6 +8,7 @@ import { createPgStore } from "../data/pg-store";
 import type { DataStore, EventType, User } from "../data/types";
 import { MailError, type Mail, type Mailer } from "../mail/mailer";
 import { MAX_ATTEMPTS, processDueNotifications } from "./worker";
+import { getReminderMinutes, saveReminderMinutes } from "../reminders";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const MIN = 60_000;
@@ -91,6 +92,29 @@ describe.skipIf(!BASE)("email queue (TEST_DATABASE_URL)", () => {
     const start = new Date(Math.ceil((Date.now() + 90 * MIN) / (15 * MIN)) * 15 * MIN);
     const b = await book(start);
     expect((await rows(b.id)).filter((x) => x.kind === "reminder_guest")).toHaveLength(1);
+  });
+
+  it("queues the reminders at the times the host chose for the event type, skipping any already past", async () => {
+    await saveReminderMinutes(pool, priya.id, coaching.id, [2880, 120], new Date());
+    try {
+      const b = await book();
+      const r = (await rows(b.id)).filter((x) => x.kind === "reminder_guest").map((x) => b.startAt.getTime() - new Date(x.send_at).getTime());
+      expect(r.sort((a, z) => a - z)).toEqual([120 * MIN, 2880 * MIN]);
+      const soon = new Date(Math.ceil((Date.now() + 300 * MIN) / (15 * MIN)) * 15 * MIN);
+      const c = await book(soon);
+      expect((await rows(c.id)).filter((x) => x.kind === "reminder_guest")).toHaveLength(1);
+      await saveReminderMinutes(pool, priya.id, coaching.id, [], new Date());
+      const d = await book();
+      expect((await rows(d.id)).filter((x) => x.kind === "reminder_guest")).toHaveLength(0);
+    } finally {
+      await saveReminderMinutes(pool, priya.id, coaching.id, [1440, 60], new Date());
+    }
+  });
+
+  it("only the event type's own host can change its reminder times", async () => {
+    const other = (await pool.query("select id from users where id <> $1 limit 1", [priya.id])).rows[0];
+    if (other) await expect(saveReminderMinutes(pool, other.id, coaching.id, [15], new Date())).rejects.toThrow();
+    expect(await getReminderMinutes(pool, priya.id, coaching.id)).toEqual([1440, 60]);
   });
 
   it("sends what is due now, once, with the notification id as Resend's idempotency key", async () => {

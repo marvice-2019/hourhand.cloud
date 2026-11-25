@@ -6,6 +6,8 @@ import { queueFollowUp } from "../follow-ups/follow-ups";
 import { ZOOM_READY_SQL } from "../zoom/sql";
 import { smsConfig } from "../sms/config";
 import { smsRecipient } from "../sms/outbox";
+import { normaliseReminderMinutes } from "../reminders";
+import { queueBookingWebhooks } from "../webhooks/webhooks";
 
 // Queueing booking emails. These run inside the same transaction as the booking change, so a booking and its emails
 // commit together or not at all (the outbox pattern). The job runner (src/lib/jobs) sends the due rows.
@@ -30,10 +32,9 @@ export type NotificationKind = BookingEmailKind | CalendarJobKind | VideoJobKind
 /** Meeting polls: an invitee's link to change their answers, and the host's nudge to pick a time once voting closes. */
 export type PollEmailKind = "poll_voter_link" | "poll_host_closed";
 
-/** Guest reminders, in minutes before the start. A reminder whose time has already passed at booking is not queued. */
-export const REMINDER_OFFSETS_MINUTES = [1440, 60] as const;
-/** The one WhatsApp reminder: a day ahead. Each message is paid for, and the email reminders still go. */
-export const WHATSAPP_REMINDER_MINUTES = 1440;
+// Guest reminders: the event type's reminder times (src/lib/reminders.ts; a day and an hour before unless the host
+// changed them). A reminder whose time has already passed at booking is not queued. WhatsApp (or SMS) gets only one,
+// at the earliest of them (a day ahead by default): each message is paid for, and the email reminders still go.
 
 type Db = Pick<pg.PoolClient, "query">;
 type Event = "booked" | "rescheduled" | "cancelled";
@@ -54,7 +55,7 @@ export async function queueBookingNotifications(
   { notifyHost = true, confirm = true, whatsapp = whatsappConfig() !== null, sms = smsConfig() !== null } = {},
 ): Promise<void> {
   const { rows } = await db.query(
-    `select b.host_id, b.start_at, i.email as guest_email, i.guests::text[] as extra_guests, u.email as host_email,
+    `select b.host_id, b.start_at, (select e.reminder_minutes from event_types e where e.id = b.event_type_id) as reminder_minutes, i.email as guest_email, i.guests::text[] as extra_guests, u.email as host_email,
        i.phone as guest_phone, i.whatsapp_opt_in_at is not null as whatsapp_opt_in, i.sms_opt_in_at is not null as sms_opt_in,
        (select c.id from calendars c join calendar_connections cc on cc.id = c.connection_id
         where c.user_id = b.host_id and c.is_add_to and cc.status <> 'disconnected' and octet_length(cc.credentials_encrypted) > 0) as add_to_calendar,
@@ -129,16 +130,21 @@ export async function queueBookingNotifications(
     if (event === "booked" && isZoom && b.zoom_ready) videoJob("zoom_create");
     // A move keeps the old booking's meeting (moved to the new time), or makes one if it had none.
     if (event === "rescheduled" && ((isZoom && b.zoom_ready) || b.previous_zoom_meeting_id)) videoJob("zoom_move");
-    for (const offset of REMINDER_OFFSETS_MINUTES) {
+    const reminders = normaliseReminderMinutes(b.reminder_minutes);
+    for (const offset of reminders) {
       const sendAt = new Date(start.getTime() - offset * MIN);
       if (sendAt > now) toGuests("reminder_guest", sendAt, `booking:${bookingId}:reminder_guest:${offset}`);
     }
-    const waReminderAt = new Date(start.getTime() - WHATSAPP_REMINDER_MINUTES * MIN);
-    if (waReminderAt > now) toWhatsApp("reminder_guest", waReminderAt, `:${WHATSAPP_REMINDER_MINUTES}`);
+    if (reminders.length) {
+      const waReminderAt = new Date(start.getTime() - reminders[0] * MIN);
+      if (waReminderAt > now) toWhatsApp("reminder_guest", waReminderAt, `:${reminders[0]}`);
+    }
     // The after-session follow-up, when the event type has one switched on (src/lib/follow-ups).
     await queueFollowUp(db, bookingId);
   }
 
+  // The host's own webhooks (n8n, Zapier, a CRM), in this same transaction.
+  await queueBookingWebhooks(db, bookingId, event, now);
   for (const q of queued) {
     await db.query(
       `insert into notifications (booking_id, user_id, channel, kind, recipient, send_at, dedupe_key)

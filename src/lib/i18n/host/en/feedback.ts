@@ -1,7 +1,7 @@
 // Host dashboard words: feedback guests left after their sessions. English is the source; see docs/i18n-host.md.
 export const feedback = {
   "feedback.title": "Feedback",
-  "feedback.intro": "Ratings and comments guests left after a session. Only you see them. Switch the feedback form on per event type, under “After the session”.",
+  "feedback.intro": "Ratings and comments guests left after a session. Only you see them, unless a guest agreed to show theirs and you choose to. Switch the feedback form on per event type, under “After the session”.",
   "feedback.average": "{average} out of 5",
   "feedback.summaryOne": "{average} from {count} answer",
   "feedback.summaryMany": "{average} from {count} answers",
@@ -9,4 +9,14 @@ export const feedback = {
   "feedback.rating": "{rating} / 5",
   "feedback.entry": "{rating} · {guest} · {event}, {date}",
   "feedback.openBooking": "Open booking",
+  "feedback.showOnPage": "Show reviews on my booking page",
+  "feedback.showOnPageHint": "Only reviews whose guest agreed, and that you pick below, appear on your page.",
+  "feedback.savePage": "Save",
+  "feedback.pageOn": "Reviews now show on your booking page.",
+  "feedback.pageOff": "Reviews are hidden from your booking page.",
+  "feedback.consentedNamed": "The guest agreed to show this on your page, as {name}.",
+  "feedback.consentedAnon": "The guest agreed to show this on your page, without their name.",
+  "feedback.show": "Show on my page",
+  "feedback.hide": "Hide from my page",
+  "feedback.shown": "Shown on your page.",
 } as const;

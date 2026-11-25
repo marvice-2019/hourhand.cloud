@@ -8,6 +8,8 @@ import { requireHost } from "@/lib/auth/session";
 import { videoAvailabilityFor } from "@/lib/video/server";
 import { authEnabled, bookingHostName } from "@/lib/auth/auth";
 import { FollowUpSettingsForm } from "@/components/FollowUpSettingsForm";
+import { ReminderSettingsForm } from "@/components/ReminderSettingsForm";
+import { getReminderMinutes } from "@/lib/reminders";
 import { getPool } from "@/lib/data/pg-store";
 import { getFollowUpSettings } from "@/lib/follow-ups/follow-ups";
 import { paymentAccount, priceCurrency } from "@/lib/payments/host-payments";
@@ -21,10 +23,10 @@ export const dynamic = "force-dynamic";
 
 export default async function EventTypePage({ params, searchParams }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string; followups?: string; schedule?: string }>;
+  searchParams: Promise<{ saved?: string; followups?: string; schedule?: string; reminders?: string }>;
 }) {
   const { id } = await params;
-  const { saved, followups, schedule } = await searchParams;
+  const { saved, followups, schedule, reminders } = await searchParams;
   const user = await requireHost();
   const { t } = await getHostI18n();
   const video = await videoAvailabilityFor(user.id);
@@ -40,7 +42,9 @@ export default async function EventTypePage({ params, searchParams }: {
   const otherCurrency = eventType.currency !== null && eventType.currency !== currency ? eventType.currency : null;
   // Follow-ups need Postgres (the outbox and the feedback table); the demo store has neither.
   const db = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
-  const [followUps, profile] = db ? await Promise.all([getFollowUpSettings(db, user.id, id), getProfile(db, user.id)]) : [null, null];
+  const [followUps, profile, reminderMinutes] = db
+    ? await Promise.all([getFollowUpSettings(db, user.id, id), getProfile(db, user.id), getReminderMinutes(db, user.id, id)])
+    : [null, null, null];
 
   return (
     <div>
@@ -69,6 +73,11 @@ export default async function EventTypePage({ params, searchParams }: {
         zoomSetup={await zoomSetupFor(() => getPool(process.env.DATABASE_URL as string), user.id)}
       />
       {eventType.kind !== "one_off" && <EventTypeSchedule eventTypeId={eventType.id} schedules={schedules} saved={schedule === "saved"} />}
+      {reminderMinutes && (
+        <ReminderSettingsForm eventTypeId={eventType.id} minutes={reminderMinutes}
+          notice={reminders === "saved" ? t("eventTypes.remSaved") : null}
+          error={reminders === "too_many" ? t("eventTypes.remTooMany", { n: 3 }) : null} />
+      )}
       {followUps && (
         <FollowUpSettingsForm eventTypeId={eventType.id} settings={followUps} hasReviewLink={Boolean(profile?.reviewsUrl)}
           notice={followups === "saved" ? t("eventTypes.fuSaved") : followups === "bad_delay" ? t("eventTypes.fuBadDelay") : null} />

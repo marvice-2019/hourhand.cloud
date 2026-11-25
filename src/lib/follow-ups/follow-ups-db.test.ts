@@ -13,6 +13,7 @@ import {
   FOLLOW_UPS_OFF, rebookPrefill, applyOptOut, feedbackPage, getFollowUpSettings, listFeedback, saveFollowUpSettings, submitFeedback, type FollowUpSettings,
 } from "./follow-ups";
 import { feedbackToken, linkKey, optOutToken, rebookToken } from "./tokens";
+import { publicReviews, setReviewShown, setShowReviews } from "./public-reviews";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const HOUR = 3_600_000;
@@ -322,6 +323,37 @@ describe.skipIf(!BASE)("follow-ups (TEST_DATABASE_URL)", () => {
       expect(await feedbackPage(pool, key, token, "", now)).toMatchObject({ state: "answered", rating: 5 });
       const mine = (await listFeedback(pool, priya.id)).entries.find((e) => e.bookingId === b.id);
       expect(mine).toMatchObject({ rating: 5, comment: "<b>Lovely</b>" }); // stored as plain text; escaped where shown
+    });
+
+    it("a review shows on the booking page only with the guest's tick, the host's pick and the host's switch", async () => {
+      const shown = await publicReviews(pool, priya.id);
+      expect(shown).toBeNull();
+      const [agreed, anon, kept] = [await book(), await book(), await book()];
+      await submitFeedback(pool, key, feedbackToken(key, agreed.id, now), { rating: "5", comment: "Really helped", showPublicly: "on" }, "", now);
+      await submitFeedback(pool, key, feedbackToken(key, anon.id, now), { rating: "4", comment: "Good", showPublicly: "on", anonymous: "on" }, "", now);
+      await submitFeedback(pool, key, feedbackToken(key, kept.id, now), { rating: "3", comment: "Private thoughts" }, "", now);
+      const entries = (await listFeedback(pool, priya.id)).entries;
+      expect(entries.find((e) => e.bookingId === agreed.id)).toMatchObject({ publicConsent: true, publicName: "Meera I.", shown: false });
+      expect(entries.find((e) => e.bookingId === anon.id)).toMatchObject({ publicConsent: true, publicName: null });
+      expect(entries.find((e) => e.bookingId === kept.id)).toMatchObject({ publicConsent: false });
+      expect((await pool.query("select public_statement from booking_feedback where booking_id = $1", [agreed.id])).rows[0].public_statement).toContain("booking page");
+      // The guest's tick alone shows nothing; nor does the host's pick without the page switch.
+      await setReviewShown(pool, priya.id, agreed.id, true);
+      await setReviewShown(pool, priya.id, anon.id, true);
+      expect(await publicReviews(pool, priya.id)).toBeNull();
+      await setShowReviews(pool, priya.id, true, now);
+      const page = await publicReviews(pool, priya.id);
+      expect(page?.count).toBe(2);
+      expect(page?.reviews.map((r) => r.name).sort()).toEqual(["Meera I.", null].sort());
+      // A review the guest kept private can never be shown, and another host can't touch these.
+      await expect(setReviewShown(pool, priya.id, kept.id, true)).rejects.toThrow();
+      const other = (await pool.query("select id from users where id <> $1 limit 1", [priya.id])).rows[0];
+      await expect(setReviewShown(pool, other.id, agreed.id, false)).rejects.toThrow();
+      // Hiding takes it off at once.
+      await setReviewShown(pool, priya.id, agreed.id, false);
+      expect((await publicReviews(pool, priya.id))?.count).toBe(1);
+      await setShowReviews(pool, priya.id, false, now);
+      expect(await publicReviews(pool, priya.id)).toBeNull();
     });
 
     it("refuse expired and forged links, and bookings that were cancelled", async () => {
