@@ -19,6 +19,7 @@ import { whatsappConfig } from "../whatsapp-cloud";
 import { smsConfig } from "../sms/config";
 import type { Resolver } from "../domains/dns";
 import { recheckDomains } from "../domains/recheck";
+import { processWebhookDeliveries } from "../webhooks/webhooks";
 import type { TraefikSetup } from "../domains/traefik";
 import type { ZoomDeps } from "../zoom/connection";
 
@@ -90,6 +91,13 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
         for (;;) {
           const r = await processDueNotifications(opts.pool, opts.mailer, { baseUrl: opts.baseUrl, calendar: opts.calendar, zoom: opts.zoom, whatsapp: whatsappConfig(), sms: smsConfig() });
           if (r.claimed < BATCH_SIZE && r.released === 0) break;
+        }
+        // Hosts' booking webhooks. Needs the encryption key their signing keys are sealed with; a failure stops nothing else.
+        if (process.env.TOKEN_ENCRYPTION_KEY) {
+          for (;;) {
+            const w = await processWebhookDeliveries(opts.pool, new Date()).catch((error) => { console.error("[jobs] webhooks failed", error); return null; });
+            if (!w || w.sent + w.failed + w.retrying < 20) break;
+          }
         }
         // Custom domains: DNS re-checks and the Traefik files, every 5 minutes, after the emails so slow DNS can't delay them. A failure here stops nothing else.
         if (opts.domains && Date.now() - lastDomains >= 5 * 60_000) {

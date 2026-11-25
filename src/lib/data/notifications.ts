@@ -6,6 +6,7 @@ import { queueFollowUp } from "../follow-ups/follow-ups";
 import { ZOOM_READY_SQL } from "../zoom/sql";
 import { smsConfig } from "../sms/config";
 import { smsRecipient } from "../sms/outbox";
+import { queueBookingWebhooks } from "../webhooks/webhooks";
 
 // Queueing booking emails. These run inside the same transaction as the booking change, so a booking and its emails
 // commit together or not at all (the outbox pattern). The job runner (src/lib/jobs) sends the due rows.
@@ -139,6 +140,8 @@ export async function queueBookingNotifications(
     await queueFollowUp(db, bookingId);
   }
 
+  // The host's own webhooks (n8n, Zapier, a CRM), in this same transaction.
+  await queueBookingWebhooks(db, bookingId, event, now);
   for (const q of queued) {
     await db.query(
       `insert into notifications (booking_id, user_id, channel, kind, recipient, send_at, dedupe_key)

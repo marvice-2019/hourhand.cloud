@@ -171,6 +171,34 @@ Hosts on Solo or Duo can charge guests for an event type, in rupees through Razo
 - **Free hosts:** a priced event of a host whose plan lapsed can't be booked; guests are told to contact the host.
 - **Not built:** Stripe for non-INR (Stripe is invite-only for Indian businesses), partial refunds or cancellation fees, deposits, payment links for existing bookings, and the host's own webhook (not needed: Hourhand checks Razorpay itself).
 
+## Booking webhooks
+
+Dashboard → Integrations → Webhooks. A host adds up to 5 `https://` URLs and picks which events each gets:
+`booking.created`, `booking.cancelled`, `booking.rescheduled` (a move is a new booking; `rescheduled_from` names the old one).
+Deliveries are queued in the same transaction as the booking change (`webhook_deliveries`) and sent by the job runner,
+with retries after 1, 5, 30, 120, 360, 720 and 1440 minutes, then marked failed. "Send a test" queues a `ping`.
+URLs on private, loopback or link-local addresses are refused when saved and again at connect time (`src/lib/webhooks/guard.ts`).
+Needs `TOKEN_ENCRYPTION_KEY` (each endpoint's signing key is sealed with it).
+
+Each request is a JSON `POST` with headers `Hourhand-Event`, `Hourhand-Delivery` (unique per delivery; use it to drop
+repeats) and `Hourhand-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>" with the signing key>`.
+
+```json
+{ "event": "booking.created", "id": "…", "created_at": "2026-11-25T10:00:00.000Z",
+  "data": { "booking": { "id": "…", "status": "confirmed", "start": "…", "end": "…", "location": "google_meet", "rescheduled_from": null, "created_at": "…" },
+            "event_type": { "id": "…", "name": "Coaching", "slug": "coaching", "duration_minutes": 45 },
+            "guest": { "name": "Meera Iyer", "email": "meera@example.com", "phone": null, "timezone": "Asia/Kolkata" } } }
+```
+
+Checking it in Node (an n8n Code node works the same way, with the raw body):
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+const [t, v1] = req.headers["hourhand-signature"].split(",").map((p) => p.split("=")[1]);
+const expected = createHmac("sha256", process.env.HOURHAND_SIGNING_KEY).update(`${t}.${rawBody}`).digest("hex");
+const ok = timingSafeEqual(Buffer.from(v1), Buffer.from(expected)) && Math.abs(Date.now() / 1000 - Number(t)) < 300;
+```
+
 ## Links: single-use and one-off
 
 Dashboard → Links.
