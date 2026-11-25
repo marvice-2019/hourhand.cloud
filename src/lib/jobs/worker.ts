@@ -4,6 +4,7 @@ import type { GoogleClient } from "../calendar/google";
 import { CalendarApiError, PROVIDER_NAMES, type CalendarProvider, type CalendarProviderId, type CalendarProviders } from "../calendar/provider";
 import { recordConnectionFailure } from "../calendar/sync";
 import type { BookingEmailKind, CalendarJobKind, NotificationKind, VideoJobKind } from "../data/notifications";
+import { bookingPushMessage, isPushKind, PushError, sendToHost, type PushDeps } from "../push/push";
 import type { InviteeAnswer, LocationKind } from "../data/types";
 import type { HourCycle } from "../format";
 import { GUEST_LOCATION_LABELS } from "../location-labels";
@@ -69,7 +70,7 @@ export async function claimDue(pool: pg.Pool, now: Date, limit: number): Promise
   const { rows } = await pool.query(
     `update notifications n set locked_until = $1::timestamptz + make_interval(mins => $3), attempts = n.attempts + 1, updated_at = $1
      from (select id from notifications
-           where status = 'queued' and channel in ('email', 'calendar', 'whatsapp', 'sms', 'video') and send_at <= $1 and (locked_until is null or locked_until < $1)
+           where status = 'queued' and channel in ('email', 'calendar', 'whatsapp', 'sms', 'video', 'push') and send_at <= $1 and (locked_until is null or locked_until < $1)
            order by send_at limit $2 for update skip locked) due
      where n.id = due.id
      returning n.id, n.booking_id, n.user_id, n.kind, n.channel, n.recipient, n.attempts, n.locked_until, n.dedupe_key`, [now, limit, LEASE_MINUTES]);
@@ -619,7 +620,7 @@ function followUpLinkKey(): Buffer | null {
 }
 
 export async function processDueNotifications(
-  pool: pg.Pool, mailer: Mailer, opts: { baseUrl: string; now?: Date; limit?: number; calendar?: CalendarDeps | null; zoom?: ZoomDeps | null; whatsapp?: WhatsAppConfig | null; sms?: SmsConfig | null; fetch?: typeof fetch },
+  pool: pg.Pool, mailer: Mailer, opts: { baseUrl: string; now?: Date; limit?: number; calendar?: CalendarDeps | null; zoom?: ZoomDeps | null; whatsapp?: WhatsAppConfig | null; sms?: SmsConfig | null; push?: PushDeps | null; fetch?: typeof fetch },
 ): Promise<WorkerResult> {
   const now = opts.now ?? new Date();
   const claimed = await claimDue(pool, now, opts.limit ?? BATCH_SIZE);
@@ -666,8 +667,8 @@ export async function processDueNotifications(
       if (!r?.id) { await skip(c, "booking no longer exists"); continue; }
       const why = skipReason(c.kind, r, now);
       if (why) { await skip(c, why); continue; }
-      // WhatsApp and SMS templates carry no video link, so they never wait for one.
-      let wait = c.channel === "whatsapp" || c.channel === "sms" ? null : deferReason(c.kind, r, now, Boolean(opts.calendar), Boolean(opts.zoom));
+      // WhatsApp and SMS templates and phone alerts carry no video link, so they never wait for one.
+      let wait = c.channel === "whatsapp" || c.channel === "sms" || c.channel === "push" ? null : deferReason(c.kind, r, now, Boolean(opts.calendar), Boolean(opts.zoom));
       if (wait === VIDEO_LINK_WAIT || wait === ZOOM_LINK_WAIT) {
         // The calendar or Zoom write may have finished earlier in this same batch: look again before waiting.
         const { rows: [fresh] } = await pool.query(
@@ -699,6 +700,8 @@ export async function processDueNotifications(
       if (why) { await skip(c, why); continue; }
     }
     if (isCalendarJob(c.kind) && !opts.calendar) { await skip(c, `${new Intl.ListFormat("en").format(Object.values(PROVIDER_NAMES))} calendars are not configured on this server`); await release(c); continue; }
+    if (c.channel === "push" && !opts.push) { await skip(c, "phone alerts are not set up on this server"); continue; }
+    if (c.channel === "push" && !isPushKind(c.kind)) { await skip(c, `${c.kind} has no phone alert`); continue; }
     if (isVideoJob(c.kind) && !opts.zoom) { await skip(c, "Zoom is not configured on this server"); await release(c); continue; }
 
     // Renew the lease for this row only, right before running it. If another worker took the row over, leave it to them.
@@ -724,6 +727,13 @@ export async function processDueNotifications(
           } : {}),
         }, c.recipient);
         ({ id: providerId } = await sendWhatsApp(opts.whatsapp!, message, opts.fetch));
+      } else if (c.channel === "push") {
+        const out = await sendToHost(pool, opts.push!, c.user_id, bookingPushMessage(c.kind as Parameters<typeof bookingPushMessage>[0], {
+          bookingId: r.id as string, guestName: r.guest_name as string, eventName: r.event_name as string, startAt: new Date(r.start_at as Date),
+          hostTimezone: r.host_timezone as string, hostTimeFormat: r.host_time_format as HourCycle, hostLocale: (r.host_locale as string | null) ?? null,
+        }), now);
+        if (out.sent === 0) { await skip(c, "no device has phone alerts on"); continue; }
+        providerId = `push:${out.sent}`;
       } else if (isVideoJob(c.kind)) {
         const out = await runZoomJob(pool, opts.zoom!, c, r, now);
         if ("skip" in out) { await skip(c, out.skip); await release(c); continue; }
@@ -766,7 +776,7 @@ export async function processDueNotifications(
         ({ id: providerId } = await mailer.send({ ...mail, to: c.recipient, idempotencyKey: `notification-${c.id}` }));
       }
     } catch (error) {
-      const retryable = error instanceof MailError || error instanceof CalendarApiError || error instanceof WhatsAppError || error instanceof SmsError || error instanceof ZoomApiError ? error.retryable : true;
+      const retryable = error instanceof MailError || error instanceof CalendarApiError || error instanceof WhatsAppError || error instanceof SmsError || error instanceof ZoomApiError || error instanceof PushError ? error.retryable : true;
       const message = (error as Error).message.slice(0, 500);
       if (!retryable || c.attempts >= MAX_ATTEMPTS) {
         await finish(c, "failed", { error: message });

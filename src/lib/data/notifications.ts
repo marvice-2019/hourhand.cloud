@@ -8,6 +8,7 @@ import { smsConfig } from "../sms/config";
 import { smsRecipient } from "../sms/outbox";
 import { normaliseReminderMinutes } from "../reminders";
 import { queueBookingWebhooks } from "../webhooks/webhooks";
+import { pushConfig } from "../push/push";
 
 // Queueing booking emails. These run inside the same transaction as the booking change, so a booking and its emails
 // commit together or not at all (the outbox pattern). The job runner (src/lib/jobs) sends the due rows.
@@ -49,10 +50,12 @@ const MIN = 60_000;
  * replied STOP, and WhatsApp is set up here (`whatsapp`); whether the host's plan covers it is checked when it sends.
  * The same messages go by SMS instead when the guest ticked "text me" for an Indian mobile and SMS is set up (`sms`),
  * but never on both channels: WhatsApp wins, and src/lib/sms falls back to a text if the WhatsApp message can't go.
+ * The host's own emails also go as phone alerts when phone alerts are set up here (`push`) and the host turned them on
+ * for at least one device (src/lib/push).
  */
 export async function queueBookingNotifications(
   db: Db, bookingId: string, event: Event, now: Date,
-  { notifyHost = true, confirm = true, whatsapp = whatsappConfig() !== null, sms = smsConfig() !== null } = {},
+  { notifyHost = true, confirm = true, whatsapp = whatsappConfig() !== null, sms = smsConfig() !== null, push = pushConfig() !== null } = {},
 ): Promise<void> {
   const { rows } = await db.query(
     `select b.host_id, b.start_at, (select e.reminder_minutes from event_types e where e.id = b.event_type_id) as reminder_minutes, i.email as guest_email, i.guests::text[] as extra_guests, u.email as host_email,
@@ -60,6 +63,7 @@ export async function queueBookingNotifications(
        (select c.id from calendars c join calendar_connections cc on cc.id = c.connection_id
         where c.user_id = b.host_id and c.is_add_to and cc.status <> 'disconnected' and octet_length(cc.credentials_encrypted) > 0) as add_to_calendar,
        exists (select 1 from calendar_connections cc where cc.user_id = b.host_id) as has_calendar,
+       exists (select 1 from push_subscriptions ps where ps.user_id = b.host_id) as host_push,
        b.external_event_id, b.location_kind, b.zoom_meeting_id,
        ${ZOOM_READY_SQL("b.host_id")} as zoom_ready,
        (select p.zoom_meeting_id from bookings p where p.id = b.rescheduled_from_id) as previous_zoom_meeting_id,
@@ -71,7 +75,7 @@ export async function queueBookingNotifications(
   const b = rows[0];
   if (!b) return;
   const start = new Date(b.start_at);
-  const queued: { kind: NotificationKind; channel: "email" | "calendar" | "whatsapp" | "sms" | "video"; to: string; sendAt: Date; key: string }[] = [];
+  const queued: { kind: NotificationKind; channel: "email" | "calendar" | "whatsapp" | "sms" | "video" | "push"; to: string; sendAt: Date; key: string }[] = [];
   const phone = whatsapp && b.whatsapp_opt_in ? waNumber(b.guest_phone) : null;
   const optedOut = phone !== null && (await db.query("select 1 from whatsapp_opt_outs where phone = $1", [phone])).rowCount! > 0;
   const textTo = phone && !optedOut ? null : await smsRecipient(db, b.guest_phone, b.sms_opt_in, sms);
@@ -80,6 +84,11 @@ export async function queueBookingNotifications(
     else if (textTo) queued.push({ kind, channel: "sms", to: textTo, sendAt, key: `booking:${bookingId}:sms:${kind}${suffix}` });
   };
   const now_ = (kind: BookingEmailKind, to: string) => queued.push({ kind, channel: "email", to, sendAt: now, key: `booking:${bookingId}:${kind}` });
+  // A host email also goes as a phone alert. The worker finds the host's devices when it sends.
+  const toHost = (kind: "booked_host" | "rescheduled_host" | "cancelled_host") => {
+    now_(kind, b.host_email);
+    if (push && b.host_push) queued.push({ kind, channel: "push", to: b.host_id, sendAt: now, key: `booking:${bookingId}:push:${kind}` });
+  };
   // Extra guests get each guest email too, under their own keys (the worker leaves out the manage link for them).
   const extras: string[] = b.extra_guests ?? [];
   const toGuests = (kind: BookingEmailKind, sendAt: Date, key: string) => {
@@ -98,7 +107,7 @@ export async function queueBookingNotifications(
     // `confirm: false`: a later week cancelled along with an earlier one, whose email lists it.
     if (confirm) toGuests("cancelled_guest", now, `booking:${bookingId}:cancelled_guest`);
     if (confirm) toWhatsApp("cancelled_guest", now);
-    if (confirm && notifyHost) now_("cancelled_host", b.host_email);
+    if (confirm && notifyHost) toHost("cancelled_host");
     await db.query(
       `update notifications set status = 'skipped', last_error = 'booking cancelled', updated_at = $2
        where booking_id = $1 and status = 'queued' and kind not in ('cancelled_guest', 'cancelled_host')
@@ -122,7 +131,7 @@ export async function queueBookingNotifications(
   } else {
     // `confirm: false` is a later week of a series: the first week's confirmation already lists it.
     if (confirm) { const k = event === "booked" ? "booked_guest" : "rescheduled_guest"; toGuests(k, now, `booking:${bookingId}:${k}`); toWhatsApp(k, now); }
-    if (confirm && notifyHost) now_(event === "booked" ? "booked_host" : "rescheduled_host", b.host_email);
+    if (confirm && notifyHost) toHost(event === "booked" ? "booked_host" : "rescheduled_host");
     if (event === "booked" && b.add_to_calendar && !b.class_mate) calendarJob("calendar_create", b.add_to_calendar);
     // A move updates the old booking's event wherever it is; with no old event it creates one in the add-to calendar.
     if (event === "rescheduled" && (b.add_to_calendar || b.has_calendar)) calendarJob("calendar_move", b.add_to_calendar ?? "event");

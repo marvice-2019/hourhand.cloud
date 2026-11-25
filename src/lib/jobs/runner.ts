@@ -17,6 +17,7 @@ import { setJobKick } from "./kick";
 import { BATCH_SIZE, processDueNotifications, type CalendarDeps } from "./worker";
 import { whatsappConfig } from "../whatsapp-cloud";
 import { smsConfig } from "../sms/config";
+import { pushDeps } from "../push/push";
 import type { Resolver } from "../domains/dns";
 import { recheckDomains } from "../domains/recheck";
 import { processWebhookDeliveries } from "../webhooks/webhooks";
@@ -89,7 +90,7 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
         if (prepClient) await prepareDueBriefs(opts.pool, prepClient, new Date()).catch((error) => console.error("[jobs] session prep failed", error));
         // A full batch means more may be due: keep going until a batch comes back short.
         for (;;) {
-          const r = await processDueNotifications(opts.pool, opts.mailer, { baseUrl: opts.baseUrl, calendar: opts.calendar, zoom: opts.zoom, whatsapp: whatsappConfig(), sms: smsConfig() });
+          const r = await processDueNotifications(opts.pool, opts.mailer, { baseUrl: opts.baseUrl, calendar: opts.calendar, zoom: opts.zoom, whatsapp: whatsappConfig(), sms: smsConfig(), push: pushDeps() });
           if (r.claimed < BATCH_SIZE && r.released === 0) break;
         }
         // Hosts' booking webhooks. Needs the encryption key their signing keys are sealed with; a failure stops nothing else.

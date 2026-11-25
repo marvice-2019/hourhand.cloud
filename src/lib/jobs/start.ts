@@ -13,6 +13,7 @@ import { systemResolver } from "../domains/dns";
 import { traefikFromEnv } from "../domains/traefik";
 import { startJobRunner, type JobRunner } from "./runner";
 import { zoomConfigError, zoomDeps } from "../zoom/connection";
+import { pushConfig, pushConfigError } from "../push/push";
 
 const shared = globalThis as typeof globalThis & { __hourhandJobs?: JobRunner };
 
@@ -27,6 +28,8 @@ export function startJobsFromEnv(env: Record<string, string | undefined> = proce
   if (configError) throw new Error(configError);
   const zoomError = zoomConfigError(env);
   if (zoomError) throw new Error(zoomError);
+  const pushError = pushConfigError(env);
+  if (pushError) throw new Error(pushError);
   const zoom = zoomDeps(env);
   const deps = calendarDeps(env);
   const calendar = deps && { ...deps, pushAddress: pushAddress(baseUrl, env) };
@@ -50,5 +53,5 @@ export function startJobsFromEnv(env: Record<string, string | undefined> = proce
   const traefik = traefikFromEnv(env);
   if (!traefik.ok) console.info(`[jobs] ${traefik.reason} Hosts see that on the Custom domain page.`);
   shared.__hourhandJobs = startJobRunner({ pool, mailer, baseUrl, calendar, zoom, payments, stripe, domains: { resolver: systemResolver(), traefik } });
-  console.info(`[jobs] runner started (${env.RESEND_API_KEY ? "Resend" : "log only"}, calendars ${calendar ? `${Object.keys(calendar.providers).join(" + ")} on${calendar.providers.google ? `, Google ${calendar.pushAddress ? "instant" : "polling"}` : ""}` : "off"}, booking payments ${payments ? "on" : "off"}, Zoom ${zoom ? "on" : "off"}, Stripe ${stripe ? "on" : "off"})`);
+  console.info(`[jobs] runner started (${env.RESEND_API_KEY ? "Resend" : "log only"}, calendars ${calendar ? `${Object.keys(calendar.providers).join(" + ")} on${calendar.providers.google ? `, Google ${calendar.pushAddress ? "instant" : "polling"}` : ""}` : "off"}, booking payments ${payments ? "on" : "off"}, phone alerts ${pushConfig(env) ? "on" : "off"}, Zoom ${zoom ? "on" : "off"}, Stripe ${stripe ? "on" : "off"})`);
 }
