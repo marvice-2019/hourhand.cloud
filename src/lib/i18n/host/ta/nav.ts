@@ -10,6 +10,7 @@ export const nav: Record<keyof typeof en, string> = {
   "nav.eventTypes": "நிகழ்வு வகைகள்",
   "nav.links": "லிங்க்குகள்",
   "nav.polls": "வாக்கெடுப்புகள்",
+  "nav.routing": "வழிகாட்டும் படிவங்கள்",
   "nav.getBooked": "Instagram & Google",
   "nav.packages": "பேக்கேஜ்கள்",
   "nav.offers": "ஆஃபர்கள்",
