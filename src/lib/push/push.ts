@@ -88,8 +88,8 @@ export async function countSubscriptions(db: Db, userId: string): Promise<number
 }
 
 /** Booking news a host can get as a phone alert. */
-export type PushKind = "booked_host" | "rescheduled_host" | "cancelled_host";
-export const PUSH_KINDS: readonly PushKind[] = ["booked_host", "rescheduled_host", "cancelled_host"];
+export type PushKind = "booked_host" | "rescheduled_host" | "cancelled_host" | "requested_host";
+export const PUSH_KINDS: readonly PushKind[] = ["booked_host", "rescheduled_host", "cancelled_host", "requested_host"];
 export const isPushKind = (kind: string): kind is PushKind => (PUSH_KINDS as readonly string[]).includes(kind);
 
 export interface PushMessage { title: string; body: string; url: string; tag: string }
@@ -99,7 +99,7 @@ export interface BookingPushContext {
   hostTimezone: string; hostTimeFormat: HourCycle; hostLocale: string | null;
 }
 
-const TITLE = { booked_host: "push.titleBooked", rescheduled_host: "push.titleMoved", cancelled_host: "push.titleCancelled" } as const;
+const TITLE = { booked_host: "push.titleBooked", rescheduled_host: "push.titleMoved", cancelled_host: "push.titleCancelled", requested_host: "push.titleRequest" } as const;
 
 /** "New booking" / "Asha · Intro call · Tue 1 Dec, 3:30 pm", in the host's dashboard language and time zone. */
 export function bookingPushMessage(kind: PushKind, c: BookingPushContext): PushMessage {

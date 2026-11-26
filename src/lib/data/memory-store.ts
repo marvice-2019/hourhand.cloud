@@ -5,7 +5,7 @@ import { classKeyOf, overlaps } from "../slots";
 import { buildSeed, type Seed } from "./seed";
 import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
-import { LAPSED_REASON } from "../approval";
+import { DECLINED_REASON, LAPSED_REASON } from "../approval";
 import {
   DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type BookingLink, type BookingWithInvitee,
   type CreateBookingInput, type CustomQuestion, type DataStore, type EventType, type EventTypeDraft, type Interval,
@@ -324,6 +324,19 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       if (linkId) linkOfBooking.set(booking.id, linkId);
       Object.assign(old, { status: "cancelled", cancelledAt: new Date(), cancelledBy: by, cancelReason: "Rescheduled" });
       return booking;
+    },
+    async decideRequest(hostId, bookingId, decision, now) {
+      const booking = db.bookings.find((b) => b.hostId === hostId && b.id === bookingId);
+      if (!booking) throw new NotFoundError("Booking");
+      if (booking.status === "confirmed") return "already_confirmed";
+      if (booking.status !== "pending_approval") return "already_cancelled";
+      if ((booking.holdExpiresAt?.getTime() ?? 0) <= now.getTime()) return "lapsed";
+      if (decision === "approve") { Object.assign(booking, { status: "confirmed", holdExpiresAt: null }); return "approved"; }
+      Object.assign(booking, {
+        status: "cancelled", cancelledAt: now, cancelledBy: decision === "decline" ? "host" : "guest",
+        cancelReason: decision === "decline" ? DECLINED_REASON : null, holdExpiresAt: null,
+      });
+      return decision === "decline" ? "declined" : "withdrawn";
     },
     async cancelBooking(hostId, bookingId, by, reason, opts = {}) {
       const booking = db.bookings.find((b) => b.hostId === hostId && b.id === bookingId);

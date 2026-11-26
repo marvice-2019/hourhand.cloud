@@ -16,10 +16,11 @@ import { queueWaitlistFor } from "../waitlist";
 import { classKeyOf, localDay, weekOf } from "../slots";
 import { queueRefunds } from "../payments/series";
 import { hostDisplayName } from "../display-name";
-import { LAPSED_REASON } from "../approval";
+import { DECLINED_REASON, LAPSED_REASON } from "../approval";
 import {
   DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type AvailabilityRule, type BookingLink,
   type BookingWithInvitee, type CreateBookingInput, type CustomQuestion, type DataStore, type EventType, type EventTypeDraft, type Interval, type User,
+  type RequestOutcome,
 } from "./types";
 
 const MIN = 60_000;
@@ -173,10 +174,11 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
     await client.query(
       `update bookings set status = 'cancelled', cancelled_at = now(), cancelled_by = 'system', cancel_reason = 'Payment not completed', hold_expires_at = null
        where host_id = (select user_id from event_types where id = $1) and status = 'pending_payment' and hold_expires_at < now()`, [eventTypeId]);
-    // Requests the host didn't answer in time (B9). The job runner sweeps them too, and emails the guest.
-    await client.query(
+    // Requests the host didn't answer in time (B9), told to their guests as the job runner's sweep would (lapseRequests).
+    const { rows: lapsed } = await client.query(
       `update bookings set status = 'cancelled', cancelled_at = now(), cancelled_by = 'system', cancel_reason = $2, hold_expires_at = null
-       where host_id = (select user_id from event_types where id = $1) and status = 'pending_approval' and hold_expires_at < now()`, [eventTypeId, LAPSED_REASON]);
+       where host_id = (select user_id from event_types where id = $1) and status = 'pending_approval' and hold_expires_at < now() returning id`, [eventTypeId, LAPSED_REASON]);
+    for (const r of lapsed) await queueBookingNotifications(client, r.id as string, "lapsed", new Date());
   }
 
   /**
@@ -511,7 +513,8 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
           const grantIds = memberToken ? await takeMembershipCredits(client, input.packageToken!, input.eventTypeId, weekStarts) : null;
           const newId = await insertBooking(client, input, null, linkId);
           // A held booking says nothing yet: its emails and calendar write go out once the payment is confirmed.
-          if (!input.holdUntil && !input.approvalUntil) await queueBookingNotifications(client, newId, "booked", new Date());
+          if (input.approvalUntil) await queueBookingNotifications(client, newId, "requested", new Date());
+          else if (!input.holdUntil) await queueBookingNotifications(client, newId, "booked", new Date());
           // A weekly series: the later weeks commit with the first or not at all. The first week's confirmation lists
           // every date; each week still gets its own reminders and calendar event.
           const weeks = input.weeks ?? 1;
@@ -603,6 +606,34 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
       } catch (error) {
         return settle(error, idempotencyKey, isSameRequest);
       }
+    },
+    async decideRequest(hostId, bookingId, decision, now) {
+      if (!isId(hostId) || !isId(bookingId)) throw new NotFoundError("Booking");
+      const outcome = await tx(async (client): Promise<RequestOutcome> => {
+        const { rows: [b] } = await client.query(
+          "select status, hold_expires_at from bookings where id = $1 and host_id = $2 for update", [bookingId, hostId]);
+        if (!b) throw new NotFoundError("Booking");
+        if (b.status === "confirmed") return "already_confirmed";
+        if (b.status !== "pending_approval") return "already_cancelled";
+        if (new Date(b.hold_expires_at).getTime() <= now.getTime()) return "lapsed";
+        if (decision === "approve") {
+          await client.query("update bookings set status = 'confirmed', hold_expires_at = null, updated_at = $2 where id = $1", [bookingId, now]);
+          // Everything a booking gets from here on: the guest's confirmation, calendar event, Zoom meeting, reminders,
+          // webhooks. The host just approved it, so their own "new booking" email would only repeat that.
+          await queueBookingNotifications(client, bookingId, "booked", now, { notifyHost: false });
+          return "approved";
+        }
+        const [by, reason, event, result] = decision === "decline"
+          ? ["host", DECLINED_REASON, "declined", "declined"] as const : ["guest", null, "withdrawn", "withdrawn"] as const;
+        await client.query(
+          "update bookings set status = 'cancelled', cancelled_at = $2, cancelled_by = $3, cancel_reason = $4, hold_expires_at = null, updated_at = $2 where id = $1",
+          [bookingId, now, by, reason]);
+        await queueBookingNotifications(client, bookingId, event, now);
+        await queueWaitlistFor(client, bookingId, now);
+        return result;
+      });
+      if (outcome === "approved" || outcome === "declined" || outcome === "withdrawn") kickJobs();
+      return outcome;
     },
     async cancelBooking(hostId, bookingId, by, reason, opts = {}) {
       if (!isId(hostId) || !isId(bookingId)) throw new NotFoundError("Booking");

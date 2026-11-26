@@ -232,6 +232,11 @@ export interface BusyBlock {
   end: Date;
 }
 
+/** B9: what the host (approve, decline) or the guest (withdraw) does with a request. */
+export type RequestDecision = "approve" | "decline" | "withdraw";
+/** What became of a request: the decision applied, or why nothing changed. */
+export type RequestOutcome = "approved" | "declined" | "withdrawn" | "already_confirmed" | "already_cancelled" | "lapsed";
+
 export interface CreateBookingInput {
   eventTypeId: string;
   startAt: Date;
@@ -387,6 +392,11 @@ export interface DataStore {
    * series' later upcoming weeks in the same write; one pair of cancellation emails covers them all.
    */
   cancelBooking(hostId: string, bookingId: string, by: "host" | "guest", reason?: string, opts?: { laterWeeks?: boolean }): Promise<BookingWithInvitee>;
+  /**
+   * B9: the host approves or declines a request, or the guest withdraws it. Only a request still holding its slot
+   * changes; otherwise the result says what became of it. Throws NotFoundError unless the booking belongs to `hostId`.
+   */
+  decideRequest(hostId: string, bookingId: string, decision: RequestDecision, now: Date): Promise<RequestOutcome>;
   /** Atomically books `startAt` for the same guest and cancels the old booking. The overlap check ignores the old booking. */
   /** `by` is recorded as who cancelled the old booking. */
   rescheduleBooking(hostId: string, bookingId: string, startAt: Date, idempotencyKey: string, by?: "host" | "guest"): Promise<BookingWithInvitee>;

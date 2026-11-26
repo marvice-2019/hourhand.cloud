@@ -256,6 +256,35 @@ describe.skipIf(!BASE)("email queue (TEST_DATABASE_URL)", () => {
     expect(cancelMails.every((m) => m.text.includes("Also cancelled (2)"))).toBe(true);
   });
 
+  describe("a booking request (B9)", () => {
+    it("emails the guest and host, then on approval the guest's confirmation only", async () => {
+      const request = await store.createBooking({
+        eventTypeId: coaching.id, startAt: nextStart(), idempotencyKey: `jobs-request-${slot}`, approvalUntil: new Date(Date.now() + 60 * MIN), invitee: guest,
+      });
+      const first = fakeMailer();
+      await processDueNotifications(pool, first.mailer, { baseUrl });
+      expect(first.sent.map((m) => m.subject).sort()).toEqual([expect.stringMatching(/^Booking request: Meera Iyer/), expect.stringMatching(/^Request sent: /)]);
+      expect(first.sent.find((m) => m.subject.startsWith("Booking request"))!.text).toContain(`/dashboard/bookings/${request.id}?decide=approve`);
+
+      expect(await store.decideRequest(priya.id, request.id, "approve", new Date())).toBe("approved");
+      const second = fakeMailer();
+      await processDueNotifications(pool, second.mailer, { baseUrl });
+      expect(second.sent.map((m) => m.subject)).toEqual([expect.stringMatching(/^Booked: /)]);
+      expect(second.sent[0].to).toBe(guest.email);
+    });
+
+    it("skips the request emails once the host has decided", async () => {
+      const request = await store.createBooking({
+        eventTypeId: coaching.id, startAt: nextStart(), idempotencyKey: `jobs-request-${slot}`, approvalUntil: new Date(Date.now() + 60 * MIN), invitee: guest,
+      });
+      await store.decideRequest(priya.id, request.id, "decline", new Date());
+      const run = fakeMailer();
+      await processDueNotifications(pool, run.mailer, { baseUrl });
+      expect(run.sent.map((m) => m.subject)).toEqual([expect.stringMatching(/^Not confirmed: /)]);
+      expect((await rows(request.id)).filter((r) => r.kind.startsWith("requested_")).map((r) => r.status)).toEqual(["skipped", "skipped"]);
+    });
+  });
+
   describe("a paid weekly series", () => {
     /** A 4-week series with one paid payment of ₹2,000 (₹500 a week) on its first booking, its booking emails sent. */
     async function paidSeries(start: Date, hostId = priya.id, eventTypeId = coaching.id) {

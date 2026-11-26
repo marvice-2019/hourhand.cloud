@@ -17,6 +17,7 @@ export const push: Record<keyof typeof en, string> = {
   "push.titleBooked": "புதிய முன்பதிவு",
   "push.titleMoved": "முன்பதிவு நேரம் மாற்றப்பட்டது",
   "push.titleCancelled": "முன்பதிவு ரத்து செய்யப்பட்டது",
+  "push.titleRequest": "புக்கிங் கோரிக்கை",
   "push.body": "{guest} · {event} · {when}",
   "push.testTitle": "தொலைபேசி அறிவிப்புகள் இயக்கத்தில் உள்ளன",
   "push.testBody": "ஒவ்வொரு புதிய, மாற்றிய அல்லது ரத்து செய்த முன்பதிவுக்கும் இங்கே அறிவிப்பு வரும்.",
