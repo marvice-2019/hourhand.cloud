@@ -47,7 +47,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
                 </Link>
                 <span className="text-text">{t("bookings.dateTime", { date: date(b.startAt, tz), time: time(b.startAt, tz) })}</span>
                 <span className={`rounded-md px-2 py-0.5 text-sm ${cancelled ? "bg-danger-bg text-danger" : pending ? "bg-warning-bg text-warning" : "bg-success-bg text-success"}`}>
-                  {t(cancelled ? "bookings.statusCancelled" : b.status === "pending_approval" ? "bookings.statusAwaitingApproval" : pending ? "bookings.statusAwaitingPayment" : b.endAt.getTime() < now ? "bookings.statusDone" : "bookings.statusConfirmed")}
+                  {t(cancelled ? "bookings.statusCancelled" : b.status === "pending_approval" ? "bookings.statusAwaitingApproval" : b.status === "confirmed" && b.rescheduleRequestedAt && b.startAt.getTime() > now ? "bookings.statusAskedToMove" : pending ? "bookings.statusAwaitingPayment" : b.endAt.getTime() < now ? "bookings.statusDone" : "bookings.statusConfirmed")}
                 </span>
                 {b.invitee.noShowAt && <span className="rounded-md bg-warning-bg px-2 py-0.5 text-sm text-warning">{t("bookings.noShow")}</span>}
               </li>

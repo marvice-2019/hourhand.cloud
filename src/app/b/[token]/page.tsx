@@ -109,6 +109,12 @@ export default async function ManageBookingPage({ params, searchParams }: { para
         </p>
       ) : (
         <>
+        {booking.rescheduleRequestedAt && booking.startAt > now && (
+          <div className="mt-6 max-w-md rounded-md bg-surface p-3" role="status">
+            <p className="font-semibold text-text">{t(locale, "askedToMove", { host: host.name })}</p>
+            {booking.rescheduleRequestNote && <p className="mt-1 whitespace-pre-line break-words text-text">{t(locale, "askedNote", { host: host.name, note: booking.rescheduleRequestNote })}</p>}
+          </div>
+        )}
         <AddToCalendar
           token={token} title={mt(locale, "calWith", { event: eventType.name, host: host.name })} start={booking.startAt} end={booking.endAt} locale={locale}
           location={joinUrl ?? (booking.locationKind ? t(locale, LOCATION_KEYS[booking.locationKind]) : null)}

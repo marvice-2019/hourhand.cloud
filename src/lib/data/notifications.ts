@@ -18,7 +18,9 @@ export type BookingEmailKind =
   | "booked_guest" | "booked_host" | "reminder_guest"
   | "cancelled_guest" | "cancelled_host" | "rescheduled_guest" | "rescheduled_host" | "late_host"
   // B9: a request waiting on the host, and how it ended if the host didn't approve it.
-  | "requested_guest" | "requested_host" | "declined_guest" | "lapsed_guest";
+  | "requested_guest" | "requested_host" | "declined_guest" | "lapsed_guest"
+  // B10: the host asked the guest to pick a new time (queued by the store's askToReschedule).
+  | "reschedule_request_guest";
 /** Writes to the host's calendar (channel 'calendar'). */
 export type CalendarJobKind = "calendar_create" | "calendar_move" | "calendar_delete";
 /** Writes to the host's Zoom (channel 'video'): a meeting per booking, moved on reschedule, deleted on cancel. */

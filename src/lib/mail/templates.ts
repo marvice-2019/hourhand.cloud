@@ -75,6 +75,8 @@ export interface BookingMailContext {
   hostLocale?: string;
   /** For a request (B9): when it stops holding the slot unless the host approves it. */
   holdUntil?: Date | null;
+  /** B10: what the host wrote when asking the guest to pick a new time. */
+  rescheduleNote?: string | null;
 }
 
 export interface RenderedMail { subject: string; text: string; html: string; attachments?: Attachment[]; replyTo?: string; headers?: Record<string, string> }
@@ -313,6 +315,13 @@ export function renderBookingMail(kind: BookingEmailKind, c: BookingMailContext)
         ] },
         note: h(c, "mail.nRequest", { guest: c.guestName }), footer: hostFooter(c),
       }, { replyTo: c.guestEmail });
+    case "reschedule_request_guest":
+      return render(g(c, "subjAskMove", { event: c.eventName, host }), {
+        heading: g(c, "hAskMove"), intro: g(c, "iAskMove", { guest: c.guestName, host }),
+        rows: [...guestRows(c), ...(c.rescheduleNote ? [[g(c, "rNoteFrom", { host }), c.rescheduleNote] as Row] : [])],
+        choices: { heading: g(c, "hAskMove"), items: [{ label: g(c, "lPickNew"), url: c.manageUrl }] },
+        footer: guestFooter(c),
+      }, { replyTo: c.hostEmail });
     case "declined_guest":
     case "lapsed_guest":
       return render(g(c, "subjDeclined", { event: c.eventName, host }), {

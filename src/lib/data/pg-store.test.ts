@@ -581,6 +581,49 @@ describe.skipIf(!URL_)("pg store (TEST_DATABASE_URL)", () => {
       });
     });
 
+    describe("asking the guest to pick a new time (B10)", () => {
+      const startFor = (k: number) => new Date(at("2034-03-06T04:00:00Z").getTime() + k * 24 * 60 * MIN);
+      const booked = (k: number) => store.createBooking({ eventTypeId: coaching.id, startAt: startFor(k), idempotencyKey: `pg-ask-move-${k}`, invitee: { ...guest, name: `Mover ${k}` } });
+      const asks = async (id: string) => (await pool.query(
+        "select recipient, status from notifications where booking_id = $1 and kind = 'reschedule_request_guest'", [id])).rows;
+
+      it("stores the ask and its note, emails the guest once, and is asked only once", async () => {
+        const b = await booked(1);
+        const now = new Date();
+        expect(await store.askToReschedule(priya.id, b.id, "Travelling that week, sorry", now)).toBe("asked");
+        expect(await store.getBooking(priya.id, b.id)).toMatchObject({ status: "confirmed", rescheduleRequestedAt: now, rescheduleRequestNote: "Travelling that week, sorry" });
+        expect(await asks(b.id)).toEqual([{ recipient: guest.email, status: "queued" }]);
+        expect(await store.askToReschedule(priya.id, b.id, null, new Date())).toBe("already_asked");
+        expect(await asks(b.id)).toHaveLength(1);
+      });
+
+      it("refuses a booking that already happened, a cancelled one, and another host's", async () => {
+        const past = await booked(2);
+        expect(await store.askToReschedule(priya.id, past.id, null, new Date(startFor(2).getTime() + MIN))).toBe("not_upcoming");
+        const cancelled = await booked(3);
+        await store.cancelBooking(priya.id, cancelled.id, "guest");
+        expect(await store.askToReschedule(priya.id, cancelled.id, null, new Date())).toBe("not_confirmed");
+        const other = (await pool.query("select id from users where id <> $1 limit 1", [priya.id])).rows[0].id as string;
+        await expect(store.askToReschedule(other, past.id, null, new Date())).rejects.toBeInstanceOf(NotFoundError);
+        expect(await asks(past.id)).toHaveLength(0);
+      });
+
+      it("ends with the old booking when the guest moves it, and the email no longer goes", async () => {
+        const b = await booked(4);
+        await store.askToReschedule(priya.id, b.id, null, new Date());
+        const moved = await store.rescheduleBooking(priya.id, b.id, startFor(5), "pg-ask-move-4b", "guest");
+        expect(moved.rescheduleRequestedAt).toBeNull();
+        expect(await store.getBooking(priya.id, b.id)).toMatchObject({ status: "cancelled" });
+        expect((await asks(b.id)).map((r) => r.status)).not.toContain("queued");
+      });
+
+      it("keeps the note to 500 characters in the database too", async () => {
+        const b = await booked(6);
+        await expect(pool.query("update bookings set reschedule_request_note = $2 where id = $1", [b.id, "x".repeat(501)]))
+          .rejects.toMatchObject({ constraint: "bookings_reschedule_note_len" });
+      });
+    });
+
     describe("racing bookings", () => {
       // Each insert through a link sleeps, so both racers pass their link check before either commits unless the link row lock serialises them.
       beforeAll(async () => {

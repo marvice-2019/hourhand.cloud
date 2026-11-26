@@ -169,6 +169,9 @@ export interface Booking {
   /** A seat in a group class: shared by every seat of the same class (event type + start). null for other bookings. */
   classKey: string | null;
   createdAt: Date;
+  /** B10: when the host asked the guest to pick a new time, and what they wrote. null until they ask. */
+  rescheduleRequestedAt?: Date | null;
+  rescheduleRequestNote?: string | null;
 }
 
 export interface Invitee {
@@ -236,6 +239,10 @@ export interface BusyBlock {
 export type RequestDecision = "approve" | "decline" | "withdraw";
 /** What became of a request: the decision applied, or why nothing changed. */
 export type RequestOutcome = "approved" | "declined" | "withdrawn" | "already_confirmed" | "already_cancelled" | "lapsed";
+/** B10: what came of the host asking the guest to pick a new time. */
+export type RescheduleAskOutcome = "asked" | "already_asked" | "not_upcoming" | "not_confirmed" | "group_seat";
+/** The longest note a host can send with that ask. */
+export const RESCHEDULE_NOTE_MAX = 500;
 
 export interface CreateBookingInput {
   eventTypeId: string;
@@ -397,6 +404,8 @@ export interface DataStore {
    * changes; otherwise the result says what became of it. Throws NotFoundError unless the booking belongs to `hostId`.
    */
   decideRequest(hostId: string, bookingId: string, decision: RequestDecision, now: Date): Promise<RequestOutcome>;
+  /** B10: the host asks the guest to pick a new time; the guest gets one email. The booking itself doesn't change. */
+  askToReschedule(hostId: string, bookingId: string, note: string | null, now: Date): Promise<RescheduleAskOutcome>;
   /** Atomically books `startAt` for the same guest and cancels the old booking. The overlap check ignores the old booking. */
   /** `by` is recorded as who cancelled the old booking. */
   rescheduleBooking(hostId: string, bookingId: string, startAt: Date, idempotencyKey: string, by?: "host" | "guest"): Promise<BookingWithInvitee>;
