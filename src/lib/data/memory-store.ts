@@ -5,6 +5,7 @@ import { classKeyOf, overlaps } from "../slots";
 import { buildSeed, type Seed } from "./seed";
 import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
+import { DECLINED_REASON, LAPSED_REASON } from "../approval";
 import {
   DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type BookingLink, type BookingWithInvitee,
   type CreateBookingInput, type CustomQuestion, type DataStore, type EventType, type EventTypeDraft, type Interval,
@@ -34,7 +35,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
   function toLink(row: LinkRow, now: Date, ignoreKey?: string): BookingLink {
     const used = db.bookings.filter((b) => linkOfBooking.get(b.id) === row.id && b.idempotencyKey !== ignoreKey
       && !(b.status === "cancelled" && b.cancelledBy === "system")
-      && !(b.status === "pending_payment" && b.holdExpiresAt !== null && b.holdExpiresAt <= now)).at(-1);
+      && !((b.status === "pending_payment" || b.status === "pending_approval") && b.holdExpiresAt !== null && b.holdExpiresAt <= now)).at(-1);
     const usedBy = used ? { bookingId: used.id, guestName: used.invitee.name, startAt: used.startAt } : null;
     const state = usedBy ? "used" : row.revokedAt ? "revoked" : row.expiresAt && row.expiresAt.getTime() <= now.getTime() ? "expired" : "open";
     return { id: row.id, eventTypeId: row.eventTypeId, label: row.label, expiresAt: row.expiresAt, revokedAt: row.revokedAt, createdAt: row.createdAt, state, usedBy };
@@ -57,7 +58,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
     return row;
   }
 
-  /** Builds a confirmed booking after the overlap check. `movingId` is the booking being rescheduled, which the check skips. */
+  /** Builds a confirmed booking (or a request, with approvalUntil) after the overlap check. `movingId` is the booking being rescheduled, which the check skips. */
   function build(input: CreateBookingInput, movingId: string | null): BookingWithInvitee {
     // Paid bookings need Razorpay and the payments table: Postgres only.
     if (input.holdUntil) throw new Error("Paid bookings (holdUntil) need the Postgres store");
@@ -71,8 +72,15 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
     // Same rules as the exclusion constraint and the seat count: no two confirmed bookings of one host overlap, buffers
     // included, except seats of the same group class, which fill up to its seat limit.
     const classKey = et.kind === "group" ? classKeyOf(et.id, startAt) : null;
+    // A request (B9) holds its slot until it lapses; lapsed ones are swept first, as Postgres does.
+    const now = input.now ?? new Date();
+    for (const b of db.bookings) {
+      if (b.hostId === et.userId && b.status === "pending_approval" && b.holdExpiresAt !== null && b.holdExpiresAt <= now) {
+        Object.assign(b, { status: "cancelled", cancelledAt: now, cancelledBy: "system", cancelReason: LAPSED_REASON, holdExpiresAt: null });
+      }
+    }
     const clash = db.bookings.some(
-      (b) => b.hostId === et.userId && b.status === "confirmed" && b.id !== movingId && (classKey === null || b.classKey !== classKey) &&
+      (b) => b.hostId === et.userId && (b.status === "confirmed" || (b.status === "pending_approval" && b.holdExpiresAt !== null && b.holdExpiresAt > now)) && b.id !== movingId && (classKey === null || b.classKey !== classKey) &&
         overlaps(bufferedStart.getTime(), bufferedEnd.getTime(), b.bufferedStart.getTime(), b.bufferedEnd.getTime()),
     );
     const seats = classKey ? db.bookings.filter((b) => b.classKey === classKey && b.status === "confirmed").length : 0;
@@ -80,7 +88,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
 
     const id = randomUUID();
     return {
-      id, eventTypeId: et.id, hostId: et.userId, startAt, endAt, bufferedStart, bufferedEnd, status: "confirmed", holdExpiresAt: null,
+      id, eventTypeId: et.id, hostId: et.userId, startAt, endAt, bufferedStart, bufferedEnd, status: input.approvalUntil ? "pending_approval" : "confirmed", holdExpiresAt: input.approvalUntil ?? null,
       locationKind: db.locations.find((l) => l.eventTypeId === et.id)?.kind ?? null, joinUrl: null,
       idempotencyKey: input.idempotencyKey, cancelledAt: null, cancelledBy: null, cancelReason: null, rescheduledFromId: movingId, seriesId: null, seriesIndex: null, classKey, createdAt: new Date(),
       invitee: { id: randomUUID(), bookingId: id, hostId: et.userId, ...input.invitee, guests: input.invitee.guests ?? [], locale: input.invitee.locale ?? "en", whatsappOptIn: input.invitee.whatsappOptIn === true && input.invitee.phone !== null, smsOptIn: input.invitee.smsOptIn === true && input.invitee.phone !== null, manageToken: randomUUID().replaceAll("-", ""), noShowAt: null, runningLateMinutes: null, runningLateAt: null },
@@ -98,12 +106,12 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
     if (db.eventTypes.some((e) => e.userId === userId && e.slug === slug && e.id !== exceptId)) throw new SlugTakenError();
   }
 
-  function fields(draft: EventTypeDraft): Omit<EventTypeDraft, "location" | "durationOptions"> & Pick<EventType, "durationOptions"> {
-    const { name, slug, description, durationMinutes, minNoticeMinutes, bookingWindowDays, startIncrementMinutes, bufferBeforeMinutes, bufferAfterMinutes, dailyLimit, cancelCutoffMinutes, priceMinor, currency, hidden, maxRepeats, depositMinor, redirectUrl, weeklyLimit, cancelPolicy, seatLimit, durationOptions } = draft;
+  function fields(draft: EventTypeDraft): Omit<EventTypeDraft, "location" | "durationOptions" | "requiresApproval"> & Pick<EventType, "durationOptions" | "requiresApproval"> {
+    const { name, slug, description, durationMinutes, minNoticeMinutes, bookingWindowDays, startIncrementMinutes, bufferBeforeMinutes, bufferAfterMinutes, dailyLimit, cancelCutoffMinutes, priceMinor, currency, hidden, maxRepeats, depositMinor, redirectUrl, weeklyLimit, cancelPolicy, seatLimit, durationOptions, requiresApproval } = draft;
     return {
       name, slug, description, durationMinutes, minNoticeMinutes, bookingWindowDays, startIncrementMinutes, bufferBeforeMinutes, bufferAfterMinutes, dailyLimit, cancelCutoffMinutes,
       priceMinor, currency: priceMinor === null ? null : currency, hidden, maxRepeats, depositMinor: priceMinor === null ? depositMinor : null, redirectUrl, weeklyLimit, cancelPolicy, seatLimit,
-      durationOptions: (durationOptions ?? []).map((o) => ({ ...o })),
+      durationOptions: (durationOptions ?? []).map((o) => ({ ...o })), requiresApproval: requiresApproval === true,
     };
   }
 
@@ -282,7 +290,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
         id: randomUUID(), userId: hostId, scheduleId: db.schedules.find((s) => s.userId === hostId && s.isDefault)?.id ?? null,
         name: input.name.trim(), slug: oneOffSlug(), description: input.description ?? null, durationMinutes: input.durationMinutes,
         minNoticeMinutes: 0, bookingWindowDays: 730, startIncrementMinutes: 30, bufferBeforeMinutes: 0, bufferAfterMinutes: 0, dailyLimit: null,
-        cancelCutoffMinutes: 0, priceMinor: null, currency: null, hidden: true, active: true, position: 0, kind: "one_off", seatLimit: null, maxRepeats: 1, depositMinor: null, redirectUrl: null, weeklyLimit: null, cancelPolicy: null, durationOptions: [],
+        cancelCutoffMinutes: 0, priceMinor: null, currency: null, hidden: true, active: true, position: 0, kind: "one_off", seatLimit: null, maxRepeats: 1, depositMinor: null, redirectUrl: null, weeklyLimit: null, cancelPolicy: null, durationOptions: [], requiresApproval: false,
       };
       db.eventTypes.push(eventType);
       db.locations.push({ id: randomUUID(), eventTypeId: eventType.id, kind: input.location.kind, value: input.location.value ?? null, position: 0 });
@@ -316,6 +324,19 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       if (linkId) linkOfBooking.set(booking.id, linkId);
       Object.assign(old, { status: "cancelled", cancelledAt: new Date(), cancelledBy: by, cancelReason: "Rescheduled" });
       return booking;
+    },
+    async decideRequest(hostId, bookingId, decision, now) {
+      const booking = db.bookings.find((b) => b.hostId === hostId && b.id === bookingId);
+      if (!booking) throw new NotFoundError("Booking");
+      if (booking.status === "confirmed") return "already_confirmed";
+      if (booking.status !== "pending_approval") return "already_cancelled";
+      if ((booking.holdExpiresAt?.getTime() ?? 0) <= now.getTime()) return "lapsed";
+      if (decision === "approve") { Object.assign(booking, { status: "confirmed", holdExpiresAt: null }); return "approved"; }
+      Object.assign(booking, {
+        status: "cancelled", cancelledAt: now, cancelledBy: decision === "decline" ? "host" : "guest",
+        cancelReason: decision === "decline" ? DECLINED_REASON : null, holdExpiresAt: null,
+      });
+      return decision === "decline" ? "declined" : "withdrawn";
     },
     async cancelBooking(hostId, bookingId, by, reason, opts = {}) {
       const booking = db.bookings.find((b) => b.hostId === hostId && b.id === bookingId);

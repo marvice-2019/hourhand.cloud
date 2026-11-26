@@ -40,8 +40,8 @@ export async function handleReschedule(store: DataStore, token: string, input: u
 export async function handleHostReschedule(store: DataStore, hostId: string, bookingId: string, input: unknown, now: Date): Promise<HandlerResult> {
   const booking = await store.getBooking(hostId, bookingId);
   if (!booking) return notFound;
-  // A booking still waiting for payment isn't the host's to move yet.
-  if (booking.status === "pending_payment") return { status: 409, body: { error: "not_confirmed" } };
+  // A booking still waiting for payment, or a request still waiting on the host's decision, isn't the host's to move yet.
+  if (booking.status === "pending_payment" || booking.status === "pending_approval") return { status: 409, body: { error: "not_confirmed" } };
   return moveBooking(store, booking, input, now, "host");
 }
 

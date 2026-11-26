@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { handleCreateBooking, handleGetSlots, validateBookingRequest } from "./booking";
+import { approvalHoldUntil } from "./approval";
 import { createMemoryStore } from "./data/memory-store";
 import { buildSeed } from "./data/seed";
 
@@ -193,5 +194,60 @@ describe("booking rate limits", () => {
       statuses.push((await handleCreateBooking(store, good(slots[i], `key-mail-${i}-abcd`), now, { clientKey: `198.51.100.${i}`, limiter })).status);
     }
     expect(statuses).toEqual([201, 201, 201, 201, 201, 429]);
+  });
+});
+
+describe("booking requests the host approves (B9)", () => {
+  const needingApproval = async () => {
+    const store = fresh();
+    const coaching = (await store.listEventTypes("usr_priya")).find((e) => e.slug === "coaching")!;
+    await store.updateEventType("usr_priya", coaching.id, { ...coaching, location: null, requiresApproval: true });
+    return store;
+  };
+
+  it("takes a request that holds the slot, says so, and offers the slot to nobody else", async () => {
+    const store = await needingApproval();
+    const [first] = await firstSlots(store);
+    const res = await handleCreateBooking(store, good(first, "key-request-0001"), now);
+    expect(res).toMatchObject({ status: 201, body: { pending: "approval" } });
+    const booking = (await store.listBookings("usr_priya")).find((b) => b.id === (res.body as { bookingId: string }).bookingId)!;
+    expect(booking.status).toBe("pending_approval");
+    expect(booking.holdExpiresAt).toEqual(approvalHoldUntil(now, new Date(first)));
+    expect(await firstSlots(store)).not.toContain(first);
+    // The same submit again gets the same request back.
+    expect(await handleCreateBooking(store, good(first, "key-request-0001"), now)).toMatchObject({ status: 200, body: { pending: "approval" } });
+  });
+
+  it("confirms at once without the setting", async () => {
+    const store = fresh();
+    const [first] = await firstSlots(store);
+    const res = await handleCreateBooking(store, good(first, "key-plain-0001"), now);
+    expect(res.status).toBe(201);
+    expect(res.body).not.toHaveProperty("pending");
+    expect((await store.listBookings("usr_priya"))[0].status).toBe("confirmed");
+  });
+
+  it("confirms at once when the host books for a client", async () => {
+    const store = await needingApproval();
+    const [first] = await firstSlots(store);
+    const res = await handleCreateBooking(store, { ...good(first, "key-behalf-0001"), onBehalf: true }, now, undefined, null, undefined, { hostId: "usr_priya" });
+    expect(res.status).toBe(201);
+    expect(res.body).not.toHaveProperty("pending");
+    expect((await store.listBookings("usr_priya"))[0].status).toBe("confirmed");
+  });
+
+  it("frees the slot once the request lapses", async () => {
+    const store = await needingApproval();
+    const [first] = await firstSlots(store);
+    const made = await handleCreateBooking(store, good(first, "key-lapse-0001"), now);
+    const request = (await store.listBookings("usr_priya")).find((b) => b.id === (made.body as { bookingId: string }).bookingId)!;
+    // Once the hold is over, the next booking for that time sweeps the request and takes the slot. (Straight to the
+    // store: two days on, the seed's calendar would count as out of date and offer no times.)
+    const later = new Date(request.holdExpiresAt!.getTime() + 60_000);
+    const invitee = { ...request.invitee, name: "Ravi", email: "ravi@example.com" };
+    const taken = await store.createBooking({ eventTypeId: request.eventTypeId, startAt: request.startAt, idempotencyKey: "key-lapse-0002", now: later, invitee });
+    expect(taken.status).toBe("confirmed");
+    const lapsed = (await store.listBookings("usr_priya")).find((b) => b.id === request.id)!;
+    expect(lapsed).toMatchObject({ status: "cancelled", cancelledBy: "system", cancelReason: "Not confirmed in time", holdExpiresAt: null });
   });
 });

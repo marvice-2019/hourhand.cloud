@@ -75,6 +75,8 @@ export interface EventType {
    * Each may carry its own price; null uses priceMinor.
    */
   durationOptions: DurationOption[];
+  /** Bookings wait for the host's approval, holding the slot meanwhile (B9). Only on a free one-on-one type with no repeats. */
+  requiresApproval: boolean;
 }
 
 /** One length an event type offers, with its own price in paise (null = the event type's price). */
@@ -146,8 +148,11 @@ export interface Booking {
   endAt: Date;
   bufferedStart: Date;
   bufferedEnd: Date;
-  /** pending_payment: a paid booking holding its slot until holdExpiresAt while the guest pays. */
-  status: "confirmed" | "cancelled" | "pending_payment";
+  /**
+   * pending_payment: a paid booking holding its slot until holdExpiresAt while the guest pays.
+   * pending_approval: a request holding its slot until holdExpiresAt while the host decides (B9).
+   */
+  status: "confirmed" | "cancelled" | "pending_payment" | "pending_approval";
   holdExpiresAt: Date | null;
   locationKind: LocationKind | null;
   /** The video link from the host's calendar (Google Meet), once the calendar event exists. */
@@ -227,12 +232,19 @@ export interface BusyBlock {
   end: Date;
 }
 
+/** B9: what the host (approve, decline) or the guest (withdraw) does with a request. */
+export type RequestDecision = "approve" | "decline" | "withdraw";
+/** What became of a request: the decision applied, or why nothing changed. */
+export type RequestOutcome = "approved" | "declined" | "withdrawn" | "already_confirmed" | "already_cancelled" | "lapsed";
+
 export interface CreateBookingInput {
   eventTypeId: string;
   startAt: Date;
   idempotencyKey: string;
   /** Set for a paid booking: it starts as pending_payment holding the slot until then, with no emails yet. Postgres only. */
   holdUntil?: Date;
+  /** Set for a request on an event type that needs approval: it starts as pending_approval holding the slot until then. */
+  approvalUntil?: Date;
   /** Book through a single-use link: it must be open and for this event type, and is used up in the same transaction. */
   bookingLinkToken?: string;
   /** The request's clock, for checking the link above has not expired. Defaults to the real time. */
@@ -380,6 +392,11 @@ export interface DataStore {
    * series' later upcoming weeks in the same write; one pair of cancellation emails covers them all.
    */
   cancelBooking(hostId: string, bookingId: string, by: "host" | "guest", reason?: string, opts?: { laterWeeks?: boolean }): Promise<BookingWithInvitee>;
+  /**
+   * B9: the host approves or declines a request, or the guest withdraws it. Only a request still holding its slot
+   * changes; otherwise the result says what became of it. Throws NotFoundError unless the booking belongs to `hostId`.
+   */
+  decideRequest(hostId: string, bookingId: string, decision: RequestDecision, now: Date): Promise<RequestOutcome>;
   /** Atomically books `startAt` for the same guest and cancels the old booking. The overlap check ignores the old booking. */
   /** `by` is recorded as who cancelled the old booking. */
   rescheduleBooking(hostId: string, bookingId: string, startAt: Date, idempotencyKey: string, by?: "host" | "guest"): Promise<BookingWithInvitee>;
@@ -453,6 +470,8 @@ export interface DataStore {
 export type EventTypeDraft = Pick<EventType,
   "name" | "slug" | "description" | "durationMinutes" | "minNoticeMinutes" | "bookingWindowDays" | "startIncrementMinutes" |
   "bufferBeforeMinutes" | "bufferAfterMinutes" | "dailyLimit" | "cancelCutoffMinutes" | "priceMinor" | "currency" | "hidden" | "maxRepeats" | "depositMinor" | "redirectUrl" | "weeklyLimit" | "cancelPolicy" | "seatLimit"> & {
+  /** Left out = false. */
+  requiresApproval?: boolean;
   /** Left out = only durationMinutes (no choice). */
   durationOptions?: DurationOption[];
   location: { kind: LocationKind; value: string | null } | null;

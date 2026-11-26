@@ -25,6 +25,7 @@ import { videoJoinUrl } from "@/lib/video/links";
 import { SmsToggle } from "@/components/SmsToggle";
 import { smsConfig, smsNumber } from "@/lib/sms/config";
 import { maskedPhone } from "@/lib/sms/manage";
+import { withdrawRequest } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,8 @@ export default async function ManageBookingPage({ params, searchParams }: { para
   const time = (d: Date) => <LocalTime date={d} tz={tz} locale={locale} />;
   const cancelled = booking.status === "cancelled";
   const pending = booking.status === "pending_payment";
+  // B9: a request waiting on the host. The guest can withdraw it, but not move it.
+  const request = booking.status === "pending_approval";
   // A hold that ran out before the guest paid: say so plainly rather than "cancelled".
   const unpaid = cancelled && isUnpaidRelease(booking.cancelReason);
   // A week of a weekly series: its place, and how many later weeks are still to come (they can be cancelled with it).
@@ -86,6 +89,18 @@ export default async function ManageBookingPage({ params, searchParams }: { para
             {t(locale, unpaid ? "unpaidReleased" : "cancelledShort")}
           </p>
           <Link href={`/${host.slug}/${eventType.slug}${q}`} className={`mt-3 ${buttonClasses({ variant: "primary" })}`}>{t(locale, "bookAnother")}</Link>
+        </>
+      ) : request ? (
+        <>
+          <p className="mt-6 max-w-md text-text" role="status">
+            {tNodes(locale, "requestWaiting", { host: host.name, time: booking.holdExpiresAt ? time(booking.holdExpiresAt) : t(locale, "fewMinutes") })}
+          </p>
+          <p className="mt-2 max-w-md text-text-muted">{t(locale, "requestEmail", { host: host.name })}</p>
+          <form action={withdrawRequest} className="mt-4">
+            <input type="hidden" name="token" value={token} />
+            <input type="hidden" name="lang" value={q ? locale : ""} />
+            <button type="submit" className={buttonClasses({ variant: "secondary" })}>{t(locale, "withdrawRequest")}</button>
+          </form>
         </>
       ) : pending ? (
         <p className="mt-6 max-w-md text-text" role="status">

@@ -33,11 +33,11 @@ export async function closeAccount(client: Client, userId: string, now: Date): P
     `update payments p set status = 'refund_pending', refund_due_minor = 0, checked_at = null, updated_at = $2
      where p.sessions > 1 and p.status = 'paid' and p.refunded_minor + p.refund_due_minor >= p.amount_minor
        and p.booking_id in (select series_id from bookings where id = any($1::uuid[]) and series_id is not null)`, [ids, now]);
-  // Holds waiting on a guest's payment are released too. They never sent any email, so they aren't returned for one;
+  // Holds waiting on a guest's payment, and requests waiting on the host, are released too. They never sent any email, so they aren't returned for one;
   // a payment that still lands is caught by the reconciler and refunded.
   await client.query(
     `update bookings set status = 'cancelled', cancelled_at = $2, cancelled_by = 'system', cancel_reason = 'The host closed their account', hold_expires_at = null
-     where host_id = $1 and status = 'pending_payment'`, [userId, now]);
+     where host_id = $1 and status in ('pending_payment', 'pending_approval')`, [userId, now]);
   return cancelled.rows.map((r) => r.id as string);
 }
 

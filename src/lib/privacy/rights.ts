@@ -215,7 +215,7 @@ export async function eraseClient(pool: Pick<pg.Pool, "connect">, hostId: string
          (select count(*) from package_purchases where host_id = $1 and guest_email = $2)::int as packages,
          (select count(*) from waitlist where host_id = $1 and email = $2)::int as waiting,
          (select count(*) from memberships where host_id = $1 and guest_email = $2)::int as members,
-         (select count(*) from bookings where id = any($3::uuid[]) and ((status = 'confirmed' and end_at > $4) or status = 'pending_payment'))::int as live,
+         (select count(*) from bookings where id = any($3::uuid[]) and ((status = 'confirmed' and end_at > $4) or status in ('pending_payment', 'pending_approval')))::int as live,
          (select count(*) from payments where booking_id = any($3::uuid[]) and status in ('pending', 'refund_pending'))::int
            + (select count(*) from package_purchases where host_id = $1 and guest_email = $2 and status = 'pending')::int
            -- A membership that can still charge them: they cancel it first, or they'd be billed with no link to stop it.

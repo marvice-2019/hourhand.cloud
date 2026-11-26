@@ -17,7 +17,7 @@ export interface SlotInput {
   schedule: { timezone: string };
   rules: AvailabilityRule[];
   busyBlocks: Range[];
-  bookings: { eventTypeId: string; status: "confirmed" | "cancelled" | "pending_payment"; holdExpiresAt: Date | null; startAt: Date; bufferedStart: Date; bufferedEnd: Date; classKey?: string | null }[];
+  bookings: { eventTypeId: string; status: "confirmed" | "cancelled" | "pending_payment" | "pending_approval"; holdExpiresAt: Date | null; startAt: Date; bufferedStart: Date; bufferedEnd: Date; classKey?: string | null }[];
   now: Date;
   rangeStart: Date;
   rangeEnd: Date;
@@ -99,7 +99,7 @@ export function computeSlotSeats(input: SlotInput): { start: Date; seatsLeft: nu
   if (earliest >= latest) return [];
 
   // A hold the guest is still paying for blocks like a confirmed booking; a lapsed one is about to be expired and doesn't.
-  const confirmed = bookings.filter((b) => b.status === "confirmed" || (b.status === "pending_payment" && b.holdExpiresAt !== null && b.holdExpiresAt > now));
+  const confirmed = bookings.filter((b) => b.status === "confirmed" || ((b.status === "pending_payment" || b.status === "pending_approval") && b.holdExpiresAt !== null && b.holdExpiresAt > now));
   const ownSeat = new Set(confirmed.filter((b) => b.eventTypeId === et.id && b.classKey).map((b) => `${b.bufferedStart.getTime()}:${b.bufferedEnd.getTime()}`));
   const blocked: [number, number][] = [
     ...confirmed.map((b): [number, number] => [b.bufferedStart.getTime(), b.bufferedEnd.getTime()]),
@@ -169,7 +169,7 @@ export function computeOneOffSlots(input: OneOffSlotInput): Date[] {
   const { times, durationMinutes, busyBlocks, bookings, now, rangeStart, rangeEnd, syncStale } = input;
   if (syncStale) return [];
   const duration = durationMinutes * MIN;
-  const live = bookings.filter((b) => b.status === "confirmed" || (b.status === "pending_payment" && b.holdExpiresAt !== null && b.holdExpiresAt > now));
+  const live = bookings.filter((b) => b.status === "confirmed" || ((b.status === "pending_payment" || b.status === "pending_approval") && b.holdExpiresAt !== null && b.holdExpiresAt > now));
   const blocked: [number, number][] = [
     ...live.map((b): [number, number] => [b.bufferedStart.getTime(), b.bufferedEnd.getTime()]),
     ...busyBlocks.map((b): [number, number] => [b.start.getTime(), b.end.getTime()]),

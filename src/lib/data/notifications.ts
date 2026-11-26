@@ -16,7 +16,9 @@ import { pushConfig } from "../push/push";
 /** Emails about one booking. */
 export type BookingEmailKind =
   | "booked_guest" | "booked_host" | "reminder_guest"
-  | "cancelled_guest" | "cancelled_host" | "rescheduled_guest" | "rescheduled_host" | "late_host";
+  | "cancelled_guest" | "cancelled_host" | "rescheduled_guest" | "rescheduled_host" | "late_host"
+  // B9: a request waiting on the host, and how it ended if the host didn't approve it.
+  | "requested_guest" | "requested_host" | "declined_guest" | "lapsed_guest";
 /** Writes to the host's calendar (channel 'calendar'). */
 export type CalendarJobKind = "calendar_create" | "calendar_move" | "calendar_delete";
 /** Writes to the host's Zoom (channel 'video'): a meeting per booking, moved on reschedule, deleted on cancel. */
@@ -38,7 +40,9 @@ export type PollEmailKind = "poll_voter_link" | "poll_host_closed";
 // at the earliest of them (a day ahead by default): each message is paid for, and the email reminders still go.
 
 type Db = Pick<pg.PoolClient, "query">;
-type Event = "booked" | "rescheduled" | "cancelled";
+type Event = "booked" | "rescheduled" | "cancelled" | RequestEvent;
+/** B9: a request came in, or ended without the host's approval (declined, or not answered in time). */
+type RequestEvent = "requested" | "declined" | "lapsed" | "withdrawn";
 
 const MIN = 60_000;
 
@@ -69,7 +73,7 @@ export async function queueBookingNotifications(
        (select p.zoom_meeting_id from bookings p where p.id = b.rescheduled_from_id) as previous_zoom_meeting_id,
        -- Another live seat of the same group class: the class keeps one calendar event between all its seats.
        (select o.id from bookings o where b.class_key is not null and o.class_key = b.class_key and o.id <> b.id
-          and (o.status = 'confirmed' or (o.status = 'pending_payment' and o.hold_expires_at > now()))
+          and (o.status = 'confirmed' or (o.status in ('pending_payment', 'pending_approval') and o.hold_expires_at > now()))
         order by (o.external_event_id is not null) desc, o.created_at limit 1) as class_mate
      from bookings b join invitees i on i.booking_id = b.id join users u on u.id = b.host_id where b.id = $1`, [bookingId]);
   const b = rows[0];
@@ -85,7 +89,7 @@ export async function queueBookingNotifications(
   };
   const now_ = (kind: BookingEmailKind, to: string) => queued.push({ kind, channel: "email", to, sendAt: now, key: `booking:${bookingId}:${kind}` });
   // A host email also goes as a phone alert. The worker finds the host's devices when it sends.
-  const toHost = (kind: "booked_host" | "rescheduled_host" | "cancelled_host") => {
+  const toHost = (kind: "booked_host" | "rescheduled_host" | "cancelled_host" | "requested_host") => {
     now_(kind, b.host_email);
     if (push && b.host_push) queued.push({ kind, channel: "push", to: b.host_id, sendAt: now, key: `booking:${bookingId}:push:${kind}` });
   };
@@ -102,6 +106,29 @@ export async function queueBookingNotifications(
   // Zoom jobs work on the booking itself; the host's own Zoom is found when the job runs.
   const videoJob = (kind: VideoJobKind) => queued.push({ kind, channel: "video", to: "zoom", sendAt: now, key: `booking:${bookingId}:${kind}` });
   const isZoom = b.location_kind === "zoom";
+
+  if (event === "requested" || event === "declined" || event === "lapsed" || event === "withdrawn") {
+    // A request (B9) was never a booking: no calendar event, Zoom meeting, reminder or webhook exists for it yet, and
+    // only email carries its news (WhatsApp templates and texts are for bookings).
+    // Only the guest who asked hears about it; anyone they added hears once it's a booking.
+    // A guest who withdrew needs no email about it; the host hears it as a cancellation.
+    const kind = event === "requested" ? "requested_guest" : event === "declined" ? "declined_guest" : event === "lapsed" ? "lapsed_guest" : null;
+    if (event === "withdrawn") toHost("cancelled_host");
+    if (kind && !/\.invalid$/i.test(b.guest_email)) queued.push({ kind, channel: "email", to: b.guest_email, sendAt: now, key: `booking:${bookingId}:${kind}` });
+    if (event === "requested") toHost("requested_host");
+    else {
+      await db.query(
+        `update notifications set status = 'skipped', last_error = 'request ended', updated_at = $2
+         where booking_id = $1 and status = 'queued' and kind in ('requested_guest', 'requested_host')`, [bookingId, now]);
+    }
+    for (const q of queued) {
+      await db.query(
+        `insert into notifications (booking_id, user_id, channel, kind, recipient, send_at, dedupe_key)
+         values ($1, $2, $7, $3, $4, $5, $6) on conflict (dedupe_key) do nothing`,
+        [bookingId, b.host_id, q.kind, q.to, q.sendAt, q.key, q.channel]);
+    }
+    return;
+  }
 
   if (event === "cancelled") {
     // `confirm: false`: a later week cancelled along with an earlier one, whose email lists it.

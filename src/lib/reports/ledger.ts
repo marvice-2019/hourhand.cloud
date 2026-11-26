@@ -121,7 +121,7 @@ export async function moneyEntries(db: Db, hostId: string, from: Date, to: Date)
 
 export interface SessionRow {
   startAt: Date;
-  status: "confirmed" | "cancelled" | "pending_payment";
+  status: "confirmed" | "cancelled" | "pending_payment" | "pending_approval";
   cancelledBy: "host" | "guest" | "system" | null;
   cancelledAt: Date | null;
   rescheduled: boolean;

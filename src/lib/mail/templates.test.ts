@@ -11,7 +11,8 @@ const ctx: BookingMailContext = {
   issuedAt: new Date("2026-10-11T00:00:00Z"),
   manageUrl: "https://hourhand.test/b/guest-only-manage-token", dashboardUrl: "https://hourhand.test/dashboard/bookings/b1",
 };
-const kinds: BookingEmailKind[] = ["booked_guest", "booked_host", "reminder_guest", "cancelled_guest", "cancelled_host", "rescheduled_guest", "rescheduled_host"];
+const kinds: BookingEmailKind[] = ["booked_guest", "booked_host", "reminder_guest", "cancelled_guest", "cancelled_host", "rescheduled_guest", "rescheduled_host",
+  "requested_guest", "requested_host", "declined_guest", "lapsed_guest"];
 
 describe("booking emails", () => {
   it.each(kinds)("%s escapes guest input in HTML and keeps subjects on one line", (kind) => {
@@ -105,5 +106,36 @@ describe("booking emails", () => {
 
   it("sign-in email carries the link", () => {
     expect(renderMagicLink("https://hourhand.test/api/auth/magic-link/verify?token=t").text).toContain("token=t");
+  });
+});
+
+describe("booking request emails (B9)", () => {
+  const holdUntil = new Date("2026-10-13T00:00:00Z");
+
+  it("asks the host to approve or decline in the dashboard, and says until when", () => {
+    const m = renderBookingMail("requested_host", { ...ctx, holdUntil });
+    expect(m.text).toContain("https://hourhand.test/dashboard/bookings/b1?decide=approve");
+    expect(m.text).toContain("https://hourhand.test/dashboard/bookings/b1?decide=decline");
+    expect(m.text).toContain("Decide by");
+    expect(m.subject).toContain("Booking request");
+  });
+
+  it("tells the guest the request is sent, with their link to withdraw it, in their language", () => {
+    const en = renderBookingMail("requested_guest", ctx);
+    expect(en.subject).toMatch(/^Request sent/);
+    expect(en.text).toContain("guest-only-manage-token");
+    expect(en.attachments ?? []).toHaveLength(0); // not a booking yet: no calendar file
+    expect(renderBookingMail("requested_guest", { ...ctx, locale: "ta" }).subject).toMatch(/^கோரிக்கை அனுப்பப்பட்டது/);
+  });
+
+  it("offers other times when a request is declined or runs out, with no link to a meeting", () => {
+    const rebook = [{ at: new Date("2026-11-04T09:00:00Z"), url: "https://hourhand.test/priya/coaching?at=x" }];
+    for (const kind of ["declined_guest", "lapsed_guest"] as const) {
+      const m = renderBookingMail(kind, { ...ctx, joinUrl: "https://meet.example/abc", rebook });
+      expect(m.text).toContain("https://hourhand.test/priya/coaching?at=x");
+      expect(m.text).not.toContain("meet.example");
+      expect(m.text).not.toContain("guest-only-manage-token");
+    }
+    expect(renderBookingMail("lapsed_guest", ctx).text).toContain("in time");
   });
 });

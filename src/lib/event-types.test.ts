@@ -56,7 +56,7 @@ describe("validateEventType", () => {
         name: "30-min strategy call", slug: "strategy", description: "Plan the next quarter.", durationMinutes: 30, minNoticeMinutes: 240,
         bookingWindowDays: 60, startIncrementMinutes: 15, bufferBeforeMinutes: 0, bufferAfterMinutes: 10, dailyLimit: null,
         cancelCutoffMinutes: 120, maxRepeats: 1, depositMinor: null, priceMinor: null, currency: null, location: { kind: "zoom", value: null }, hidden: false,
-        redirectUrl: null, weeklyLimit: null, cancelPolicy: null, seatLimit: null, durationOptions: [],
+        redirectUrl: null, weeklyLimit: null, cancelPolicy: null, seatLimit: null, durationOptions: [], requiresApproval: false,
       },
     });
   });
@@ -152,6 +152,26 @@ describe("validateEventType", () => {
     const result = validateEventType({ ...valid, locationKind: "in_person", locationValue: " " }, []);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.errors.locationValue).toBeDefined();
+  });
+});
+
+describe("approving each booking (B9)", () => {
+  it("is allowed on a free one-on-one type without repeats, and saved", () => {
+    expect(validateEventType({ ...valid, requiresApproval: true }, [])).toMatchObject({ ok: true, value: { requiresApproval: true } });
+    expect(validateEventType({ ...valid }, [])).toMatchObject({ ok: true, value: { requiresApproval: false } });
+  });
+
+  it("is refused on a paid, deposit, group or repeating type, saying why", () => {
+    const refused = (form: Partial<EventTypeForm>, why: string) =>
+      expect(validateEventType({ ...valid, requiresApproval: true, ...form }, [])).toMatchObject({ ok: false, errors: { requiresApproval: expect.stringContaining(why) } });
+    refused({ price: "500" }, "free event types only");
+    refused({ deposit: "200" }, "free event types only");
+    refused({ seats: "8" }, "one-on-one event types only");
+    refused({ maxRepeats: "4" }, "one week at a time");
+  });
+
+  it("refuses a value that isn't a tick box", () => {
+    expect(validateEventType({ ...valid, requiresApproval: "yes" as unknown as boolean }, [])).toMatchObject({ ok: false, errors: { requiresApproval: expect.any(String) } });
   });
 });
 
