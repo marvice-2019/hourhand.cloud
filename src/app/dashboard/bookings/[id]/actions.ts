@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireHost, requireOwnAccount } from "@/lib/auth/session";
 import { store } from "@/lib/data";
-import { isNamedError, NotFoundError } from "@/lib/data/types";
+import { isNamedError, NotFoundError, RESCHEDULE_NOTE_MAX } from "@/lib/data/types";
 import { handleHostReschedule } from "@/lib/manage";
 import { MAX_NOTE } from "@/lib/privacy/notes";
 
@@ -93,5 +93,18 @@ export async function decideAsHost(form: FormData): Promise<void> {
   await run(id, async () => {
     const outcome = await store.decideRequest(user.id, id, decision, new Date());
     return outcome === "approved" || outcome === "declined" ? `${page(id)}?done=${outcome}` : `${page(id)}?error=${outcome}`;
+  });
+}
+
+/** B10: ask the guest to pick a new time. The booking stays as it is until they move it. */
+export async function askToRescheduleAsHost(form: FormData): Promise<void> {
+  const user = await requireHost();
+  const id = field(form, "bookingId");
+  const note = field(form, "note");
+  if (note.length > RESCHEDULE_NOTE_MAX) redirect(`${page(id)}?ask=1&error=ask_note_too_long`);
+  await run(id, async () => {
+    const outcome = await store.askToReschedule(user.id, id, note || null, new Date());
+    if (outcome === "asked") return `${page(id)}?done=asked`;
+    return `${page(id)}?error=${outcome === "already_asked" ? "already_asked" : outcome === "group_seat" ? "group_seat" : "not_movable"}`;
   });
 }

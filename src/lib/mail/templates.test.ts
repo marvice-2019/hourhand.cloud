@@ -139,3 +139,19 @@ describe("booking request emails (B9)", () => {
     expect(renderBookingMail("lapsed_guest", ctx).text).toContain("in time");
   });
 });
+
+describe("asking the guest to pick a new time (B10)", () => {
+  it("links the guest's manage page and shows the host's note, escaped, in their language", () => {
+    const m = renderBookingMail("reschedule_request_guest", { ...ctx, rescheduleNote: "Sorry <b>travelling</b>" });
+    expect(m.subject).toContain("asked you to pick a new time");
+    expect(m.text).toContain("guest-only-manage-token");
+    expect(m.text).toContain("Sorry <b>travelling</b>");
+    expect(m.html).not.toContain("<b>travelling</b>");
+    expect(m.html).toContain("&lt;b&gt;travelling&lt;/b&gt;");
+    expect(renderBookingMail("reschedule_request_guest", { ...ctx, locale: "ta" }).subject).toContain("புதிய நேரத்தைத்");
+  });
+
+  it("leaves the note row out when the host wrote none", () => {
+    expect(renderBookingMail("reschedule_request_guest", ctx).text).not.toContain("Note from");
+  });
+});

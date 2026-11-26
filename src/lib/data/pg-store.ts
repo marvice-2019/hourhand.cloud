@@ -21,6 +21,7 @@ import {
   DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type AvailabilityRule, type BookingLink,
   type BookingWithInvitee, type CreateBookingInput, type CustomQuestion, type DataStore, type EventType, type EventTypeDraft, type Interval, type User,
   type RequestOutcome,
+  type RescheduleAskOutcome,
 } from "./types";
 
 const MIN = 60_000;
@@ -57,7 +58,7 @@ const toEventType = (r: Row): EventType => ({
 });
 
 const BOOKING = `select b.id, b.event_type_id, b.host_id, b.start_at, b.end_at, b.buffered_start, b.buffered_end, b.status, b.hold_expires_at, b.location_kind, b.join_url, b.idempotency_key,
-  b.cancelled_at, b.cancelled_by, b.cancel_reason, b.rescheduled_from_id, b.series_id, b.series_index, b.class_key, b.created_at,
+  b.cancelled_at, b.cancelled_by, b.cancel_reason, b.rescheduled_from_id, b.series_id, b.series_index, b.class_key, b.created_at, b.reschedule_requested_at, b.reschedule_request_note,
   i.id as invitee_id, i.name as invitee_name, i.email as invitee_email, i.timezone as invitee_timezone, i.phone as invitee_phone, i.answers, i.manage_token, i.no_show_at, i.running_late_minutes, i.running_late_at, i.guests::text[] as guests, i.locale as invitee_locale, i.whatsapp_opt_in_at is not null as whatsapp_opt_in, i.sms_opt_in_at is not null as sms_opt_in
   from bookings b join invitees i on i.booking_id = b.id`;
 const toBooking = (r: Row): BookingWithInvitee => ({
@@ -68,6 +69,7 @@ const toBooking = (r: Row): BookingWithInvitee => ({
   cancelledBy: r.cancelled_by as BookingWithInvitee["cancelledBy"], cancelReason: r.cancel_reason as string | null, rescheduledFromId: r.rescheduled_from_id as string | null,
   seriesId: (r.series_id as string | null) ?? null, seriesIndex: (r.series_index as number | null) ?? null, classKey: (r.class_key as string | null) ?? null,
   createdAt: r.created_at as Date,
+  rescheduleRequestedAt: (r.reschedule_requested_at as Date | null) ?? null, rescheduleRequestNote: (r.reschedule_request_note as string | null) ?? null,
   invitee: {
     id: r.invitee_id as string, bookingId: r.id as string, hostId: r.host_id as string, name: r.invitee_name as string, email: r.invitee_email as string,
     timezone: r.invitee_timezone as string, phone: r.invitee_phone as string | null, answers: r.answers as BookingWithInvitee["invitee"]["answers"], manageToken: r.manage_token as string,
@@ -633,6 +635,29 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
         return result;
       });
       if (outcome === "approved" || outcome === "declined" || outcome === "withdrawn") kickJobs();
+      return outcome;
+    },
+    async askToReschedule(hostId, bookingId, note, now) {
+      if (!isId(hostId) || !isId(bookingId)) throw new NotFoundError("Booking");
+      const outcome = await tx(async (client): Promise<RescheduleAskOutcome> => {
+        const { rows: [b] } = await client.query(
+          "select status, start_at, class_key, reschedule_requested_at from bookings where id = $1 and host_id = $2 for update", [bookingId, hostId]);
+        if (!b) throw new NotFoundError("Booking");
+        if (b.status !== "confirmed") return "not_confirmed";
+        if (new Date(b.start_at).getTime() <= now.getTime()) return "not_upcoming";
+        // A class seat isn't moved on its own (the guest cancels and books again), so there's nothing to ask for.
+        if (b.class_key) return "group_seat";
+        if (b.reschedule_requested_at) return "already_asked";
+        await client.query("update bookings set reschedule_requested_at = $2, reschedule_request_note = $3, updated_at = $2 where id = $1", [bookingId, now, note]);
+        // The main guest only: they hold the manage link that moves it. A phone-only guest has nowhere to get email.
+        await client.query(
+          `insert into notifications (booking_id, user_id, channel, kind, recipient, send_at, dedupe_key)
+           select b.id, b.host_id, 'email', 'reschedule_request_guest', i.email, $2, 'booking:' || b.id || ':reschedule_request_guest'
+           from bookings b join invitees i on i.booking_id = b.id where b.id = $1 and i.email !~* '\\.invalid$'
+           on conflict (dedupe_key) do nothing`, [bookingId, now]);
+        return "asked";
+      });
+      if (outcome === "asked") kickJobs();
       return outcome;
     },
     async cancelBooking(hostId, bookingId, by, reason, opts = {}) {

@@ -78,7 +78,7 @@ export async function claimDue(pool: pg.Pool, now: Date, limit: number): Promise
 }
 
 const CONTEXT = `
-  select n.id as notification_id, n.created_at as queued_at, n.dedupe_key, b.id, b.host_id, b.series_id, b.status, b.start_at, b.end_at, b.cancelled_by, b.cancel_reason, b.hold_expires_at,
+  select n.id as notification_id, n.created_at as queued_at, n.dedupe_key, b.id, b.host_id, b.series_id, b.status, b.start_at, b.end_at, b.cancelled_by, b.cancel_reason, b.hold_expires_at, b.reschedule_request_note,
     b.location_kind as booking_location_kind, b.external_event_id, b.external_calendar_id, b.zoom_meeting_id, b.class_key,
     -- seats of one group class or confirmed poll share one calendar event, so its video link is on whichever seat holds it
     coalesce(b.join_url, (select m.join_url from bookings m where b.class_key is not null and m.class_key = b.class_key and m.join_url is not null limit 1)) as join_url,
@@ -157,6 +157,7 @@ function toContext(r: ContextRow, baseUrl: string, audience: VideoAudience = "gu
     // The minutes this email was queued for (in its key), not whatever the guest has tapped since.
     runningLateMinutes: Number(/:late:(\d+)/.exec(String(r.dedupe_key ?? ""))?.[1] ?? r.running_late_minutes) || null,
     holdUntil: r.hold_expires_at ? new Date(r.hold_expires_at as Date) : null,
+    rescheduleNote: (r.reschedule_request_note as string | null) ?? null,
   };
 }
 

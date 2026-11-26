@@ -338,6 +338,16 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       });
       return decision === "decline" ? "declined" : "withdrawn";
     },
+    async askToReschedule(hostId, bookingId, note, now) {
+      const booking = db.bookings.find((b) => b.hostId === hostId && b.id === bookingId);
+      if (!booking) throw new NotFoundError("Booking");
+      if (booking.status !== "confirmed") return "not_confirmed";
+      if (booking.startAt.getTime() <= now.getTime()) return "not_upcoming";
+      if (booking.classKey) return "group_seat";
+      if (booking.rescheduleRequestedAt) return "already_asked";
+      Object.assign(booking, { rescheduleRequestedAt: now, rescheduleRequestNote: note });
+      return "asked";
+    },
     async cancelBooking(hostId, bookingId, by, reason, opts = {}) {
       const booking = db.bookings.find((b) => b.hostId === hostId && b.id === bookingId);
       if (!booking) throw new NotFoundError("Booking");

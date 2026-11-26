@@ -24,7 +24,7 @@ import { GUEST_LOCATION_LABELS } from "@/lib/location-labels";
 import { videoJoinUrl } from "@/lib/video/links";
 import { waLink, waNumber, whatsappMessage, type WhatsAppKind } from "@/lib/whatsapp";
 import { feedbackForBooking } from "@/lib/follow-ups/follow-ups";
-import { cancelAsHost, decideAsHost, rescheduleAsHost, saveSessionNote, setNoShow } from "./actions";
+import { askToRescheduleAsHost, cancelAsHost, decideAsHost, rescheduleAsHost, saveSessionNote, setNoShow } from "./actions";
 
 const PAYMENT_LINES: Record<BookingPaymentSummary["status"], HostKey> = {
   pending: "bookings.paymentPending", paid: "bookings.paymentPaid", failed: "bookings.paymentFailed",
@@ -43,6 +43,7 @@ const DONE: Record<string, HostKey> = {
   note_saved: "bookings.doneNoteSaved",
   approved: "bookings.doneApproved",
   declined: "bookings.doneDeclined",
+  asked: "bookings.doneAsked",
 };
 const ERRORS: Record<string, HostKey> = {
   not_found: "bookings.errorNotFound",
@@ -57,12 +58,14 @@ const ERRORS: Record<string, HostKey> = {
   already_confirmed: "bookings.errorAlreadyConfirmed",
   already_cancelled: "bookings.errorAlreadyCancelled",
   lapsed: "bookings.errorLapsed",
+  already_asked: "bookings.errorAlreadyAsked",
+  ask_note_too_long: "bookings.errorAskNoteTooLong",
 };
 const DAY = 86_400_000;
 
 export const dynamic = "force-dynamic";
 
-type Query = { done?: string; error?: string; confirm?: string; reschedule?: string; decide?: string };
+type Query = { done?: string; error?: string; confirm?: string; reschedule?: string; decide?: string; ask?: string };
 
 export default async function BookingDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Query> }) {
   const { id } = await params;
@@ -291,7 +294,21 @@ export default async function BookingDetailPage({ params, searchParams }: { para
             <div className="flex flex-wrap gap-4">
               <Link href={`/dashboard/bookings/${booking.id}?confirm=cancel`} className="inline-flex min-h-11 items-center font-semibold text-danger underline">{t("bookings.cancelBooking")}</Link>
               {!booking.classKey && <Link href={`/dashboard/bookings/${booking.id}?reschedule=1`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("bookings.moveBooking")}</Link>}
+              {!booking.classKey && !booking.rescheduleRequestedAt && <Link href={`/dashboard/bookings/${booking.id}?ask=1`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("bookings.askMoveLink", { name: booking.invitee.name })}</Link>}
             </div>
+          )}
+          {booking.rescheduleRequestedAt && <p className="text-text-muted">{t("bookings.askedOn", { name: booking.invitee.name, date: date(booking.rescheduleRequestedAt, tz) })}</p>}
+          {query.ask && !booking.classKey && !booking.rescheduleRequestedAt && (
+            <form action={askToRescheduleAsHost} className="grid gap-2">
+              <input type="hidden" name="bookingId" value={booking.id} />
+              <p className="text-text">{t("bookings.askMoveHelp", { name: booking.invitee.name })}</p>
+              <label htmlFor="ask-note" className="text-sm text-text-muted">{t("bookings.askMoveNote", { name: booking.invitee.name })}</label>
+              <textarea id="ask-note" name="note" maxLength={500} rows={3} className="rounded-md border border-border bg-card p-2 text-text" />
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit">{t("bookings.askMoveSend")}</Button>
+                <Link href={`/dashboard/bookings/${booking.id}`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("bookings.keepIt")}</Link>
+              </div>
+            </form>
           )}
           {query.reschedule && !booking.classKey && (
             <div>
