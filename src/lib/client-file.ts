@@ -25,7 +25,7 @@ export interface LatestAnswer { label: string; answer: string; at: Date; booking
 export function latestAnswers(bookings: Pick<BookingWithInvitee, "id" | "startAt" | "createdAt" | "status" | "cancelledBy" | "invitee">[]): LatestAnswer[] {
   const seen = new Map<string, LatestAnswer>();
   const newest = [...bookings]
-    .filter((b) => b.status !== "pending_payment" && !(b.status === "cancelled" && b.cancelledBy === "system"))
+    .filter((b) => b.status !== "pending_payment" && b.status !== "pending_approval" && !(b.status === "cancelled" && b.cancelledBy === "system"))
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   for (const b of newest) {
     for (const a of b.invitee.answers) {
@@ -127,7 +127,7 @@ export interface BookingEntry {
   startAt: Date;
   endAt: Date;
   eventName: string;
-  status: "confirmed" | "cancelled" | "pending_payment";
+  status: "confirmed" | "cancelled" | "pending_payment" | "pending_approval";
   cancelledBy: "host" | "guest" | "system" | null;
   cancelReason: string | null;
   noShowAt: Date | null;
@@ -220,7 +220,7 @@ function showAnswer(v: unknown): string {
 }
 
 /** A booking counts in the file unless it is a live payment hold or a hold that lapsed (never a session). */
-const inFile = (b: Pick<BookingWithInvitee, "status" | "cancelledBy">) => b.status !== "pending_payment" && !(b.status === "cancelled" && b.cancelledBy === "system");
+const inFile = (b: Pick<BookingWithInvitee, "status" | "cancelledBy">) => b.status !== "pending_payment" && b.status !== "pending_approval" && !(b.status === "cancelled" && b.cancelledBy === "system");
 
 /**
  * The client file for `key` (clientKey of their email) in `hostId`'s account, one timeline page at a time, newest
@@ -260,7 +260,7 @@ async function fromPostgres(db: Db, hostId: string, key: string, now: Date, curs
   const email = who.email as string;
 
   // Bookings and package purchases, merged and ordered by time, one page past the cursor (plus one to know if there's more).
-  const FILE = `(b.status <> 'pending_payment' and not (b.status = 'cancelled' and b.cancelled_by is not distinct from 'system'))`;
+  const FILE = `(b.status not in ('pending_payment', 'pending_approval') and not (b.status = 'cancelled' and b.cancelled_by is not distinct from 'system'))`;
   const page = await db.query(
     `select * from (
        select b.start_at as at, 'booking' as kind, b.id from invitees i join bookings b on b.id = i.booking_id

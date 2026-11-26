@@ -96,7 +96,7 @@ export function EventTypeEditor({ id, userSlug, bookingHost = "hourhand.cloud", 
     setForm((f) => ({ ...f, durations: rows }));
     setStatus("idle");
   };
-  const set = (key: Exclude<keyof EventTypeForm, "hidden" | "durations">) => (value: string) => {
+  const set = (key: Exclude<keyof EventTypeForm, "hidden" | "durations" | "requiresApproval">) => (value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
     setStatus("idle");
   };
@@ -155,7 +155,7 @@ export function EventTypeEditor({ id, userSlug, bookingHost = "hourhand.cloud", 
     });
   }
 
-  const numberField = (key: Exclude<keyof EventTypeForm, "hidden" | "redirectUrl" | "cancelPolicy" | "durations">, label: string, unit: string, hint?: string) => (
+  const numberField = (key: Exclude<keyof EventTypeForm, "hidden" | "redirectUrl" | "cancelPolicy" | "durations" | "requiresApproval">, label: string, unit: string, hint?: string) => (
     <div>
       <Label htmlFor={`f-${key}`}>{label}</Label>
       <div className="flex items-center gap-2">
@@ -355,6 +355,19 @@ export function EventTypeEditor({ id, userSlug, bookingHost = "hourhand.cloud", 
         </div>
         {numberField("maxRepeats", t("eventTypes.maxRepeats"), t("eventTypes.unitWeeksAtMost"), t("eventTypes.maxRepeatsHint"))}
         {numberField("seats", t("eventTypes.seats"), t("eventTypes.unitGuests"), t("eventTypes.seatsHint"))}
+        <div>
+          <label className="flex min-h-11 items-start gap-3">
+            <input
+              type="checkbox" checked={form.requiresApproval === true} aria-describedby="f-requiresApproval-hint" aria-invalid={errors.requiresApproval ? true : undefined}
+              className="mt-1 size-5 accent-accent"
+              onChange={(e) => { const requiresApproval = e.target.checked; setForm((f) => ({ ...f, requiresApproval })); setStatus("idle"); }}
+            />
+            <span className="font-semibold text-text">{t("eventTypes.requiresApproval")}</span>
+          </label>
+          <p id="f-requiresApproval-hint" className={`mt-1 text-sm ${errors.requiresApproval ? "text-danger" : "text-text-muted"}`}>
+            {errors.requiresApproval ?? t("eventTypes.requiresApprovalHint")}
+          </p>
+        </div>
       </Panel>
 
       <Panel id="form" active={tab}>

@@ -18,6 +18,7 @@ import { chargeableCurrency, startStripeBooking, type StripeDeps } from "./payme
 import { stripeReady } from "./payments/stripe-connect";
 import type { HostRazorpayAuth } from "./payments/host-razorpay";
 import type { RazorpayOrders } from "./payments/razorpay-orders";
+import { approvalHoldUntil } from "./approval";
 
 const MIN = 60_000;
 const DAY = 86_400_000;
@@ -365,7 +366,7 @@ export async function handleCreateBooking(
   const priceMinor = req.packageToken ? null : unitMinor !== null ? seriesCharge(unitMinor, req.weeks) : eventType.depositMinor;
   const paymentKind = eventType.priceMinor === null ? "deposit" as const : "payment" as const;
   // A priced repeat goes through startPaidBooking below instead, so a still-held booking gets its payment details back.
-  if (existing && !priceMinor) return { status: 200, body: { bookingId: existing.id, manageToken: existing.invitee.manageToken } };
+  if (existing && !priceMinor) return { status: 200, body: { bookingId: existing.id, manageToken: existing.invitee.manageToken, ...pendingFlag(existing) } };
   // A priced repeat that is no longer waiting on payment: a confirmed one is simply returned (even if the host has since
   // downgraded or disconnected), and a released or failed attempt is over, so the guest's page starts a fresh one.
   if (existing && priceMinor && existing.status === "confirmed") return { status: 200, body: { bookingId: existing.id, manageToken: existing.invitee.manageToken } };
@@ -391,8 +392,12 @@ export async function handleCreateBooking(
   const answers = intake.ok ? intake.answers : [];
   const asked = askedQuestionIds(questions.map(toIntakeQuestion), given, firstBooking);
   const askedQuestions = questions.filter((q) => asked.has(q.id));
+  // An event type that asks for approval takes a request from its booking page (B9). The host's own choices are
+  // confirmed at once: a booking they make for a client, one through their single-use link, or one paid by package.
+  const asRequest = eventType.requiresApproval && !req.onBehalf && !found.linkToken && !req.packageToken && !priceMinor;
   const bookingInput = {
     eventTypeId: eventType.id, startAt: req.start, idempotencyKey: req.idempotencyKey, ...(req.weeks > 1 ? { weeks: req.weeks } : {}),
+    ...(asRequest ? { approvalUntil: approvalHoldUntil(now, req.start) } : {}),
     ...(hasDurationChoice(found.eventType) ? { durationMinutes: minutes } : {}),
     // Used up in the same write as the booking (or its payment hold), so two guests on one link can't both book.
     ...(found.linkToken ? { bookingLinkToken: found.linkToken, now } : {}),
@@ -481,7 +486,7 @@ export async function handleCreateBooking(
     }
     const booking = await store.createBooking(bookingInput);
     report(funnel, { kind: "booking_created", hostId: host.id, eventTypeId: eventType.id, bookingId: booking.id });
-    return { status: 201, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken } };
+    return { status: 201, body: { bookingId: booking.id, manageToken: booking.invitee.manageToken, ...pendingFlag(booking) } };
   } catch (err) {
     if (isNamedError(err, "SlotTakenError")) return slotTaken(store, host, eventType, req.start, now);
     if (isNamedError(err, "RequestKeyConflictError")) return { status: 409, body: { error: "key_conflict" } };
@@ -492,6 +497,9 @@ export async function handleCreateBooking(
     throw err;
   }
 }
+
+/** Tells the booking page to say "Request sent" rather than "You're booked" (B9). */
+const pendingFlag = (b: Pick<Booking, "status">) => (b.status === "pending_approval" ? { pending: "approval" as const } : {});
 
 /** Upcoming bookings soonest first, then past ones most recent first. */
 export function upcomingFirst<B extends Pick<Booking, "endAt">>(bookings: B[], at: Date = new Date()): { bookings: B[]; now: number } {

@@ -32,7 +32,7 @@ export function clientKey(email: string): string {
 export function summarizeClients(bookings: BookingWithInvitee[], now: Date): Client[] {
   const byEmail = new Map<string, BookingWithInvitee[]>();
   for (const b of bookings) {
-    if (b.status === "pending_payment" || (b.status === "cancelled" && b.cancelledBy === "system")) continue;
+    if (b.status === "pending_payment" || b.status === "pending_approval" || (b.status === "cancelled" && b.cancelledBy === "system")) continue;
     // An erased client (src/lib/privacy/rights.ts) is no longer anyone's client; their bookings stay in the history only.
     if (b.invitee.email.toLowerCase().endsWith("@erased.invalid")) continue;
     const k = b.invitee.email.trim().toLowerCase();

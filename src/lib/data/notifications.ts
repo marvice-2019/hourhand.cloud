@@ -69,7 +69,7 @@ export async function queueBookingNotifications(
        (select p.zoom_meeting_id from bookings p where p.id = b.rescheduled_from_id) as previous_zoom_meeting_id,
        -- Another live seat of the same group class: the class keeps one calendar event between all its seats.
        (select o.id from bookings o where b.class_key is not null and o.class_key = b.class_key and o.id <> b.id
-          and (o.status = 'confirmed' or (o.status = 'pending_payment' and o.hold_expires_at > now()))
+          and (o.status = 'confirmed' or (o.status in ('pending_payment', 'pending_approval') and o.hold_expires_at > now()))
         order by (o.external_event_id is not null) desc, o.created_at limit 1) as class_mate
      from bookings b join invitees i on i.booking_id = b.id join users u on u.id = b.host_id where b.id = $1`, [bookingId]);
   const b = rows[0];

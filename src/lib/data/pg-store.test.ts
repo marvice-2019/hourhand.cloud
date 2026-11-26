@@ -500,6 +500,36 @@ describe.skipIf(!URL_)("pg store (TEST_DATABASE_URL)", () => {
       expect(await stateOf(link.id)).toMatchObject({ state: "used", usedBy: { bookingId: after.id } });
     });
 
+    describe("requests the host approves (B9)", () => {
+      const startFor = (k: number) => new Date(at("2034-02-06T04:00:00Z").getTime() + k * 24 * 60 * MIN);
+      afterAll(async () => { await pool.query("update event_types set requires_approval = false where id = $1", [coaching.id]); });
+
+      it("stores a request holding its slot, queues nothing yet, and blocks the same time", async () => {
+        await pool.query("update event_types set requires_approval = true where id = $1", [coaching.id]);
+        expect((await store.getEventType(priya.id, coaching.id))?.requiresApproval).toBe(true);
+        const until = new Date(Date.now() + 60 * MIN);
+        const request = await store.createBooking({ eventTypeId: coaching.id, startAt: startFor(1), idempotencyKey: "pg-request-1", approvalUntil: until, invitee: { ...guest, name: "Asking Guest" } });
+        expect(request).toMatchObject({ status: "pending_approval", holdExpiresAt: until });
+        const { rows: [{ queued }] } = await pool.query("select count(*)::int as queued from notifications where booking_id = $1", [request.id]);
+        expect(queued).toBe(0);
+        await expect(store.createBooking({ eventTypeId: coaching.id, startAt: startFor(1), idempotencyKey: "pg-request-2", invitee: guest })).rejects.toBeInstanceOf(SlotTakenError);
+      });
+
+      it("sweeps a lapsed request when the next booking comes in, so the time is free again", async () => {
+        const request = await store.createBooking({ eventTypeId: coaching.id, startAt: startFor(2), idempotencyKey: "pg-request-3", approvalUntil: new Date(Date.now() + 60 * MIN), invitee: guest });
+        await pool.query("update bookings set hold_expires_at = now() - interval '1 minute' where id = $1", [request.id]);
+        const next = await store.createBooking({ eventTypeId: coaching.id, startAt: startFor(2), idempotencyKey: "pg-request-4", invitee: { ...guest, name: "Next Guest" } });
+        expect(next.status).toBe("confirmed");
+        const { rows: [row] } = await pool.query("select status, cancelled_by, cancel_reason, hold_expires_at from bookings where id = $1", [request.id]);
+        expect(row).toEqual({ status: "cancelled", cancelled_by: "system", cancel_reason: "Not confirmed in time", hold_expires_at: null });
+      });
+
+      it("refuses approval on a priced event type in the database too", async () => {
+        await expect(pool.query("update event_types set requires_approval = true, price_minor = 50000, currency = 'INR' where id = $1", [coaching.id]))
+          .rejects.toMatchObject({ constraint: "event_types_approval_scope" });
+      });
+    });
+
     describe("racing bookings", () => {
       // Each insert through a link sleeps, so both racers pass their link check before either commits unless the link row lock serialises them.
       beforeAll(async () => {
