@@ -9,7 +9,7 @@ import { buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { isUnpaidRelease } from "@/lib/booking-reasons";
 import { store } from "@/lib/data";
-import { formatDate, zoneName } from "@/lib/format";
+import { formatDate, formatDayMonth, zoneName } from "@/lib/format";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { LOCATION_KEYS, resolveLocale, t, tNodes } from "@/lib/i18n/guest";
 import { mt } from "@/lib/i18n/mail";
@@ -93,7 +93,7 @@ export default async function ManageBookingPage({ params, searchParams }: { para
       ) : request ? (
         <>
           <p className="mt-6 max-w-md text-text" role="status">
-            {tNodes(locale, "requestWaiting", { host: host.name, time: booking.holdExpiresAt ? time(booking.holdExpiresAt) : t(locale, "fewMinutes") })}
+            {tNodes(locale, "requestWaiting", { host: host.name, time: booking.holdExpiresAt ? <>{formatDayMonth(booking.holdExpiresAt, tz, locale)}, {time(booking.holdExpiresAt)}</> : t(locale, "fewMinutes") })}
           </p>
           <p className="mt-2 max-w-md text-text-muted">{t(locale, "requestEmail", { host: host.name })}</p>
           <form action={withdrawRequest} className="mt-4">
