@@ -83,3 +83,15 @@ export async function saveSessionNote(form: FormData): Promise<void> {
     return `${page(id)}?done=note_saved`;
   });
 }
+
+/** B9: the host approves or declines a booking request. Only a request still waiting changes; the page says what happened. */
+export async function decideAsHost(form: FormData): Promise<void> {
+  const user = await requireHost();
+  const id = field(form, "bookingId");
+  const decision = field(form, "decision");
+  if (decision !== "approve" && decision !== "decline") redirect(page(id));
+  await run(id, async () => {
+    const outcome = await store.decideRequest(user.id, id, decision, new Date());
+    return outcome === "approved" || outcome === "declined" ? `${page(id)}?done=${outcome}` : `${page(id)}?error=${outcome}`;
+  });
+}

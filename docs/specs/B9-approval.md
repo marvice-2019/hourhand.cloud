@@ -17,9 +17,9 @@ Calendly, Cal.com, Zoho Bookings and Topmate let a host review a booking before 
 
 ## 3. What the host sees
 - A "New booking request" email with two buttons, Approve and Decline, plus a phone alert when phone alerts are on.
-  - Each button is a signed, single-purpose link to `/api/bookings/{id}/decision?d=approve|decline&sig=...`. Opening it shows a confirm page with one button. A GET never changes anything; the button POSTs. The host must be signed in as the booking's host.
-- The Bookings page gets a "Requests" filter with a count. Each pending booking shows Approve and Decline.
-- The booking detail page shows the same two buttons and when the hold runs out.
+  - Each button links to the booking's dashboard page (`/dashboard/bookings/{id}?decide=approve|decline`), so the host must be signed in as the booking's host. A GET never changes anything: Approve is a form button there, and Decline asks once more before it runs.
+- The Bookings page shows "Waiting for your approval" on each live request, a count line, and a "Show only requests" link.
+- The booking detail page shows Approve and Decline and when the hold runs out.
 
 ## 4. Approve, decline, lapse
 - **Approve**: in one transaction, guarded on `status = 'pending_approval' and hold_expires_at > now()`: set `confirmed`, clear the hold, then `queueBookingNotifications(..., "booked")`. So the guest gets the normal booked email, and the calendar event, Zoom meeting, reminders, webhooks and follow-up all happen exactly as for a normal booking.
@@ -46,5 +46,5 @@ Calendly, Cal.com, Zoho Bookings and Topmate let a host review a booking before 
 - Approve queues the booked jobs once and not the host email; approving twice is a no-op; approving a lapsed one fails.
 - Decline and lapse email the guest once each.
 - Saving `requires_approval` on a paid, group or repeating event type is refused.
-- The decision link refuses a bad signature and another host.
+- A decision refuses another host's booking.
 - e2e: book a request, approve it from the dashboard, see the booked page change.
