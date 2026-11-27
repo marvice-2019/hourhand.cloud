@@ -240,8 +240,11 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
     const answers = answersToSend(questions, current);
     const guests = String(data.get("guests") ?? "").split(/[\s,;]+/).filter(Boolean);
     // A code goes with the request only for the address it was sent to; a changed address gets a new code.
-    const sendCode = codeSentTo !== null && codeSentTo === String(data.get("email") ?? "").trim() && !skipCode.current && emailCode.trim() !== "";
+    const awaitingCode = codeSentTo !== null && codeSentTo === String(data.get("email") ?? "").trim() && !skipCode.current;
     skipCode.current = false;
+    // Confirm pressed with the code box empty or short: say so here rather than asking the server for another code.
+    if (awaitingCode && !/^\d{6}$/.test(emailCode.trim())) { setErrors({ emailCode: t(locale, "errEmailCode") }); document.getElementById("emailCode")?.focus(); return; }
+    const sendCode = awaitingCode;
     setBusy(true); setFailed(false); setLimited(false); setExpired(false); setWeeksTaken(null);
     try {
       const res = await fetch("/api/bookings", {
