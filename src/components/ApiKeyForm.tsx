@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { makeApiKey, type ApiKeyFormState } from "@/app/dashboard/integrations/api-key-actions";
+import { keyToShow } from "@/lib/api/show-key";
 import type { HostKey } from "@/lib/i18n/host";
 import { CopyLinkButton } from "./CopyLinkButton";
 import { useHostI18n } from "./HostI18nProvider";
@@ -15,17 +16,18 @@ const ERROR: Record<"name_missing" | "name_too_long" | "too_many", HostKey> = {
   too_many: "integrations.apiTooMany",
 };
 
-/** Names a new key and shows it once, right after it's made. */
-export function ApiKeyForm({ max, canAdd }: { max: number; canAdd: boolean }) {
+/** Names a new key and shows it once, right after it's made, and only while that key still exists (`keyIds`). */
+export function ApiKeyForm({ max, canAdd, keyIds }: { max: number; canAdd: boolean; keyIds: string[] }) {
   const { t } = useHostI18n();
   const [state, action, pending] = useActionState(makeApiKey, idle);
+  const shown = keyToShow(state, keyIds);
   return (
     <div className="mt-4 grid gap-3">
-      {state.status === "made" && (
+      {shown && (
         <div role="status" className="rounded-md border border-border p-3">
           <p className="font-semibold text-text">{t("integrations.apiMade")}</p>
-          <code className="mt-2 block break-all rounded bg-surface px-2 py-1 text-text">{state.key}</code>
-          <div className="mt-2"><CopyLinkButton url={state.key} label={t("integrations.apiCopy")} /></div>
+          <code className="mt-2 block break-all rounded bg-surface px-2 py-1 text-text">{shown}</code>
+          <div className="mt-2"><CopyLinkButton url={shown} label={t("integrations.apiCopy")} /></div>
         </div>
       )}
       {state.status === "error" && <p role="alert" className="text-danger">{t(ERROR[state.error], { n: max })}</p>}

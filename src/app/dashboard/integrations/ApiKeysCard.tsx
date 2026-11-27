@@ -41,7 +41,7 @@ export async function ApiKeysCard({ pool, hostId, timezone, notice }: { pool: pg
               ))}
             </ul>
           )}
-          <ApiKeyForm max={MAX_API_KEYS} canAdd={keys.length < MAX_API_KEYS} />
+          <ApiKeyForm max={MAX_API_KEYS} canAdd={keys.length < MAX_API_KEYS} keyIds={keys.map((k) => k.id)} />
         </>
       )}
     </Card>
