@@ -23,10 +23,10 @@ export const dynamic = "force-dynamic";
 
 export default async function EventTypePage({ params, searchParams }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string; followups?: string; schedule?: string; reminders?: string }>;
+  searchParams: Promise<{ saved?: string; followups?: string; schedule?: string; reminders?: string; copied?: string }>;
 }) {
   const { id } = await params;
-  const { saved, followups, schedule, reminders } = await searchParams;
+  const { saved, followups, schedule, reminders, copied } = await searchParams;
   const user = await requireHost();
   const { t } = await getHostI18n();
   const video = await videoAvailabilityFor(user.id);
@@ -51,6 +51,7 @@ export default async function EventTypePage({ params, searchParams }: {
       <Link href="/dashboard/event-types" className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("eventTypes.backToList")}</Link>
       <h1 className="mt-2 font-display text-xl text-text">{eventType.name}</h1>
       <p className="mt-2 text-text-muted">{t("eventTypes.editIntro")}</p>
+      {copied === "1" && <p role="status" className="mt-3 max-w-xl rounded-md bg-success-bg px-3 py-2 text-success">{t("eventTypes.copied")}</p>}
       {!eventType.active && <p className="mt-2 text-sm text-text-muted">{t("eventTypes.linkOff")}</p>}
       {otherCurrency && (
         <p role="alert" className="mt-2 max-w-xl text-sm text-danger">

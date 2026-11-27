@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { store, type EventTypeInUseError, type QuestionDraft } from "@/lib/data";
 import { isNamedError } from "@/lib/data/types";
 import { checkEventType, checkQuestions, priceGateError, type CodedError, type EventTypeErrors, type EventTypeForm, type QuestionErrors } from "@/lib/event-types";
@@ -100,6 +101,14 @@ export async function setEventTypeActive(id: string, active: boolean): Promise<v
   const user = await requireHost();
   await store.setEventTypeActive(user.id, id, active === true);
   refresh(user.slug, id);
+}
+
+/** B13: copies the event type (switched off, "(copy)" name, "-copy" link) and opens the copy's editor. */
+export async function duplicateEventType(id: string): Promise<void> {
+  const user = await requireHost();
+  const copy = await store.duplicateEventType(user.id, id);
+  refresh(user.slug);
+  redirect(`/dashboard/event-types/${copy.id}?copied=1`);
 }
 
 /** Returns the reason when the event type can't be deleted. */

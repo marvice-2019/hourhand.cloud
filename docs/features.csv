@@ -13,6 +13,7 @@ Multiple duration options on one event type,event types,should,yes,yes,"S05; up 
 "Minimum notice, booking window, start increments",event types,must,yes,yes,"slot engine, tested"
 Buffers before and after meetings,event types,must,yes,yes,"slot engine + booking overlap check, tested"
 Daily / weekly booking limits,event types,should,yes,yes,"D5: daily and weekly (Monday-Sunday in the host's zone) limits, weekly at least daily, both enforced by the slot engine"
+Duplicate an event type,event types,should,yes,yes,"B13: one-click copy with every setting, location, questions (conditions kept) and per-type settings; switched off, ""(copy)"" name, ""-copy"" link"
 Hidden event types (link only),event types,should,yes,yes,"B8: 'Only people with the link can book' in the editor; off the profile, own URL still books"
 Custom questions on the booking form,booking,must,yes,yes,required questions enforced; answers saved with question label and shown to host
 "Group event type (one host, many invitees, seat limit)",event types,could,yes,no,S05; API kind=group

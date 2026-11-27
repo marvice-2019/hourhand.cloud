@@ -14,6 +14,9 @@ export const eventTypes = {
   "eventTypes.editIntro": "Change how this booking link works and what people see when they book.",
   "eventTypes.otherCurrency": "This price is in {from}, but you now take payments in {to}. Guests can't pay it until you check the amount below and save.",
   "eventTypes.linkOff": "This link is off, so nobody can book it right now.",
+  "eventTypes.duplicate": "Duplicate",
+  "eventTypes.duplicateLabel": "Duplicate {name}",
+  "eventTypes.copied": "Copied. This copy is switched off: rename it, check its link, then switch it on.",
 
   // On/off switch
   "eventTypes.switchLabel": "Take bookings for {name}",

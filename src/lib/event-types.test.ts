@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createMemoryStore } from "./data/memory-store";
 import { buildSeed } from "./data/seed";
 import { EventTypeInUseError, type EventTypeDraft } from "./data/types";
-import { PRICE_INVALID, SLUG_TAKEN, priceGateError, priceInput, slugify, validateEventType, validateQuestions, type EventTypeForm } from "./event-types";
+import { PRICE_INVALID, SLUG_TAKEN, copyName, copySlug, priceGateError, priceInput, slugify, validateEventType, validateQuestions, type EventTypeForm } from "./event-types";
 
 const NOW = new Date("2026-10-10T06:00:00Z");
 
@@ -264,5 +264,21 @@ describe("no-show deposit", () => {
     expect(validateEventType({ ...valid, deposit: "200", price: "499" }, [])).toMatchObject({ ok: false, errors: { deposit: expect.stringContaining("priced") } });
     expect(validateEventType({ ...valid, deposit: "200", maxRepeats: "4" }, [])).toMatchObject({ ok: false, errors: { maxRepeats: expect.stringContaining("deposit") } });
     expect(validateEventType({ ...valid, deposit: "0.5" }, [])).toMatchObject({ ok: false, errors: { deposit: expect.any(String) } });
+  });
+});
+
+describe("names and links for a copied event type (B13)", () => {
+  it("adds (copy) to the name", () => {
+    expect(copyName("Coaching")).toBe("Coaching (copy)");
+  });
+
+  it("takes the first free -copy link and keeps to 60 characters", () => {
+    expect(copySlug("coaching", new Set(["coaching"]))).toBe("coaching-copy");
+    expect(copySlug("coaching", new Set(["coaching-copy", "coaching-copy-2"]))).toBe("coaching-copy-3");
+    const long = copySlug("a".repeat(60), new Set());
+    expect(long).toHaveLength(60);
+    expect(long.endsWith("-copy")).toBe(true);
+    // A cut that would leave a hyphen before the suffix drops it.
+    expect(copySlug(`${"b".repeat(54)}-x`, new Set())).toBe(`${"b".repeat(54)}-copy`);
   });
 });

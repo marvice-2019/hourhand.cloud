@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { ActiveSwitch } from "@/components/ActiveSwitch";
+import { duplicateEventType } from "@/app/dashboard/event-types/actions";
 import { CopyLinkButton } from "@/components/CopyLinkButton";
-import { buttonClasses } from "@/components/ui/Button";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { focusRing } from "@/components/ui/focus";
 import { lengthsLabel, priceRange } from "@/lib/durations";
@@ -69,7 +70,12 @@ export default async function EventTypesPage() {
                   <p className="text-sm text-text-muted">{t("common.minutes", { n: lengthsLabel(et) })}{et.priceMinor !== null && ` · ${priceRange(et, (m) => money(m, et.currency))}`} · {first ? t(locationLabel[first.kind]) : t("eventTypes.noLocation")}</p>
                   <div className="mt-auto flex items-center justify-between gap-3">
                     <span className="truncate font-mono text-xs text-text-muted">{path}</span>
-                    <CopyLinkButton path={path} />
+                    <div className="flex shrink-0 items-center gap-2">
+                      <form action={duplicateEventType.bind(null, et.id)}>
+                        <Button type="submit" variant="secondary" size="sm" aria-label={t("eventTypes.duplicateLabel", { name: et.name })}>{t("eventTypes.duplicate")}</Button>
+                      </form>
+                      <CopyLinkButton path={path} />
+                    </div>
                   </div>
                 </Card>
               </li>

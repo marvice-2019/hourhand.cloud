@@ -15,6 +15,9 @@ export const eventTypes: Record<keyof typeof en, string> = {
   "eventTypes.editIntro": "यह बुकिंग लिंक कैसे काम करे और बुक करते समय लोगों को क्या दिखे, यहाँ बदलें।",
   "eventTypes.otherCurrency": "यह कीमत {from} में है, लेकिन अब आप पेमेंट {to} में लेते हैं। नीचे रकम जाँचकर सेव करने तक मेहमान इसे पे नहीं कर सकते।",
   "eventTypes.linkOff": "यह लिंक बंद है, इसलिए अभी कोई इसे बुक नहीं कर सकता।",
+  "eventTypes.duplicate": "कॉपी बनाएँ",
+  "eventTypes.duplicateLabel": "{name} की कॉपी बनाएँ",
+  "eventTypes.copied": "कॉपी बन गई। यह कॉपी बंद है: इसका नाम बदलें, लिंक जाँचें, फिर इसे चालू करें।",
 
   // On/off switch
   "eventTypes.switchLabel": "{name} के लिए बुकिंग लें",

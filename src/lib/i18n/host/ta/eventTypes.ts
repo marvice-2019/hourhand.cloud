@@ -14,6 +14,9 @@ export const eventTypes: Record<keyof typeof en, string> = {
   "eventTypes.newIntro": "பெயர், நேர அளவு, சந்திக்கும் இடம் ஆகியவற்றை அமைத்து, லிங்கைப் பகிருங்கள்.",
   "eventTypes.editIntro": "இந்த புக்கிங் லிங்க் எப்படி வேலை செய்கிறது, புக் செய்யும்போது மக்கள் என்ன பார்க்கிறார்கள் என்பதை மாற்றுங்கள்.",
   "eventTypes.linkOff": "இந்த லிங்க் ஆஃப் செய்யப்பட்டுள்ளது, அதனால் இப்போது யாரும் புக் செய்ய முடியாது.",
+  "eventTypes.duplicate": "நகலெடு",
+  "eventTypes.duplicateLabel": "{name}-ஐ நகலெடு",
+  "eventTypes.copied": "நகலெடுக்கப்பட்டது. இந்த நகல் ஆஃப் நிலையில் உள்ளது: பெயரை மாற்றி, லிங்கைச் சரிபார்த்து, பிறகு ஆன் செய்யுங்கள்.",
 
   // On/off switch
   "eventTypes.switchLabel": "{name}-க்கு புக்கிங் ஏற்கவும்",

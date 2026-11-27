@@ -18,6 +18,7 @@ import { classKeyOf, localDay, weekOf } from "../slots";
 import { queueRefunds } from "../payments/series";
 import { hostDisplayName } from "../display-name";
 import { DECLINED_REASON, LAPSED_REASON } from "../approval";
+import { copyName, copySlug } from "../event-types";
 import {
   DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type AvailabilityRule, type BookingLink,
   type BookingWithInvitee, type CreateBookingInput, type CustomQuestion, type DataStore, type EventType, type EventTypeDraft, type Interval, type User,
@@ -262,6 +263,13 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
     const { rows } = isId(userId) && isId(id) ? await db.query(`select ${EVENT} from event_types where user_id = $1 and id = $2`, [userId, id]) : { rows: [] };
     if (!rows[0]) throw new NotFoundError("Event type");
     return toEventType(rows[0]);
+  }
+
+  /** A table's columns as a quoted SQL list, leaving out `skip`. Names come from the catalogue, never from input. */
+  async function columnsOf(db: Db, table: string, skip: string[]): Promise<string> {
+    const { rows } = await db.query(
+      "select column_name from information_schema.columns where table_schema = current_schema() and table_name = $1 order by ordinal_position", [table]);
+    return rows.map((r) => r.column_name as string).filter((c) => !skip.includes(c)).map((c) => `"${c.replace(/"/g, '""')}"`).join(", ");
   }
 
   async function ownedSchedule(db: Db, userId: string, scheduleId: string) {
@@ -881,6 +889,40 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
       await owned(pool, userId, id);
       const { rows } = await pool.query(`update event_types set active = $3 where user_id = $1 and id = $2 returning ${EVENT}`, [userId, id, active]);
       return toEventType(rows[0]);
+    },
+    async duplicateEventType(userId, id) {
+      return slugSafe(() => tx(async (client) => {
+        const source = await owned(client, userId, id);
+        if (source.kind === "one_off") throw new NotFoundError("Event type");
+        const { rows: slugs } = await client.query("select slug::text as slug from event_types where user_id = $1", [userId]);
+        const slug = copySlug(source.slug, new Set(slugs.map((r) => r.slug as string)));
+        // Every column carries over, so settings added later are copied too; only these are the copy's own.
+        const cols = await columnsOf(client, "event_types", ["id", "name", "slug", "active", "position", "created_at", "updated_at"]);
+        const { rows: [created] } = await client.query(
+          `insert into event_types (${cols}, name, slug, active, position)
+           select ${cols}, $3, $4, false, (select coalesce(max(position), -1) + 1 from event_types where user_id = $1)
+           from event_types where user_id = $1 and id = $2 returning ${EVENT}`, [userId, id, copyName(source.name), slug]);
+        const copy = toEventType(created);
+        for (const table of ["event_locations", "notification_settings", "offer_sliding_scales", "follow_up_settings"]) {
+          const c = await columnsOf(client, table, ["id", "event_type_id"]);
+          await client.query(`insert into ${table} (event_type_id${c ? `, ${c}` : ""}) select $2${c ? `, ${c}` : ""} from ${table} where event_type_id = $1`, [id, copy.id]);
+        }
+        // Questions one by one, so a condition on an earlier question points at that question's copy.
+        const q = await columnsOf(client, "custom_questions", ["id", "event_type_id"]);
+        const { rows: questions } = await client.query("select id from custom_questions where event_type_id = $1 order by position, id", [id]);
+        const copied = new Map<string, string>();
+        for (const { id: from } of questions) {
+          const { rows: [row] } = await client.query(
+            `insert into custom_questions (event_type_id, ${q}) select $2, ${q} from custom_questions where id = $1 returning id`, [from, copy.id]);
+          copied.set(from, row.id);
+        }
+        const { rows: conditions } = await client.query(
+          "select id, show_if_question_id from custom_questions where event_type_id = $1 and show_if_question_id is not null", [id]);
+        for (const c of conditions) {
+          await client.query("update custom_questions set show_if_question_id = $2 where id = $1", [copied.get(c.id), copied.get(c.show_if_question_id) ?? null]);
+        }
+        return copy;
+      }));
     },
     async deleteEventType(userId, id, now = new Date()) {
       await tx(async (client) => {
