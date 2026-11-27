@@ -1,7 +1,7 @@
 import type pg from "pg";
 import type { PackageUnavailableError } from "./packages/packages";
 import { bookedMinutes, hasDurationChoice, priceFor, resolveDuration, withDuration } from "./durations";
-import { computeOneOffSlots, computeSlotSeats, isSyncStale } from "./slots";
+import { computeOneOffSlots, computeSlotSeats, explainDay, isSyncStale, type DayCheck } from "./slots";
 import { isNamedError, type Booking, type DataStore, type EventType, type LinkUnavailableError, type User } from "./data/types";
 import { isLocale, t } from "./i18n/guest";
 import { consentFor } from "./privacy/consent";
@@ -77,6 +77,28 @@ export async function freeSlotSeats(store: DataStore, host: User, eventType: Eve
     eventType, schedule, rules, busyBlocks, bookings: bookings.filter((b) => b.id !== movingId), now, rangeStart: from, rangeEnd: to,
     syncStale: isSyncStale(connections, now),
   });
+}
+
+/**
+ * B15: one day of an event type's hours for its host, each start with why guests can or can't book it. `date` is
+ * "YYYY-MM-DD" in the event type's schedule zone. One-off meetings have no hours, so they have nothing to check.
+ */
+export async function checkDay(store: DataStore, host: User, eventType: EventType, date: string, now: Date): Promise<DayCheck & { timezone: string; scheduleId: string; scheduleName: string }> {
+  const { schedule, rules } = await store.getSchedule(host.id, eventType.scheduleId);
+  const day = Date.parse(`${date}T00:00:00Z`);
+  // A day is at most 26 hours long in any zone; the busy times and holds around it are enough.
+  const from = new Date(day - 2 * DAY), to = new Date(day + 3 * DAY);
+  const [connections, busy, holds, bookings] = await Promise.all([
+    store.listCalendarConnections(host.id),
+    store.listBusyBlocks(host.id, from, to),
+    store.listPollHolds(host.id, from, to, now),
+    store.listBookings(host.id),
+  ]);
+  const check = explainDay({
+    eventType, schedule, rules, now, syncStale: isSyncStale(connections, now), bookings,
+    busyBlocks: [...busy, ...holds.map((h) => ({ ...h, kind: "poll" as const }))],
+  }, date);
+  return { ...check, timezone: schedule.timezone, scheduleId: schedule.id, scheduleName: schedule.name };
 }
 
 /** The host's busy calendar time around [from, to), plus the times their open meeting polls hold, which block slots the same way. */
