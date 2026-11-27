@@ -80,6 +80,25 @@ export async function freeSlotSeats(store: DataStore, host: User, eventType: Eve
 }
 
 /**
+ * B16: the first open time at or after `after`, within the booking window (a one-off meeting: up to its last time),
+ * or null when none is left. Looks ahead a slice at a time and stops at the first slice with a time, so a host whose
+ * next opening is next week costs one slice, not the whole window.
+ */
+export async function nextOpenTime(store: DataStore, host: User, eventType: EventType, after: Date, now: Date, movingId: string | null = null): Promise<Date | null> {
+  // An out-of-date calendar hides every time until it syncs, so looking further ahead finds nothing.
+  if (isSyncStale(await store.listCalendarConnections(host.id), now)) return null;
+  const end = eventType.kind === "one_off"
+    ? new Date(Math.max(0, ...(await store.listOneOffTimes(eventType.id)).map((t) => t.getTime())) + 1)
+    : new Date(now.getTime() + eventType.bookingWindowDays * DAY);
+  for (let from = new Date(Math.max(after.getTime(), now.getTime())); from < end; from = new Date(from.getTime() + MAX_RANGE_DAYS * DAY)) {
+    const to = new Date(Math.min(from.getTime() + MAX_RANGE_DAYS * DAY, end.getTime()));
+    const [first] = await freeSlotSeats(store, host, eventType, from, to, now, movingId);
+    if (first) return first.start;
+  }
+  return null;
+}
+
+/**
  * B15: one day of an event type's hours for its host, each start with why guests can or can't book it. `date` is
  * "YYYY-MM-DD" in the event type's schedule zone. One-off meetings have no hours, so they have nothing to check.
  */
@@ -180,7 +199,12 @@ export async function handleGetSlots(store: DataStore, params: URLSearchParams, 
   const slots = await freeSlotSeats(store, found.host, withDuration(found.eventType, minutes), from, to, now, movingId);
   // A group class also says how many seats each time has left.
   const seatsLeft = found.eventType.kind === "group" ? Object.fromEntries(slots.map((s) => [s.start.toISOString(), s.seatsLeft])) : undefined;
-  return { status: 200, body: { timezone: tz ?? found.host.timezone, slots: slots.map((s) => s.start.toISOString()), ...(seatsLeft ? { seatsLeft } : {}) } };
+  // B16: asked with next=1, a range with no times also says the first open time after it (null: none left), so the
+  // booking page can jump there instead of making the guest page through empty months.
+  const next = params.get("next") === "1" && slots.length === 0
+    ? { next: (await nextOpenTime(store, found.host, withDuration(found.eventType, minutes), to, now, movingId))?.toISOString() ?? null }
+    : {};
+  return { status: 200, body: { timezone: tz ?? found.host.timezone, slots: slots.map((s) => s.start.toISOString()), ...(seatsLeft ? { seatsLeft } : {}), ...next } };
 }
 
 /** Extra guests a booker can add (invitees.guests holds at most this many). */

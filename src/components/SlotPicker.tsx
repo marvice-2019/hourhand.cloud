@@ -34,7 +34,7 @@ const detectZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 export const useDeviceZone = () => useSyncExternalStore(noSubscribe, detectZone, () => null);
 
 type Month = { y: number; m: number }; // m is 0-11
-type Loaded = { key: string; slots: string[] | null; seatsLeft?: Record<string, number> }; // null slots = failed; seatsLeft for a group class
+type Loaded = { key: string; slots: string[] | null; seatsLeft?: Record<string, number>; next?: string | null }; // null slots = failed; seatsLeft for a group class; next: first open time after an empty range (null: none left)
 
 function monthOf(date: Date, tz: string): Month {
   const [y, m] = dayKey(date, tz).split("-").map(Number);
@@ -78,10 +78,11 @@ export function SlotPicker({ slug, event, bookingWindowDays, manageToken, linkTo
       : new URLSearchParams({ slug, event, from: from.toISOString(), to: to.toISOString() });
     if (manageToken) params.set("token", manageToken);
     if (duration) params.set("duration", String(duration));
+    params.set("next", "1"); // B16: an empty month also says where the next open time is
     let live = true;
     fetch(`/api/slots?${params}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((body: { slots: string[]; seatsLeft?: Record<string, number> }) => live && setLoaded({ key, slots: body.slots, seatsLeft: body.seatsLeft }))
+      .then((body: { slots: string[]; seatsLeft?: Record<string, number>; next?: string | null }) => live && setLoaded({ key, slots: body.slots, seatsLeft: body.seatsLeft, next: body.next }))
       .catch(() => live && setLoaded({ key, slots: null }));
     return () => { live = false; };
   }, [sy, sm, attempt, slug, event, manageToken, linkToken, now, duration]);
@@ -103,6 +104,12 @@ export function SlotPicker({ slug, event, bookingWindowDays, manageToken, linkTo
   const canPrev = shown.y * 12 + shown.m > firstMonth.y * 12 + firstMonth.m;
   const canNext = shown.y * 12 + shown.m < lastMonth.y * 12 + lastMonth.m;
   const goMonth = (by: number) => { setMonth(shift(shown, by)); setPicked(null); };
+  // B16: in an empty month, the first open time after it: one already fetched (the day after the month), else the
+  // server's look-ahead. null = nothing left in the booking window; undefined = not known, so page month by month.
+  const prefix = `${shown.y}-${String(shown.m + 1).padStart(2, "0")}`;
+  const nextOpen = loading || failed || byDay.size > 0 ? undefined
+    : loaded?.slots?.find((s) => dayKey(new Date(s), tz).slice(0, 7) > prefix) ?? loaded?.next;
+  const goTo = (iso: string) => { const d = new Date(iso); setMonth(monthOf(d, tz)); setPicked(dayKey(d, tz)); };
   const zoneLabel = t(locale, tz === detected ? "timesShownInYours" : "timesShownIn", { zone: zoneName(tz) });
 
   const daysInMonth = new Date(Date.UTC(shown.y, shown.m + 1, 0)).getUTCDate();
@@ -124,8 +131,13 @@ export function SlotPicker({ slug, event, bookingWindowDays, manageToken, linkTo
           </div>
         ) : byDay.size === 0 ? (
           <div className="mt-4 rounded-md bg-surface p-4">
-            <p className="text-text">{t(locale, "noTimesMonth")}</p>
-            {canNext && <Button variant="secondary" className="mt-3" onClick={() => goMonth(1)}>{t(locale, "showNextMonth")}</Button>}
+            <p className="text-text">{t(locale, nextOpen === null ? "noTimesLeft" : "noTimesMonth")}</p>
+            {nextOpen ? (
+              <>
+                <p className="mt-2 text-text">{t(locale, "firstOpen", { date: `${formatDate(new Date(nextOpen), tz, locale)}, ${formatTime(new Date(nextOpen), tz, cycle, locale)}` })}</p>
+                <Button className="mt-3" onClick={() => goTo(nextOpen)}>{t(locale, "showFirstOpen")}</Button>
+              </>
+            ) : nextOpen === undefined && canNext && <Button variant="secondary" className="mt-3" onClick={() => goMonth(1)}>{t(locale, "showNextMonth")}</Button>}
           </div>
         ) : (
           <div className="mt-2 grid grid-cols-7 gap-1 text-center" role="grid">
