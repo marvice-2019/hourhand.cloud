@@ -56,7 +56,7 @@ describe("validateEventType", () => {
         name: "30-min strategy call", slug: "strategy", description: "Plan the next quarter.", durationMinutes: 30, minNoticeMinutes: 240,
         bookingWindowDays: 60, startIncrementMinutes: 15, bufferBeforeMinutes: 0, bufferAfterMinutes: 10, dailyLimit: null,
         cancelCutoffMinutes: 120, maxRepeats: 1, depositMinor: null, priceMinor: null, currency: null, location: { kind: "zoom", value: null }, hidden: false,
-        redirectUrl: null, weeklyLimit: null, cancelPolicy: null, seatLimit: null, durationOptions: [], requiresApproval: false,
+        redirectUrl: null, weeklyLimit: null, cancelPolicy: null, seatLimit: null, durationOptions: [], requiresApproval: false, verifyGuestEmail: false,
       },
     });
   });
@@ -172,6 +172,9 @@ describe("approving each booking (B9)", () => {
 
   it("refuses a value that isn't a tick box", () => {
     expect(validateEventType({ ...valid, requiresApproval: "yes" as unknown as boolean }, [])).toMatchObject({ ok: false, errors: { requiresApproval: expect.any(String) } });
+    expect(validateEventType({ ...valid, verifyGuestEmail: true }, [])).toMatchObject({ ok: true, value: { verifyGuestEmail: true } });
+    expect(validateEventType({ ...valid }, [])).toMatchObject({ ok: true, value: { verifyGuestEmail: false } });
+    expect(validateEventType({ ...valid, verifyGuestEmail: "yes" as unknown as boolean }, [])).toMatchObject({ ok: false, errors: { verifyGuestEmail: expect.any(String) } });
   });
 });
 

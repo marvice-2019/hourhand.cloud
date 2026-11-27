@@ -63,6 +63,8 @@ export const eventTypes = {
   "eventTypes.hiddenHint": "It won't show on your booking page. Anyone you send its link to can still book.",
   "eventTypes.requiresApproval": "I approve each booking first",
   "eventTypes.requiresApprovalHint": "Guests send a request that holds the time for up to 48 hours. It becomes a booking only when you approve it, by email or from Bookings. Free one-on-one event types only, with repeats set to 1.",
+  "eventTypes.verifyGuestEmail": "Check the guest's email before booking",
+  "eventTypes.verifyGuestEmailHint": "Guests enter a 6-digit code we email them. Stops fake and mistyped bookings.",
   "eventTypes.location": "Where you meet",
   "eventTypes.teamsHint": "Teams links are created when bookings go to a work or school Outlook calendar.",
   "eventTypes.description": "Description",

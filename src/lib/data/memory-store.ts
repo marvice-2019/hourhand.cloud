@@ -5,6 +5,7 @@ import { classKeyOf, overlaps } from "../slots";
 import { buildSeed, type Seed } from "./seed";
 import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
+import { sameGuestEmailCodeHash } from "../guest-email-code";
 import { DECLINED_REASON, LAPSED_REASON } from "../approval";
 import {
   DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type BookingLink, type BookingWithInvitee,
@@ -16,6 +17,8 @@ const MIN = 60_000;
 /** In-memory stand-in for the Postgres store. The "current user" is the first seeded user until auth lands. */
 export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore {
   const db = structuredClone(seed);
+  // B11: guest email codes (hashes only), newest last.
+  const guestCodes: { eventTypeId: string; email: string; codeHash: string; expiresAt: Date; attempts: number; usedAt: Date | null; createdAt: Date }[] = [];
   const deleted = new Map<string, Date>(); // user id -> when the account was closed
   const host = db.users[0];
   type LinkRow = { id: string; userId: string; eventTypeId: string; tokenHash: string; label: string | null; expiresAt: Date | null; revokedAt: Date | null; createdAt: Date };
@@ -106,12 +109,12 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
     if (db.eventTypes.some((e) => e.userId === userId && e.slug === slug && e.id !== exceptId)) throw new SlugTakenError();
   }
 
-  function fields(draft: EventTypeDraft): Omit<EventTypeDraft, "location" | "durationOptions" | "requiresApproval"> & Pick<EventType, "durationOptions" | "requiresApproval"> {
-    const { name, slug, description, durationMinutes, minNoticeMinutes, bookingWindowDays, startIncrementMinutes, bufferBeforeMinutes, bufferAfterMinutes, dailyLimit, cancelCutoffMinutes, priceMinor, currency, hidden, maxRepeats, depositMinor, redirectUrl, weeklyLimit, cancelPolicy, seatLimit, durationOptions, requiresApproval } = draft;
+  function fields(draft: EventTypeDraft): Omit<EventTypeDraft, "location" | "durationOptions" | "requiresApproval" | "verifyGuestEmail"> & Pick<EventType, "durationOptions" | "requiresApproval" | "verifyGuestEmail"> {
+    const { name, slug, description, durationMinutes, minNoticeMinutes, bookingWindowDays, startIncrementMinutes, bufferBeforeMinutes, bufferAfterMinutes, dailyLimit, cancelCutoffMinutes, priceMinor, currency, hidden, maxRepeats, depositMinor, redirectUrl, weeklyLimit, cancelPolicy, seatLimit, durationOptions, requiresApproval, verifyGuestEmail } = draft;
     return {
       name, slug, description, durationMinutes, minNoticeMinutes, bookingWindowDays, startIncrementMinutes, bufferBeforeMinutes, bufferAfterMinutes, dailyLimit, cancelCutoffMinutes,
       priceMinor, currency: priceMinor === null ? null : currency, hidden, maxRepeats, depositMinor: priceMinor === null ? depositMinor : null, redirectUrl, weeklyLimit, cancelPolicy, seatLimit,
-      durationOptions: (durationOptions ?? []).map((o) => ({ ...o })), requiresApproval: requiresApproval === true,
+      durationOptions: (durationOptions ?? []).map((o) => ({ ...o })), requiresApproval: requiresApproval === true, verifyGuestEmail: verifyGuestEmail === true,
     };
   }
 
@@ -290,7 +293,7 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
         id: randomUUID(), userId: hostId, scheduleId: db.schedules.find((s) => s.userId === hostId && s.isDefault)?.id ?? null,
         name: input.name.trim(), slug: oneOffSlug(), description: input.description ?? null, durationMinutes: input.durationMinutes,
         minNoticeMinutes: 0, bookingWindowDays: 730, startIncrementMinutes: 30, bufferBeforeMinutes: 0, bufferAfterMinutes: 0, dailyLimit: null,
-        cancelCutoffMinutes: 0, priceMinor: null, currency: null, hidden: true, active: true, position: 0, kind: "one_off", seatLimit: null, maxRepeats: 1, depositMinor: null, redirectUrl: null, weeklyLimit: null, cancelPolicy: null, durationOptions: [], requiresApproval: false,
+        cancelCutoffMinutes: 0, priceMinor: null, currency: null, hidden: true, active: true, position: 0, kind: "one_off", seatLimit: null, maxRepeats: 1, depositMinor: null, redirectUrl: null, weeklyLimit: null, cancelPolicy: null, durationOptions: [], requiresApproval: false, verifyGuestEmail: false,
       };
       db.eventTypes.push(eventType);
       db.locations.push({ id: randomUUID(), eventTypeId: eventType.id, kind: input.location.kind, value: input.location.value ?? null, position: 0 });
@@ -324,6 +327,21 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
       if (linkId) linkOfBooking.set(booking.id, linkId);
       Object.assign(old, { status: "cancelled", cancelledAt: new Date(), cancelledBy: by, cancelReason: "Rescheduled" });
       return booking;
+    },
+    async issueGuestEmailCode(eventTypeId, email, codeHash, now) {
+      const address = email.toLowerCase();
+      const mine = guestCodes.filter((c) => c.eventTypeId === eventTypeId && c.email === address);
+      if (mine.some((c) => now.getTime() - c.createdAt.getTime() < 60_000)) return { ok: false, reason: "too_soon" };
+      if (mine.filter((c) => now.getTime() - c.createdAt.getTime() < 3_600_000).length >= 5) return { ok: false, reason: "too_many" };
+      guestCodes.push({ eventTypeId, email: address, codeHash, expiresAt: new Date(now.getTime() + 10 * 60_000), attempts: 0, usedAt: null, createdAt: now });
+      return { ok: true };
+    },
+    async checkGuestEmailCode(eventTypeId, email, codeHash, now) {
+      const latest = guestCodes.filter((c) => c.eventTypeId === eventTypeId && c.email === email.toLowerCase()).at(-1);
+      if (!latest || latest.usedAt || latest.expiresAt.getTime() <= now.getTime() || latest.attempts >= 5) return "expired";
+      if (!sameGuestEmailCodeHash(latest.codeHash, codeHash)) { latest.attempts += 1; return "wrong"; }
+      latest.usedAt = now;
+      return "ok";
     },
     async decideRequest(hostId, bookingId, decision, now) {
       const booking = db.bookings.find((b) => b.hostId === hostId && b.id === bookingId);

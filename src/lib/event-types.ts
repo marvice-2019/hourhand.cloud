@@ -64,6 +64,8 @@ export interface EventTypeForm {
   durations?: { minutes: string; price: string }[];
   /** Each booking waits for the host's approval (B9). Free one-on-one types without repeats only; left out = off. */
   requiresApproval?: boolean;
+  /** Guests prove their email with an emailed code before booking (B11); left out = off. */
+  verifyGuestEmail?: boolean;
 }
 
 /** The most guests a group class takes (event_types.seat_limit). */
@@ -205,7 +207,7 @@ export function checkEventType(form: EventTypeForm, takenSlugs: readonly string[
 
   // The form arrives from the client, so check every field is text before using string methods on it.
   for (const key of Object.keys(NEW_EVENT_TYPE_FORM) as (keyof EventTypeForm)[]) {
-    if (key === "hidden" || key === "requiresApproval") {
+    if (key === "hidden" || key === "requiresApproval" || key === "verifyGuestEmail") {
       // A checkbox: true or false (an older client may leave it out, which means off).
       if (form[key] !== undefined && typeof form[key] !== "boolean") fail(key, "notBoolean");
     } else if (key === "durations") {
@@ -236,7 +238,7 @@ export function checkEventType(form: EventTypeForm, takenSlugs: readonly string[
     fail("slug", "slugTaken");
   }
 
-  const number = (key: Exclude<keyof EventTypeForm, "hidden" | "redirectUrl" | "cancelPolicy" | "durations" | "requiresApproval">, min: number, max: number, code: EventTypeErrorCode, vars?: Record<string, number>): number => {
+  const number = (key: Exclude<keyof EventTypeForm, "hidden" | "redirectUrl" | "cancelPolicy" | "durations" | "requiresApproval" | "verifyGuestEmail">, min: number, max: number, code: EventTypeErrorCode, vars?: Record<string, number>): number => {
     const n = whole(form[key] ?? "");
     if (n === null || n < min || n > max) fail(key, code, vars);
     return n ?? 0;
@@ -300,7 +302,7 @@ export function checkEventType(form: EventTypeForm, takenSlugs: readonly string[
       name, slug, description: form.description.trim() || null, durationMinutes, minNoticeMinutes, bookingWindowDays,
       startIncrementMinutes, bufferBeforeMinutes, bufferAfterMinutes, dailyLimit, cancelCutoffMinutes, maxRepeats, depositMinor,
       priceMinor, currency: priceMinor === null && depositMinor === null ? null : "INR", hidden: form.hidden === true, redirectUrl: redirectUrl ?? null, weeklyLimit, cancelPolicy: cancelPolicy || null,
-      seatLimit: seats, durationOptions, requiresApproval,
+      seatLimit: seats, durationOptions, requiresApproval, verifyGuestEmail: form.verifyGuestEmail === true,
       location: form.locationKind ? { kind: form.locationKind, value: valueLabel ? locationValue : null } : null,
     },
   };
@@ -348,7 +350,7 @@ function validateDurations(
 export const NEW_EVENT_TYPE_FORM: EventTypeForm = {
   name: "", slug: "", durationMinutes: "30", description: "", locationKind: "google_meet", locationValue: "", minNoticeMinutes: "240",
   bookingWindowDays: "60", startIncrementMinutes: "30", bufferBeforeMinutes: "0", bufferAfterMinutes: "0", dailyLimit: "", cancelCutoffMinutes: "0", maxRepeats: "1", deposit: "",
-  price: "", hidden: false, redirectUrl: "", weeklyLimit: "", cancelPolicy: "", seats: "", durations: [], requiresApproval: false,
+  price: "", hidden: false, redirectUrl: "", weeklyLimit: "", cancelPolicy: "", seats: "", durations: [], requiresApproval: false, verifyGuestEmail: false,
 };
 
 /** The editor's values for a saved event type and its first location. */
@@ -364,6 +366,7 @@ export function toForm(et: EventType, location: EventLocation | undefined): Even
     seats: et.seatLimit === null ? "" : String(et.seatLimit),
     durations: et.durationOptions.filter((o) => o.minutes !== et.durationMinutes).map((o) => ({ minutes: String(o.minutes), price: priceInput(o.priceMinor) })),
     requiresApproval: et.requiresApproval,
+    verifyGuestEmail: et.verifyGuestEmail,
   };
 }
 
