@@ -10,6 +10,7 @@ const PENDING: Record<string, string> = {
   "src/app/dashboard/earnings/export/route.ts": "CSV column headers stay English so spreadsheets and accountants' imports keep working",
   "src/app/dashboard/analytics/export/route.ts": "CSV column headers stay English so spreadsheets and accountants' imports keep working",
   "src/app/dashboard/invoices/export/route.ts": "CSV column headers stay English so spreadsheets and accountants' imports keep working",
+  "src/app/dashboard/bookings/export/route.ts": "CSV download like the other exports: its JSON error codes stay English; the page links to it only when allowed",
   "src/app/dashboard/practice/page.tsx": "Clinic plan (roadmap 3.9) was built before host i18n landed; strings move to the catalogue in a follow-up",
   "src/app/dashboard/practice/bookings/page.tsx": "Clinic plan (roadmap 3.9) was built before host i18n landed; strings move to the catalogue in a follow-up",
   "src/app/dashboard/practice/invoices/page.tsx": "Clinic plan (roadmap 3.9) was built before host i18n landed; strings move to the catalogue in a follow-up",
