@@ -18,6 +18,10 @@ import { Button } from "@/components/ui/Button";
 import { HostI18nProvider } from "@/components/HostI18nProvider";
 import { getHostI18n } from "@/lib/i18n/host/server";
 import { pendingPracticeInvite } from "@/lib/clinic/practices";
+import { reviewStatusOf } from "@/lib/admin/review";
+
+/** Where a host whose account isn't approved writes: the grievance contact on the privacy page. */
+const REVIEW_CONTACT = "Yuvarajgs@marvice.in";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   await connection(); // render per request: the sync light shows minutes since the last check
@@ -28,6 +32,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const sync = summarizeSync(await store.listCalendarConnections(user.id), new Date());
   const db = authEnabled() ? getPool(process.env.DATABASE_URL as string) : null;
   const [invite, owner, practiceInvite] = db && !acting ? await Promise.all([pendingInvite(db, actor), seatOwner(db, actor.id), pendingPracticeInvite(db, actor)]) : [null, null, null];
+  const review = db ? await reviewStatusOf(db, user.id) : "approved";
   const brand = (
     <Link href="/dashboard/event-types" className={`inline-flex min-h-11 items-center rounded-sm font-display text-lg text-text ${focusRing}`}>
       Hourhand
@@ -94,6 +99,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <span>{tNodes("nav.practiceInvited", { name: <span className="font-semibold">{practiceInvite.practiceName}</span> })}</span>
             <Link href="/dashboard/practice" className={`font-semibold text-accent underline ${focusRing}`}>{t("nav.practiceSeeInvite")}</Link>
           </div>
+        )}
+        {review !== "approved" && (
+          <p role="status" className="border-b border-border bg-warning-bg px-4 py-2 text-sm text-warning lg:px-8">
+            {t(review === "pending" ? "nav.reviewPending" : review === "declined" ? "nav.reviewDeclined" : "nav.reviewSuspended", { email: REVIEW_CONTACT })}
+          </p>
         )}
         <main id="main" className="mx-auto max-w-(--hh-content-max) px-4 py-6 lg:px-8">
           {children}

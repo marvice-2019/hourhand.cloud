@@ -22,6 +22,10 @@ describe("staff permissions", () => {
     expect(can(null, "view_overview")).toBe(false);
     expect(can("admin", "manage_plans")).toBe(false);
     expect(can("super_admin", "manage_plans")).toBe(true);
+    expect(can("super_admin", "review_hosts")).toBe(true);
+    expect(can("super_admin", "view_customer_data")).toBe(true);
+    expect(can("admin", "review_hosts")).toBe(false);
+    expect(can("admin", "view_customer_data")).toBe(false);
   });
 
   it("reads SUPER_ADMIN_EMAILS loosely: spaces, case, and junk dropped", () => {

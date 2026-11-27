@@ -34,32 +34,35 @@ export async function overview(db: Db, now: Date): Promise<Overview> {
 
 export interface HostRow {
   id: string; name: string | null; email: string; slug: string; plan: string; planStatus: string | null;
-  razorpay: boolean; bookings: number; createdAt: Date; closedAt: Date | null;
+  razorpay: boolean; bookings: number; createdAt: Date; closedAt: Date | null; review: string;
 }
 
 export const HOSTS_PAGE = 50;
 
-/** Hosts newest first, optionally filtered by part of their name, email or page address. */
-export async function listHosts(db: Db, opts: { q?: string; page?: number } = {}): Promise<{ hosts: HostRow[]; total: number }> {
+export const REVIEW_FILTERS = ["pending", "approved", "declined", "suspended"] as const;
+
+/** Hosts newest first, optionally filtered by part of their name, email or page address, and by review status. */
+export async function listHosts(db: Db, opts: { q?: string; page?: number; review?: string } = {}): Promise<{ hosts: HostRow[]; total: number }> {
   const q = (opts.q ?? "").trim().slice(0, 100);
   const page = Math.max(1, Math.floor(opts.page ?? 1));
   // The search text is a parameter and its LIKE wildcards are escaped, so it can only ever match literally.
   const like = q ? `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
-  const where = "($1::text is null or u.email::text ilike $1 or u.name ilike $1 or u.slug::text ilike $1)";
+  const review = (REVIEW_FILTERS as readonly string[]).includes(opts.review ?? "") ? opts.review! : null;
+  const where = "($1::text is null or u.email::text ilike $1 or u.name ilike $1 or u.slug::text ilike $1) and ($2::text is null or (u.review_status = $2 and u.deleted_at is null))";
   const [{ rows }, { rows: [{ total }] }] = await Promise.all([
     db.query(
-      `select u.id, u.name, u.email, u.slug, u.created_at, u.deleted_at, coalesce(s.plan, 'free') as plan, s.status as plan_status,
+      `select u.id, u.name, u.email, u.slug, u.created_at, u.deleted_at, u.review_status, coalesce(s.plan, 'free') as plan, s.status as plan_status,
          exists (select 1 from integrations i where i.user_id = u.id and i.provider = 'razorpay' and i.status = 'ok') as razorpay,
          (select count(*) from bookings b where b.host_id = u.id)::int as bookings
        from users u left join subscriptions s on s.user_id = u.id where ${where}
-       order by u.created_at desc limit $2 offset $3`, [like, HOSTS_PAGE, (page - 1) * HOSTS_PAGE]),
-    db.query(`select count(*)::int as total from users u where ${where}`, [like]),
+       order by u.created_at desc limit $3 offset $4`, [like, review, HOSTS_PAGE, (page - 1) * HOSTS_PAGE]),
+    db.query(`select count(*)::int as total from users u where ${where}`, [like, review]),
   ]);
   return {
     total,
     hosts: rows.map((r) => ({
       id: r.id, name: r.name, email: r.email, slug: r.slug, plan: r.plan, planStatus: r.plan_status, razorpay: r.razorpay,
-      bookings: r.bookings, createdAt: r.created_at, closedAt: r.deleted_at,
+      bookings: r.bookings, createdAt: r.created_at, closedAt: r.deleted_at, review: r.review_status,
     })),
   };
 }

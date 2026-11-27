@@ -15,6 +15,7 @@ import {
 } from "./phone";
 import { uniqueSlug } from "./slug";
 import { onSessionCreated, onUserCreated } from "@/lib/referrals/signup";
+import { markForReviewIfRequired } from "../admin/review";
 
 /** Sign-in needs the database. In HOURHAND_DATA=memory (the default for local work) there is no auth instance. */
 export function authEnabled(): boolean {
@@ -194,7 +195,11 @@ function createAuth() {
             return { data: { ...user, slug } };
           },
           // Referrals: credit the link this browser came in through (after the account exists).
-          after: async (user, ctx) => onUserCreated(pool, user, ctx),
+          // Then, when a super admin has switched on approval for new hosts, the account waits for it (B17).
+          after: async (user, ctx) => {
+            await onUserCreated(pool, user, ctx);
+            await markForReviewIfRequired(pool, user.id).catch((error) => console.error("[admin] marking a new host for review failed", error));
+          },
         },
       },
       session: {

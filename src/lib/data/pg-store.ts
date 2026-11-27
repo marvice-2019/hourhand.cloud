@@ -32,6 +32,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Ids come from URLs and forms; anything that is not a uuid cannot match a row (and would make Postgres raise 22P02). */
 const isId = (id: string) => UUID.test(id);
 
+/** Whether a super admin lets this host take bookings (B17). Hosts made before review existed are approved. */
+async function hostApproved(db: Pick<pg.Pool, "query">, hostId: string): Promise<boolean> {
+  const { rows: [r] } = await db.query("select review_status from users where id = $1", [hostId]);
+  return r?.review_status === "approved";
+}
+
 type Row = Record<string, unknown>;
 type Db = Pick<pg.Pool | pg.PoolClient, "query">;
 
@@ -342,7 +348,8 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
       await pool.query(`update users set host_locale = $2 where id = $1`, [userId, locale]);
     },
     async getUserBySlug(slug) {
-      const { rows } = await pool.query(`select ${USER} from users where slug = $1 and deleted_at is null`, [slug]);
+      // Public lookups: a host a super admin hasn't approved (or has suspended) has no public pages (B17).
+      const { rows } = await pool.query(`select ${USER} from users where slug = $1 and deleted_at is null and review_status = 'approved'`, [slug]);
       return rows[0] ? toUser(rows[0]) : null;
     },
     async listEventTypes(userId) {
@@ -1015,7 +1022,7 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
       // A closed account or a link turned off reads as unknown: nothing about the host leaks.
       const host = await this.getUser(found.userId);
       const eventType = host && await this.getEventType(host.id, found.link.eventTypeId);
-      if (!host || !eventType?.active) return { status: "not_found" };
+      if (!host || !eventType?.active || !(await hostApproved(pool, host.id))) return { status: "not_found" };
       return { status: "open", link: found.link, host, eventType };
     },
   };

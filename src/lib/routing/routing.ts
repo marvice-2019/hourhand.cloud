@@ -193,7 +193,7 @@ export async function routingFormByToken(db: Db, token: string): Promise<PublicR
   const { rows: [r] } = await db.query(
     `select f.id, f.user_id, f.title, f.question, coalesce(u.name, '') as host_name, u.locale as host_locale, u.slug as host_slug
        from routing_forms f join users u on u.id = f.user_id
-      where f.token = $1 and f.active and u.deleted_at is null`, [token]);
+      where f.token = $1 and f.active and u.deleted_at is null and u.review_status = 'approved'`, [token]);
   if (!r) return null;
   const { rows } = await db.query(
     `select o.position, o.label, o.message, e.slug as event_slug
