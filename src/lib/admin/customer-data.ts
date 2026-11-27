@@ -66,7 +66,7 @@ export async function hostBookings(db: Db, notes: NoteReader, hostId: string, op
   const where = "b.host_id = $1 and ($2::text is null or exists (select 1 from invitees q where q.booking_id = b.id and (q.email::text ilike $2 or q.name ilike $2)))";
   const [{ rows }, { rows: [{ total }] }] = await Promise.all([
     db.query(
-      `select b.id, b.start_at, b.status, e.name as event, i.name as guest_name, i.email::text as guest_email, i.phone, i.guests, i.answers,
+      `select b.id, b.start_at, b.status, e.name as event, i.name as guest_name, i.email::text as guest_email, i.phone, i.guests::text[] as guests, i.answers,
          (select p.status || ' ' || p.amount_minor || ' ' || p.currency from payments p where p.booking_id = b.id order by p.created_at desc limit 1) as payment
        from bookings b join event_types e on e.id = b.event_type_id
        left join lateral (select * from invitees x where x.booking_id = b.id order by x.created_at limit 1) i on true
@@ -79,7 +79,7 @@ export async function hostBookings(db: Db, notes: NoteReader, hostId: string, op
     total,
     bookings: rows.map((r) => ({
       id: r.id, start: r.start_at, status: r.status, event: r.event, guestName: r.guest_name ?? "", guestEmail: r.guest_email ?? "",
-      guestPhone: r.phone ?? null, guests: r.guests ?? [], answers: readAnswers(r.answers), payment: r.payment ?? null, note: bookingNotes[r.id] ?? "",
+      guestPhone: r.phone ?? null, guests: Array.isArray(r.guests) ? r.guests : [], answers: readAnswers(r.answers), payment: r.payment ?? null, note: bookingNotes[r.id] ?? "",
     })),
   };
 }

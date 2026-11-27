@@ -53,7 +53,7 @@ describe.skipIf(!BASE)("customer data for super admins (Postgres)", () => {
     arun = (await pool.query("select id from users where slug = 'arun'")).rows[0].id;
     const { rows: [b] } = await pool.query(
       "select b.id from bookings b join invitees i on i.booking_id = b.id where b.host_id = $1 and i.email = 'arjun.mehta@example.com'", [priya]);
-    await pool.query("update invitees set answers = $2, phone = '+919876543210' where booking_id = $1",
+    await pool.query("update invitees set answers = $2, phone = '+919876543210', guests = '{partner@example.com}' where booking_id = $1",
       [b.id, JSON.stringify([{ questionId: "q_goal", label: "What would you like to work on?", answer: "Planning a career move." }])]);
     await store.saveBookingNote(priya, b.id, "Wants to switch to product roles.");
     await store.saveClientNote(priya, "arjun.mehta@example.com", "Prefers mornings.");
@@ -85,6 +85,9 @@ describe.skipIf(!BASE)("customer data for super admins (Postgres)", () => {
     const arjun = bookings.find((b) => b.guestEmail === "arjun.mehta@example.com")!;
     expect(arjun.answers).toEqual([{ question: "What would you like to work on?", answer: "Planning a career move." }]);
     expect(arjun.note).toBe("Wants to switch to product roles.");
+    // citext[] comes back from pg as a string unless cast; the page joins this list, so it must be a real array.
+    expect(arjun.guests).toEqual(["partner@example.com"]);
+    expect(bookings.every((b) => Array.isArray(b.guests))).toBe(true);
     expect(bookings.every((b) => b.guestEmail !== "divya.menon@example.com")).toBe(true);
     expect((await hostBookings(pool, store, priya, { q: "kabir" })).bookings.map((b) => b.status)).toEqual(["cancelled"]);
     expect(await hostBookings(pool, store, "not-a-uuid")).toEqual({ bookings: [], total: 0 });
