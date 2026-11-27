@@ -31,7 +31,7 @@ export async function practicePage(db: Db, slug: string): Promise<PracticePageDa
     `select u.id, u.name, u.slug, p.headline, ph.updated_at as photo_at
      from practice_members m join users u on u.id = m.user_id
      left join profiles p on p.user_id = u.id left join profile_photos ph on ph.user_id = u.id
-     where m.practice_id = $1 and m.accepted_at is not null and m.practises and m.active and u.deleted_at is null
+     where m.practice_id = $1 and m.accepted_at is not null and m.practises and m.active and u.deleted_at is null and u.review_status = 'approved'
      order by m.position, m.accepted_at`, [practice.id]);
   const ids = rows.map((r) => r.id as string);
   const { rows: ets } = ids.length === 0 ? { rows: [] } : await db.query(

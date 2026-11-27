@@ -1,28 +1,38 @@
+import { focusRing } from "@/components/ui/focus";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
-import { HOSTS_PAGE, listHosts } from "@/lib/admin/queries";
+import { HOSTS_PAGE, listHosts, REVIEW_FILTERS } from "@/lib/admin/queries";
 import { requireStaff } from "@/lib/admin/session";
 import { getPool } from "@/lib/data/pg-store";
 import { formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminHostsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
+const REVIEW_NAMES: Record<string, string> = { pending: "Waiting for approval", approved: "Approved", declined: "Declined", suspended: "Suspended" };
+
+export default async function AdminHostsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; status?: string }> }) {
   await requireStaff("view_hosts");
-  const { q = "", page: rawPage } = await searchParams;
+  const { q = "", page: rawPage, status: rawStatus = "" } = await searchParams;
+  const status = (REVIEW_FILTERS as readonly string[]).includes(rawStatus) ? rawStatus : "";
   const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
-  const { hosts, total } = await listHosts(getPool(process.env.DATABASE_URL as string), { q, page });
+  const { hosts, total } = await listHosts(getPool(process.env.DATABASE_URL as string), { q, page, review: status || undefined });
   const pages = Math.max(1, Math.ceil(total / HOSTS_PAGE));
-  const link = (p: number) => `/admin/hosts?${new URLSearchParams({ ...(q ? { q } : {}), page: String(p) })}`;
+  const link = (p: number) => `/admin/hosts?${new URLSearchParams({ ...(q ? { q } : {}), ...(status ? { status } : {}), page: String(p) })}`;
   return (
     <div>
       <h1 className="font-display text-xl text-text">Hosts</h1>
       <form className="mt-4 flex max-w-xl items-end gap-3" role="search">
         <div className="flex-1"><Label htmlFor="q">Name, email or page address</Label><Input id="q" name="q" defaultValue={q} maxLength={100} /></div>
+        <div><Label htmlFor="status">Status</Label>
+          <select id="status" name="status" defaultValue={status} className={`mt-1 block h-11 rounded-md border border-border-input bg-card px-3 text-base text-text ${focusRing}`}>
+            <option value="">All</option>
+            {REVIEW_FILTERS.map((r) => <option key={r} value={r}>{REVIEW_NAMES[r]}</option>)}
+          </select>
+        </div>
         <Button type="submit">Search</Button>
       </form>
-      <p className="mt-4 text-sm text-text-muted">{total} {total === 1 ? "host" : "hosts"}{q ? ` matching "${q}"` : ""}</p>
+      <p className="mt-4 text-sm text-text-muted">{total} {total === 1 ? "host" : "hosts"}{status ? `, ${REVIEW_NAMES[status].toLowerCase()}` : ""}{q ? ` matching "${q}"` : ""}</p>
       <div className="mt-3 overflow-x-auto">
         <table className="w-full max-w-5xl text-left text-sm">
           <thead><tr className="text-text-muted">
@@ -32,7 +42,7 @@ export default async function AdminHostsPage({ searchParams }: { searchParams: P
           <tbody>
             {hosts.map((h) => (
               <tr key={h.id} className="border-t border-border text-text">
-                <td className="py-2 pr-4"><Link href={`/admin/hosts/${h.id}`} className="font-semibold text-accent underline">{h.name || "(no name)"}</Link><br /><span className="text-text-muted">{h.email}</span></td>
+                <td className="py-2 pr-4"><Link href={`/admin/hosts/${h.id}`} className="font-semibold text-accent underline">{h.name || "(no name)"}</Link><br /><span className="text-text-muted">{h.email}</span>{h.review !== "approved" && !h.closedAt && <><br /><span className="text-warning">{REVIEW_NAMES[h.review]}</span></>}</td>
                 <td className="py-2 pr-4">/{h.slug}{h.closedAt && <span className="ml-2 rounded-md bg-surface px-2 py-0.5 text-text-muted">Closed</span>}</td>
                 <td className="py-2 pr-4">{h.plan}{h.planStatus && h.plan !== "free" && h.planStatus !== "active" ? ` (${h.planStatus})` : ""}</td>
                 <td className="py-2 pr-4">{h.razorpay ? "Connected" : "–"}</td>
