@@ -41,7 +41,7 @@ export default async function CheckDayPage({ searchParams }: { searchParams: Pro
             <div>
               <label htmlFor="event" className="block text-sm font-semibold text-text">{t("availability.checkEvent")}</label>
               <select id="event" name="event" defaultValue={eventType.id} className={`${field} max-w-full`}>
-                {eventTypes.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                {eventTypes.map((e) => <option key={e.id} value={e.id}>{e.active ? e.name : t("availability.checkOffOption", { name: e.name })}</option>)}
               </select>
             </div>
             <div>
@@ -74,6 +74,11 @@ async function DayResult({ i18n, host, eventType, date, now }: { i18n: HostI18n;
       <section aria-labelledby="check-heading" className="space-y-3">
         <h2 id="check-heading" className="font-display text-lg text-text">{t("availability.checkHeading", { event: eventType.name, date: i18n.dayDate(date) })}</h2>
         <p className="text-text-muted">{t("availability.checkTimesIn", { zone, schedule: check.scheduleName })}</p>
+        {!eventType.active && (
+          <p role="status" className="rounded-md bg-warning-bg px-3 py-2 text-warning">
+            {tNodes("availability.checkOffNotice", { link: <Link href={`/dashboard/event-types/${eventType.id}`} className={`font-semibold underline ${focusRing}`}>{t("availability.checkOffLink")}</Link> })}
+          </p>
+        )}
         {check.syncStale && (
           <p role="alert" className="rounded-md bg-warning-bg px-3 py-2 text-warning">
             {tNodes("availability.checkStale", { link: <Link href="/dashboard/calendars" className={`font-semibold underline ${focusRing}`}>{t("availability.checkStaleLink")}</Link> })}
@@ -83,7 +88,7 @@ async function DayResult({ i18n, host, eventType, date, now }: { i18n: HostI18n;
           <p className="text-text">{tNodes(check.hoursFrom === "date" ? "availability.checkDayOff" : "availability.checkNoHours", { link: hoursLink })}</p>
         ) : (
           <>
-            <p className="font-semibold text-text">{t("availability.checkSummary", { open: String(open), total: String(check.starts.length) })}</p>
+            <p className="font-semibold text-text">{t(eventType.active ? "availability.checkSummary" : "availability.checkSummaryOff", { open: String(open), total: String(check.starts.length) })}</p>
             <ul className="divide-y divide-border">
               {check.starts.map((v) => (
                 <li key={v.start.toISOString()} className="flex flex-wrap gap-x-4 gap-y-1 py-2">
