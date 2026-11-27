@@ -78,7 +78,7 @@ export async function claimDue(pool: pg.Pool, now: Date, limit: number): Promise
 }
 
 const CONTEXT = `
-  select n.id as notification_id, n.created_at as queued_at, n.dedupe_key, b.id, b.host_id, b.series_id, b.status, b.start_at, b.end_at, b.cancelled_by, b.cancel_reason,
+  select n.id as notification_id, n.created_at as queued_at, n.dedupe_key, b.id, b.host_id, b.series_id, b.status, b.start_at, b.end_at, b.cancelled_by, b.cancel_reason, b.hold_expires_at, b.reschedule_request_note,
     b.location_kind as booking_location_kind, b.external_event_id, b.external_calendar_id, b.zoom_meeting_id, b.class_key,
     -- seats of one group class or confirmed poll share one calendar event, so its video link is on whichever seat holds it
     coalesce(b.join_url, (select m.join_url from bookings m where b.class_key is not null and m.class_key = b.class_key and m.join_url is not null limit 1)) as join_url,
@@ -156,6 +156,8 @@ function toContext(r: ContextRow, baseUrl: string, audience: VideoAudience = "gu
     manageUrl: `${baseUrl}/b/${r.manage_token as string}`, dashboardUrl: `${baseUrl}/dashboard/bookings/${r.id as string}`,
     // The minutes this email was queued for (in its key), not whatever the guest has tapped since.
     runningLateMinutes: Number(/:late:(\d+)/.exec(String(r.dedupe_key ?? ""))?.[1] ?? r.running_late_minutes) || null,
+    holdUntil: r.hold_expires_at ? new Date(r.hold_expires_at as Date) : null,
+    rescheduleNote: (r.reschedule_request_note as string | null) ?? null,
   };
 }
 
@@ -260,7 +262,10 @@ async function whatsappSkipReason(pool: pg.Pool, c: Claimed, cfg: WhatsAppConfig
 export function skipReason(kind: NotificationKind, r: ContextRow, now: Date): string | null {
   const start = new Date(r.start_at as Date);
   // Cancellation emails and removing the calendar event are the only things that still make sense for a cancelled booking.
-  const forCancelled = kind === "cancelled_guest" || kind === "cancelled_host" || kind === "calendar_delete" || kind === "zoom_delete";
+  const forCancelled = kind === "cancelled_guest" || kind === "cancelled_host" || kind === "calendar_delete" || kind === "zoom_delete"
+    || kind === "declined_guest" || kind === "lapsed_guest";
+  // A request's own news (B9) is only worth sending while it still waits on the host.
+  if (kind === "requested_guest" || kind === "requested_host") return r.status === "pending_approval" ? null : "request already decided";
   if (!forCancelled && r.status !== "confirmed") return "booking cancelled";
   if (kind === "calendar_delete" || kind === "zoom_delete") return null;
   // Sent after the session by design; buildFollowUp checks everything else when it renders.
@@ -768,7 +773,7 @@ export async function processDueNotifications(
             // An extra guest on Hourhand video gets a join link of their own (never the guest's manage token).
             ...(extraGuestMail(c, r) && r.booking_location_kind === "hourhand_video" && c.kind !== "cancelled_guest"
               ? { joinUrl: extraGuestVideoJoinUrl(opts.baseUrl, await pgExtraGuestLinks(pool).linkFor(r.id as string, r.host_id as string, c.recipient)) } : {}),
-            ...(c.kind === "cancelled_guest" ? { rebook: await rebookSuggestions(pool, r, opts.baseUrl) } : {}),
+            ...(c.kind === "cancelled_guest" || c.kind === "declined_guest" || c.kind === "lapsed_guest" ? { rebook: await rebookSuggestions(pool, r, opts.baseUrl) } : {}),
             ...((c.kind === "booked_guest" || c.kind === "booked_host") && r.series_id === r.id ? { series: await seriesWeeks(pool, r.id as string, opts.baseUrl) } : {}),
             ...((c.kind === "cancelled_guest" || c.kind === "cancelled_host") && r.series_id ? await seriesCancel(pool, r) : {}),
           });

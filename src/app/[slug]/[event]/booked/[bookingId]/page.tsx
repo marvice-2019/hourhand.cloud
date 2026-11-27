@@ -7,7 +7,7 @@ import { buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { isUnpaidRelease } from "@/lib/booking-reasons";
 import { store } from "@/lib/data";
-import { formatDate, zoneName } from "@/lib/format";
+import { formatDate, formatDayMonth, zoneName } from "@/lib/format";
 import { LOCATION_KEYS, resolveLocale, t, tNodes } from "@/lib/i18n/guest";
 import { mt } from "@/lib/i18n/mail";
 import { AddToCalendar } from "@/components/AddToCalendar";
@@ -67,6 +67,20 @@ export default async function BookedPage({ params, searchParams }: { params: Pro
           {!onStripe && t(locale, "closedRazorpay")}
         </p>
         <AutoRefresh labels={{ waiting: t(locale, "updatesItself"), stopped: t(locale, "stillWaiting") }} />
+      </main>
+    );
+  }
+  if (booking.status === "pending_approval") {
+    // B9: a request the host still has to approve. No calendar buttons and no join link until it's confirmed.
+    return (
+      <main lang={locale} className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
+      <EmbedResize />
+        <h1 className="font-display text-xl text-text">{t(locale, "requestSent")}</h1>
+        <p className="mt-2 max-w-md text-text" role="status">
+          {tNodes(locale, "requestWaiting", { host: host.name, time: booking.holdExpiresAt ? <>{formatDayMonth(booking.holdExpiresAt, tz, locale)}, {time(booking.holdExpiresAt)}</> : t(locale, "fewMinutes") })}
+        </p>
+        <p className="mt-2 max-w-md text-text-muted">{t(locale, "requestEmail", { host: host.name })}</p>
+        <Link href={`/b/${booking.invitee.manageToken}${q}`} className={`mt-4 ${buttonClasses({ variant: "secondary" })}`}>{t(locale, "manageBooking")}</Link>
       </main>
     );
   }

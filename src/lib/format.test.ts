@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatTime } from "./format";
+import { formatDayMonth, formatTime } from "./format";
 
 const afternoon = new Date("2026-10-20T08:00:00Z"); // 13:30 in Asia/Kolkata
 const midnight = new Date("2026-10-19T18:30:00Z"); // 00:00 on the 20th in Asia/Kolkata
@@ -18,5 +18,18 @@ describe("formatTime", () => {
   });
   it("pads morning hours in 24h", () => {
     expect(formatTime(new Date("2026-10-20T03:30:00Z"), "Asia/Kolkata", "24h")).toBe("09:00");
+  });
+});
+
+describe("formatDayMonth", () => {
+  // 20:00 UTC on Thursday is already 01:30 on Friday in India: the guest's own day is the one shown.
+  const late = new Date("2026-11-26T20:00:00Z");
+  it("names the day in the guest's time zone", () => {
+    expect(formatDayMonth(late, "Asia/Kolkata")).toBe("Friday, 27 November");
+    expect(formatDayMonth(late, "Europe/London")).toBe("Thursday, 26 November");
+  });
+  it("speaks the guest's language", () => {
+    expect(formatDayMonth(late, "Asia/Kolkata", "hi")).toContain("27");
+    expect(formatDayMonth(late, "Asia/Kolkata", "hi")).not.toContain("Friday");
   });
 });

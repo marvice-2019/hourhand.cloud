@@ -22,7 +22,7 @@ const eventType = (id: string, scheduleId: string | null, position: number, user
   id, userId, scheduleId, name: id, slug: id, description: null, durationMinutes: 60, minNoticeMinutes: 0, bookingWindowDays: 730,
   startIncrementMinutes: 60, bufferBeforeMinutes: 0, bufferAfterMinutes: 0, dailyLimit: null, cancelCutoffMinutes: 0, priceMinor: null,
   currency: null, hidden: false, active: true, position, kind: "one_on_one", seatLimit: null, maxRepeats: 1, depositMinor: null,
-  redirectUrl: null, weeklyLimit: null, cancelPolicy: null, durationOptions: [],
+  redirectUrl: null, weeklyLimit: null, cancelPolicy: null, durationOptions: [], requiresApproval: false,
 });
 
 /** Clinic (the default): Mon/Wed/Fri 10–12 IST. Online: weekdays 14–16 IST. UK clients: weekdays 09–11 London time. */

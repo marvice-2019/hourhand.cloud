@@ -73,6 +73,10 @@ export interface BookingMailContext {
   locale?: string;
   /** The host's own language (users.host_locale); the host's emails use it. Missing means English. */
   hostLocale?: string;
+  /** For a request (B9): when it stops holding the slot unless the host approves it. */
+  holdUntil?: Date | null;
+  /** B10: what the host wrote when asking the guest to pick a new time. */
+  rescheduleNote?: string | null;
 }
 
 export interface RenderedMail { subject: string; text: string; html: string; attachments?: Attachment[]; replyTo?: string; headers?: Record<string, string> }
@@ -295,6 +299,36 @@ export function renderBookingMail(kind: BookingEmailKind, c: BookingMailContext)
         intro: h(c, "mail.iLate", { guest: c.guestName, n: c.runningLateMinutes ?? h(c, "mail.aFew"), event: c.eventName, time: formatTime(c.startAt, c.hostTimezone, c.hostTimeFormat, hl(c)) }),
         rows: hostRows(c), link: dashboardLink(c), footer: hostFooter(c),
       }, { replyTo: c.guestEmail });
+    case "requested_guest":
+      return render(g(c, "subjRequested", { event: c.eventName, host, date: formatDate(c.startAt, c.guestTimezone, l) }), {
+        heading: g(c, "hRequested"), intro: g(c, "iRequested", { guest: c.guestName, host }),
+        rows: guestRows(c), link: manageLink(c), note: g(c, "nRequested", { host }), footer: guestFooter(c),
+      }, { replyTo: c.hostEmail });
+    case "requested_host":
+      return render(h(c, "mail.subjRequest", { guest: c.guestName, event: c.eventName, date: formatDate(c.startAt, c.hostTimezone, hl(c)) }), {
+        heading: h(c, "mail.hRequest"), intro: h(c, "mail.iRequest", { guest: c.guestName, event: c.eventName }),
+        rows: [...hostRows(c), ...(c.holdUntil ? [[h(c, "mail.rDecideBy"), when(c.holdUntil, c.hostTimezone, c.hostTimeFormat, hl(c))] as Row] : [])],
+        // Both open the booking in the dashboard, signed in, where one more tap confirms the choice.
+        choices: { heading: h(c, "mail.cDecide"), items: [
+          { label: h(c, "mail.lApprove"), url: `${c.dashboardUrl}?decide=approve` },
+          { label: h(c, "mail.lDecline"), url: `${c.dashboardUrl}?decide=decline` },
+        ] },
+        note: h(c, "mail.nRequest", { guest: c.guestName }), footer: hostFooter(c),
+      }, { replyTo: c.guestEmail });
+    case "reschedule_request_guest":
+      return render(g(c, "subjAskMove", { event: c.eventName, host }), {
+        heading: g(c, "hAskMove"), intro: g(c, "iAskMove", { guest: c.guestName, host }),
+        rows: [...guestRows(c), ...(c.rescheduleNote ? [[g(c, "rNoteFrom", { host }), c.rescheduleNote] as Row] : [])],
+        choices: { heading: g(c, "hAskMove"), items: [{ label: g(c, "lPickNew"), url: c.manageUrl }] },
+        footer: guestFooter(c),
+      }, { replyTo: c.hostEmail });
+    case "declined_guest":
+    case "lapsed_guest":
+      return render(g(c, "subjDeclined", { event: c.eventName, host }), {
+        heading: g(c, kind === "declined_guest" ? "hDeclined" : "hLapsed"), intro: g(c, kind === "declined_guest" ? "iDeclined" : "iLapsed", { guest: c.guestName, host }),
+        rows: guestRows({ ...c, joinUrl: null }), footer: guestFooter(c),
+        ...(c.rebook?.length ? { choices: { heading: g(c, "rebook", { host }), items: c.rebook.map((s) => ({ label: when(s.at, c.guestTimezone, "12h", l), url: s.url })) } } : {}),
+      }, { replyTo: c.hostEmail });
     case "rescheduled_host":
       return render(h(c, "mail.subjMoved", { guest: c.guestName, event: c.eventName, date: formatDate(c.startAt, c.hostTimezone, hl(c)) }), {
         heading: h(c, "mail.hMoved"), intro: h(c, c.movedBy === "host" ? "mail.iMovedByYou" : "mail.iMovedByGuest", { guest: c.guestName, event: c.eventName }),

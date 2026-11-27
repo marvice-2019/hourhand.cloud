@@ -17,6 +17,7 @@ export const push: Record<keyof typeof en, string> = {
   "push.titleBooked": "नई बुकिंग",
   "push.titleMoved": "बुकिंग का समय बदला",
   "push.titleCancelled": "बुकिंग रद्द हुई",
+  "push.titleRequest": "बुकिंग अनुरोध",
   "push.body": "{guest} · {event} · {when}",
   "push.testTitle": "फ़ोन अलर्ट चालू हैं",
   "push.testBody": "हर नई, बदली या रद्द बुकिंग की सूचना यहाँ आएगी।",

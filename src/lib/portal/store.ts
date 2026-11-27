@@ -17,7 +17,7 @@ export async function isClient(db: Db, hostId: string, email: string): Promise<b
   if (!ok(hostId, email)) return false;
   const { rows: [r] } = await db.query(
     `select exists (select 1 from invitees i join bookings b on b.id = i.booking_id
-                    where i.host_id = $1 and b.host_id = $1 and i.email = $2 and b.status <> 'pending_payment' and coalesce(b.cancelled_by, '') <> 'system')
+                    where i.host_id = $1 and b.host_id = $1 and i.email = $2 and b.status not in ('pending_payment', 'pending_approval') and coalesce(b.cancelled_by, '') <> 'system')
          or exists (select 1 from package_purchases p where p.host_id = $1 and p.guest_email = $2 and p.status = 'paid') as found`,
     [hostId, normalEmail(email)]);
   return r.found === true;
@@ -101,7 +101,7 @@ export async function clientBookings(db: Db, hostId: string, email: string): Pro
        e.id as event_id, e.name as event_name, e.slug as event_slug, e.duration_minutes, e.cancel_cutoff_minutes, e.active, e.kind
      from bookings b join invitees i on i.booking_id = b.id join event_types e on e.id = b.event_type_id
      where b.host_id = $1 and i.host_id = $1 and e.user_id = $1 and i.email = $2
-       and b.status <> 'pending_payment' and coalesce(b.cancelled_by, '') <> 'system'
+       and b.status not in ('pending_payment', 'pending_approval') and coalesce(b.cancelled_by, '') <> 'system'
      order by b.start_at desc limit 500`, [hostId, normalEmail(email)]);
   return rows.map((r) => ({
     id: r.id, startAt: r.start_at, endAt: r.end_at, status: r.status, cancelledBy: r.cancelled_by ?? null, manageToken: r.manage_token,

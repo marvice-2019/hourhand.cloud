@@ -5,6 +5,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { migrate } from "../../../scripts/migrate";
 import { seed } from "../../../scripts/seed";
+import { lapseRequests } from "../approval-jobs";
 import { createPgStore } from "./pg-store";
 import { LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type DataStore, type EventType, type EventTypeDraft, type User } from "./types";
 
@@ -498,6 +499,129 @@ describe.skipIf(!URL_)("pg store (TEST_DATABASE_URL)", () => {
       const after = await book(coaching.id, token, "Second Guest");
       expect(after.status).toBe("confirmed");
       expect(await stateOf(link.id)).toMatchObject({ state: "used", usedBy: { bookingId: after.id } });
+    });
+
+    describe("requests the host approves (B9)", () => {
+      const startFor = (k: number) => new Date(at("2034-02-06T04:00:00Z").getTime() + k * 24 * 60 * MIN);
+      afterAll(async () => { await pool.query("update event_types set requires_approval = false where id = $1", [coaching.id]); });
+
+      it("stores a request holding its slot, tells guest and host, and blocks the same time", async () => {
+        await pool.query("update event_types set requires_approval = true where id = $1", [coaching.id]);
+        expect((await store.getEventType(priya.id, coaching.id))?.requiresApproval).toBe(true);
+        const until = new Date(Date.now() + 60 * MIN);
+        const request = await store.createBooking({ eventTypeId: coaching.id, startAt: startFor(1), idempotencyKey: "pg-request-1", approvalUntil: until, invitee: { ...guest, name: "Asking Guest" } });
+        expect(request).toMatchObject({ status: "pending_approval", holdExpiresAt: until });
+        const { rows: queued } = await pool.query("select kind, channel from notifications where booking_id = $1 order by kind", [request.id]);
+        expect(queued).toEqual([{ kind: "requested_guest", channel: "email" }, { kind: "requested_host", channel: "email" }]);
+        await expect(store.createBooking({ eventTypeId: coaching.id, startAt: startFor(1), idempotencyKey: "pg-request-2", invitee: guest })).rejects.toBeInstanceOf(SlotTakenError);
+      });
+
+      it("sweeps a lapsed request when the next booking comes in, so the time is free again", async () => {
+        const request = await store.createBooking({ eventTypeId: coaching.id, startAt: startFor(2), idempotencyKey: "pg-request-3", approvalUntil: new Date(Date.now() + 60 * MIN), invitee: guest });
+        await pool.query("update bookings set hold_expires_at = now() - interval '1 minute' where id = $1", [request.id]);
+        const next = await store.createBooking({ eventTypeId: coaching.id, startAt: startFor(2), idempotencyKey: "pg-request-4", invitee: { ...guest, name: "Next Guest" } });
+        expect(next.status).toBe("confirmed");
+        const { rows: [row] } = await pool.query("select status, cancelled_by, cancel_reason, hold_expires_at from bookings where id = $1", [request.id]);
+        expect(row).toEqual({ status: "cancelled", cancelled_by: "system", cancel_reason: "Not confirmed in time", hold_expires_at: null });
+      });
+
+      const ask = async (k: number, minutes = 60) => store.createBooking({
+        eventTypeId: coaching.id, startAt: startFor(k), idempotencyKey: `pg-request-ask-${k}`, approvalUntil: new Date(Date.now() + minutes * MIN), invitee: { ...guest, name: `Guest ${k}` },
+      });
+      const kinds = async (id: string) => (await pool.query("select kind from notifications where booking_id = $1 and status = 'queued' order by kind", [id])).rows.map((r) => r.kind as string);
+
+      it("approving confirms it once and queues the guest's confirmation, not the host's", async () => {
+        const request = await ask(10);
+        expect(await store.decideRequest(priya.id, request.id, "approve", new Date())).toBe("approved");
+        expect((await store.getBooking(priya.id, request.id))).toMatchObject({ status: "confirmed", holdExpiresAt: null });
+        const queued = await kinds(request.id);
+        expect(queued).toContain("booked_guest");
+        expect(queued).not.toContain("booked_host");
+        expect(await store.decideRequest(priya.id, request.id, "approve", new Date())).toBe("already_confirmed");
+        expect(await store.decideRequest(priya.id, request.id, "decline", new Date())).toBe("already_confirmed");
+      });
+
+      it("declining frees the slot and tells the guest; withdrawing tells the host", async () => {
+        const declined = await ask(11);
+        expect(await store.decideRequest(priya.id, declined.id, "decline", new Date())).toBe("declined");
+        expect(await store.getBooking(priya.id, declined.id)).toMatchObject({ status: "cancelled", cancelledBy: "host", cancelReason: "Request declined" });
+        expect(await kinds(declined.id)).toContain("declined_guest");
+        expect((await store.createBooking({ eventTypeId: coaching.id, startAt: startFor(11), idempotencyKey: "pg-request-after-decline", invitee: guest })).status).toBe("confirmed");
+
+        const withdrawn = await ask(12);
+        expect(await store.decideRequest(priya.id, withdrawn.id, "withdraw", new Date())).toBe("withdrawn");
+        expect(await store.getBooking(priya.id, withdrawn.id)).toMatchObject({ status: "cancelled", cancelledBy: "guest" });
+        const queued = await kinds(withdrawn.id);
+        expect(queued).toContain("cancelled_host");
+        expect(queued).not.toContain("cancelled_guest");
+      });
+
+      it("refuses a decision on a request that ran out, and on another host's booking", async () => {
+        const request = await ask(13);
+        await pool.query("update bookings set hold_expires_at = now() - interval '1 minute' where id = $1", [request.id]);
+        expect(await store.decideRequest(priya.id, request.id, "approve", new Date())).toBe("lapsed");
+        const other = (await pool.query("select id from users where id <> $1 limit 1", [priya.id])).rows[0].id as string;
+        await expect(store.decideRequest(other, request.id, "approve", new Date())).rejects.toBeInstanceOf(NotFoundError);
+      });
+
+      it("the job runner ends lapsed requests and tells their guests, once", async () => {
+        const request = await ask(14);
+        await pool.query("update bookings set hold_expires_at = now() - interval '1 minute' where id = $1", [request.id]);
+        expect(await lapseRequests(pool, new Date())).toBeGreaterThanOrEqual(1);
+        expect(await store.getBooking(priya.id, request.id)).toMatchObject({ status: "cancelled", cancelledBy: "system", cancelReason: "Not confirmed in time" });
+        expect(await kinds(request.id)).toContain("lapsed_guest");
+        expect((await pool.query("select count(*)::int as n from notifications where booking_id = $1 and kind = 'lapsed_guest'", [request.id])).rows[0].n).toBe(1);
+        await lapseRequests(pool, new Date());
+        expect((await pool.query("select count(*)::int as n from notifications where booking_id = $1 and kind = 'lapsed_guest'", [request.id])).rows[0].n).toBe(1);
+      });
+
+      it("refuses approval on a priced event type in the database too", async () => {
+        await expect(pool.query("update event_types set requires_approval = true, price_minor = 50000, currency = 'INR' where id = $1", [coaching.id]))
+          .rejects.toMatchObject({ constraint: "event_types_approval_scope" });
+      });
+    });
+
+    describe("asking the guest to pick a new time (B10)", () => {
+      const startFor = (k: number) => new Date(at("2034-03-06T04:00:00Z").getTime() + k * 24 * 60 * MIN);
+      const booked = (k: number) => store.createBooking({ eventTypeId: coaching.id, startAt: startFor(k), idempotencyKey: `pg-ask-move-${k}`, invitee: { ...guest, name: `Mover ${k}` } });
+      const asks = async (id: string) => (await pool.query(
+        "select recipient, status from notifications where booking_id = $1 and kind = 'reschedule_request_guest'", [id])).rows;
+
+      it("stores the ask and its note, emails the guest once, and is asked only once", async () => {
+        const b = await booked(1);
+        const now = new Date();
+        expect(await store.askToReschedule(priya.id, b.id, "Travelling that week, sorry", now)).toBe("asked");
+        expect(await store.getBooking(priya.id, b.id)).toMatchObject({ status: "confirmed", rescheduleRequestedAt: now, rescheduleRequestNote: "Travelling that week, sorry" });
+        expect(await asks(b.id)).toEqual([{ recipient: guest.email, status: "queued" }]);
+        expect(await store.askToReschedule(priya.id, b.id, null, new Date())).toBe("already_asked");
+        expect(await asks(b.id)).toHaveLength(1);
+      });
+
+      it("refuses a booking that already happened, a cancelled one, and another host's", async () => {
+        const past = await booked(2);
+        expect(await store.askToReschedule(priya.id, past.id, null, new Date(startFor(2).getTime() + MIN))).toBe("not_upcoming");
+        const cancelled = await booked(3);
+        await store.cancelBooking(priya.id, cancelled.id, "guest");
+        expect(await store.askToReschedule(priya.id, cancelled.id, null, new Date())).toBe("not_confirmed");
+        const other = (await pool.query("select id from users where id <> $1 limit 1", [priya.id])).rows[0].id as string;
+        await expect(store.askToReschedule(other, past.id, null, new Date())).rejects.toBeInstanceOf(NotFoundError);
+        expect(await asks(past.id)).toHaveLength(0);
+      });
+
+      it("ends with the old booking when the guest moves it, and the email no longer goes", async () => {
+        const b = await booked(4);
+        await store.askToReschedule(priya.id, b.id, null, new Date());
+        const moved = await store.rescheduleBooking(priya.id, b.id, startFor(5), "pg-ask-move-4b", "guest");
+        expect(moved.rescheduleRequestedAt).toBeNull();
+        expect(await store.getBooking(priya.id, b.id)).toMatchObject({ status: "cancelled" });
+        expect((await asks(b.id)).map((r) => r.status)).not.toContain("queued");
+      });
+
+      it("keeps the note to 500 characters in the database too", async () => {
+        const b = await booked(6);
+        await expect(pool.query("update bookings set reschedule_request_note = $2 where id = $1", [b.id, "x".repeat(501)]))
+          .rejects.toMatchObject({ constraint: "bookings_reschedule_note_len" });
+      });
     });
 
     describe("racing bookings", () => {

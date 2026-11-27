@@ -81,6 +81,21 @@ describe("computeSlots", () => {
     expect(slots).toContain("12:00");
   });
 
+  it("a request waiting for the host's approval blocks its slot until it lapses (B9)", () => {
+    const at = (t: string) => ist("2026-10-12", t);
+    const now = ist("2026-10-11", "00:00");
+    const request = (start: string, end: string, expires: Date) => ({ ...booking(at(start), at(end)), status: "pending_approval" as const, holdExpiresAt: expires });
+    const slots = times(computeSlots(input({
+      now,
+      bookings: [
+        request("10:00", "10:30", new Date(now.getTime() + 60_000)), // the host hasn't answered yet
+        request("11:00", "11:30", new Date(now.getTime() - 60_000)), // lapsed
+      ],
+    })));
+    expect(slots).not.toContain("10:00");
+    expect(slots).toContain("11:00");
+  });
+
   it("respects minimum notice from now", () => {
     const slots = times(computeSlots(input({ now: ist("2026-10-12", "10:20"), eventType: { minNoticeMinutes: 60 } })));
     expect(slots[0]).toBe("11:30");

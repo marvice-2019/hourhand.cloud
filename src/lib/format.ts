@@ -18,6 +18,11 @@ export function formatDate(date: Date, tz: string, locale: Locale = "en"): strin
   return new Intl.DateTimeFormat(intlTag(locale), { timeZone: tz, weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(date);
 }
 
+/** Weekday and date of an instant in `tz`, without the year: "Friday, 27 November". For a time close at hand. */
+export function formatDayMonth(date: Date, tz: string, locale: Locale = "en"): string {
+  return new Intl.DateTimeFormat(intlTag(locale), { timeZone: tz, weekday: "long", day: "numeric", month: "long" }).format(date);
+}
+
 /** Calendar date of an instant in `tz`, as "YYYY-MM-DD". */
 export function dayKey(date: Date, tz: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);

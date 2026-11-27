@@ -9,7 +9,7 @@ import { buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { isUnpaidRelease } from "@/lib/booking-reasons";
 import { store } from "@/lib/data";
-import { formatDate, zoneName } from "@/lib/format";
+import { formatDate, formatDayMonth, zoneName } from "@/lib/format";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { LOCATION_KEYS, resolveLocale, t, tNodes } from "@/lib/i18n/guest";
 import { mt } from "@/lib/i18n/mail";
@@ -25,6 +25,7 @@ import { videoJoinUrl } from "@/lib/video/links";
 import { SmsToggle } from "@/components/SmsToggle";
 import { smsConfig, smsNumber } from "@/lib/sms/config";
 import { maskedPhone } from "@/lib/sms/manage";
+import { withdrawRequest } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,8 @@ export default async function ManageBookingPage({ params, searchParams }: { para
   const time = (d: Date) => <LocalTime date={d} tz={tz} locale={locale} />;
   const cancelled = booking.status === "cancelled";
   const pending = booking.status === "pending_payment";
+  // B9: a request waiting on the host. The guest can withdraw it, but not move it.
+  const request = booking.status === "pending_approval";
   // A hold that ran out before the guest paid: say so plainly rather than "cancelled".
   const unpaid = cancelled && isUnpaidRelease(booking.cancelReason);
   // A week of a weekly series: its place, and how many later weeks are still to come (they can be cancelled with it).
@@ -87,6 +90,18 @@ export default async function ManageBookingPage({ params, searchParams }: { para
           </p>
           <Link href={`/${host.slug}/${eventType.slug}${q}`} className={`mt-3 ${buttonClasses({ variant: "primary" })}`}>{t(locale, "bookAnother")}</Link>
         </>
+      ) : request ? (
+        <>
+          <p className="mt-6 max-w-md text-text" role="status">
+            {tNodes(locale, "requestWaiting", { host: host.name, time: booking.holdExpiresAt ? <>{formatDayMonth(booking.holdExpiresAt, tz, locale)}, {time(booking.holdExpiresAt)}</> : t(locale, "fewMinutes") })}
+          </p>
+          <p className="mt-2 max-w-md text-text-muted">{t(locale, "requestEmail", { host: host.name })}</p>
+          <form action={withdrawRequest} className="mt-4">
+            <input type="hidden" name="token" value={token} />
+            <input type="hidden" name="lang" value={q ? locale : ""} />
+            <button type="submit" className={buttonClasses({ variant: "secondary" })}>{t(locale, "withdrawRequest")}</button>
+          </form>
+        </>
       ) : pending ? (
         <p className="mt-6 max-w-md text-text" role="status">
           {tNodes(locale, "waitingPayment", { time: booking.holdExpiresAt ? time(booking.holdExpiresAt) : t(locale, "fewMinutes") })}{" "}
@@ -94,6 +109,12 @@ export default async function ManageBookingPage({ params, searchParams }: { para
         </p>
       ) : (
         <>
+        {booking.rescheduleRequestedAt && booking.startAt > now && (
+          <div className="mt-6 max-w-md rounded-md bg-surface p-3" role="status">
+            <p className="font-semibold text-text">{t(locale, "askedToMove", { host: host.name })}</p>
+            {booking.rescheduleRequestNote && <p className="mt-1 whitespace-pre-line break-words text-text">{t(locale, "askedNote", { host: host.name, note: booking.rescheduleRequestNote })}</p>}
+          </div>
+        )}
         <AddToCalendar
           token={token} title={mt(locale, "calWith", { event: eventType.name, host: host.name })} start={booking.startAt} end={booking.endAt} locale={locale}
           location={joinUrl ?? (booking.locationKind ? t(locale, LOCATION_KEYS[booking.locationKind]) : null)}

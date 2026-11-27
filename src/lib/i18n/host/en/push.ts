@@ -16,6 +16,7 @@ export const push = {
   "push.titleBooked": "New booking",
   "push.titleMoved": "Booking moved",
   "push.titleCancelled": "Booking cancelled",
+  "push.titleRequest": "Booking request",
   "push.body": "{guest} · {event} · {when}",
   "push.testTitle": "Phone alerts are on",
   "push.testBody": "You'll get one here for each new, moved or cancelled booking.",

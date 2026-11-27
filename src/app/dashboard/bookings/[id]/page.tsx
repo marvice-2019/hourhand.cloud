@@ -24,7 +24,7 @@ import { GUEST_LOCATION_LABELS } from "@/lib/location-labels";
 import { videoJoinUrl } from "@/lib/video/links";
 import { waLink, waNumber, whatsappMessage, type WhatsAppKind } from "@/lib/whatsapp";
 import { feedbackForBooking } from "@/lib/follow-ups/follow-ups";
-import { cancelAsHost, rescheduleAsHost, saveSessionNote, setNoShow } from "./actions";
+import { askToRescheduleAsHost, cancelAsHost, decideAsHost, rescheduleAsHost, saveSessionNote, setNoShow } from "./actions";
 
 const PAYMENT_LINES: Record<BookingPaymentSummary["status"], HostKey> = {
   pending: "bookings.paymentPending", paid: "bookings.paymentPaid", failed: "bookings.paymentFailed",
@@ -41,6 +41,9 @@ const DONE: Record<string, HostKey> = {
   no_show: "bookings.doneNoShow",
   no_show_undone: "bookings.doneNoShowUndone",
   note_saved: "bookings.doneNoteSaved",
+  approved: "bookings.doneApproved",
+  declined: "bookings.doneDeclined",
+  asked: "bookings.doneAsked",
 };
 const ERRORS: Record<string, HostKey> = {
   not_found: "bookings.errorNotFound",
@@ -52,12 +55,17 @@ const ERRORS: Record<string, HostKey> = {
   bad_time: "bookings.errorBadTime",
   not_started: "bookings.errorNotStarted",
   note_too_long: "bookings.errorNoteTooLong",
+  already_confirmed: "bookings.errorAlreadyConfirmed",
+  already_cancelled: "bookings.errorAlreadyCancelled",
+  lapsed: "bookings.errorLapsed",
+  already_asked: "bookings.errorAlreadyAsked",
+  ask_note_too_long: "bookings.errorAskNoteTooLong",
 };
 const DAY = 86_400_000;
 
 export const dynamic = "force-dynamic";
 
-type Query = { done?: string; error?: string; confirm?: string; reschedule?: string };
+type Query = { done?: string; error?: string; confirm?: string; reschedule?: string; decide?: string; ask?: string };
 
 export default async function BookingDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Query> }) {
   const { id } = await params;
@@ -78,7 +86,9 @@ export default async function BookingDetailPage({ params, searchParams }: { para
   const byDay = new Map<string, Date[]>();
   for (const s of slots) byDay.set(date(s, tz), [...(byDay.get(date(s, tz)) ?? []), s]);
   const key = randomUUID();
-  const done = query.done && Object.hasOwn(DONE, query.done) ? t(DONE[query.done]) : null;
+  const done = query.done && Object.hasOwn(DONE, query.done) ? t(DONE[query.done], { name: booking.invitee.name }) : null;
+  // A booking request (B9) the host can still answer: one that hasn't run out.
+  const request = booking.status === "pending_approval" && booking.holdExpiresAt !== null && booking.holdExpiresAt > now;
   const error = query.error && Object.hasOwn(ERRORS, query.error) ? t(ERRORS[query.error]) : null;
   const payment = authEnabled() ? await bookingPayment(getPool(process.env.DATABASE_URL as string), user.id, booking.id) : null;
   const whatsapp = upcoming ? await whatsappLinks(user, booking, i18n) : null;
@@ -137,6 +147,7 @@ export default async function BookingDetailPage({ params, searchParams }: { para
             {t("bookings.whenValue", { date: date(booking.startAt, tz), time: time(booking.startAt, tz), zone: zoneName(tz) })}
             {booking.status === "cancelled" && <span className="ml-2 rounded-md bg-danger-bg px-2 py-0.5 text-sm text-danger">{t("bookings.statusCancelled")}</span>}
             {booking.status === "pending_payment" && <span className="ml-2 rounded-md bg-warning-bg px-2 py-0.5 text-sm text-warning">{t("bookings.statusAwaitingPayment")}</span>}
+            {request && <span className="ml-2 rounded-md bg-warning-bg px-2 py-0.5 text-sm text-warning">{t("bookings.statusAwaitingApproval")}</span>}
             {booking.invitee.noShowAt && <span className="ml-2 rounded-md bg-warning-bg px-2 py-0.5 text-sm text-warning">{t("bookings.noShow")}</span>}
             {confirmed && booking.invitee.runningLateMinutes && (
               <span className="ml-2 rounded-md bg-warning-bg px-2 py-0.5 text-sm text-warning">
@@ -230,6 +241,35 @@ export default async function BookingDetailPage({ params, searchParams }: { para
           )}
         </section>
       )}
+      {request && (
+        <section aria-labelledby="request" className="mt-6 grid max-w-xl gap-3">
+          <h2 id="request" className="font-display text-lg text-text">{t("bookings.requestTitle")}</h2>
+          <p className="text-sm text-text-muted">
+            {t("bookings.requestHelp", { name: booking.invitee.name, time: `${date(booking.holdExpiresAt!, tz)}, ${time(booking.holdExpiresAt!, tz)}` })}
+          </p>
+          {query.decide === "decline" ? (
+            <form action={decideAsHost} className="grid gap-2">
+              <input type="hidden" name="bookingId" value={booking.id} />
+              <input type="hidden" name="decision" value="decline" />
+              <p className="text-text">{t("bookings.declineConfirm", { name: booking.invitee.name })}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" variant="danger">{t("bookings.yesDecline")}</Button>
+                <Link href={`/dashboard/bookings/${booking.id}`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("bookings.keepIt")}</Link>
+              </div>
+            </form>
+          ) : (
+            // Opening the email's Approve link lands here: approving still takes this one press, so a link preview can't do it.
+            <div className="flex flex-wrap items-center gap-4">
+              <form action={decideAsHost}>
+                <input type="hidden" name="bookingId" value={booking.id} />
+                <input type="hidden" name="decision" value="approve" />
+                <Button type="submit">{t("bookings.approve")}</Button>
+              </form>
+              <Link href={`/dashboard/bookings/${booking.id}?decide=decline`} className="inline-flex min-h-11 items-center font-semibold text-danger underline">{t("bookings.decline")}</Link>
+            </div>
+          )}
+        </section>
+      )}
       {upcoming && (
         <section aria-labelledby="actions" className="mt-6 grid max-w-xl gap-4">
           <h2 id="actions" className="font-display text-lg text-text">{t("bookings.changeTitle")}</h2>
@@ -254,7 +294,21 @@ export default async function BookingDetailPage({ params, searchParams }: { para
             <div className="flex flex-wrap gap-4">
               <Link href={`/dashboard/bookings/${booking.id}?confirm=cancel`} className="inline-flex min-h-11 items-center font-semibold text-danger underline">{t("bookings.cancelBooking")}</Link>
               {!booking.classKey && <Link href={`/dashboard/bookings/${booking.id}?reschedule=1`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("bookings.moveBooking")}</Link>}
+              {!booking.classKey && !booking.rescheduleRequestedAt && <Link href={`/dashboard/bookings/${booking.id}?ask=1`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("bookings.askMoveLink", { name: booking.invitee.name })}</Link>}
             </div>
+          )}
+          {booking.rescheduleRequestedAt && <p className="text-text-muted">{t("bookings.askedOn", { name: booking.invitee.name, date: date(booking.rescheduleRequestedAt, tz) })}</p>}
+          {query.ask && !booking.classKey && !booking.rescheduleRequestedAt && (
+            <form action={askToRescheduleAsHost} className="grid gap-2">
+              <input type="hidden" name="bookingId" value={booking.id} />
+              <p className="text-text">{t("bookings.askMoveHelp", { name: booking.invitee.name })}</p>
+              <label htmlFor="ask-note" className="text-sm text-text-muted">{t("bookings.askMoveNote", { name: booking.invitee.name })}</label>
+              <textarea id="ask-note" name="note" maxLength={500} rows={3} className="rounded-md border border-border bg-card p-2 text-text" />
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit">{t("bookings.askMoveSend")}</Button>
+                <Link href={`/dashboard/bookings/${booking.id}`} className="inline-flex min-h-11 items-center font-semibold text-accent underline">{t("bookings.keepIt")}</Link>
+              </div>
+            </form>
           )}
           {query.reschedule && !booking.classKey && (
             <div>

@@ -538,7 +538,7 @@ export async function clashesAt(db: Db, hostId: string, start: Date, end: Date, 
   const { rows: booked } = await db.query(
     `select b.start_at, b.end_at, i.name from bookings b join invitees i on i.booking_id = b.id
      where b.host_id = $1 and b.busy && tstzrange($2, $3, '[)')
-       and (b.status = 'confirmed' or (b.status = 'pending_payment' and b.hold_expires_at > $4)) order by b.start_at`, [hostId, start, end, now]);
+       and (b.status = 'confirmed' or (b.status in ('pending_payment', 'pending_approval') and b.hold_expires_at > $4)) order by b.start_at`, [hostId, start, end, now]);
   return [
     ...busy.map((b): Clash => ({ kind: "calendar", start: b.start, end: b.end })),
     ...booked.map((b): Clash => ({ kind: "booking", start: b.start_at, end: b.end_at, guestName: b.name })),
