@@ -475,6 +475,15 @@ export function renderWaitlistMail(c: { guestName: string; hostName: string; eve
   });
 }
 
+/** B11: the code a guest enters on the booking page to prove their email, in the language they're booking in. */
+export function renderGuestEmailCode(c: { locale: Locale; code: string; guestName: string; hostName: string; eventName: string }): RenderedMail {
+  const l = c.locale, host = c.hostName;
+  return render(mt(l, "subjCode", { code: c.code, event: c.eventName, host }), {
+    heading: mt(l, "hCode"), intro: mt(l, "iCode", { guest: c.guestName, event: c.eventName, host }),
+    rows: [[mt(l, "rCode"), c.code]], note: mt(l, "nCode"), footer: mt(l, "fCode", { host }),
+  });
+}
+
 export function renderMagicLink(url: string): RenderedMail {
   return render("Your Hourhand sign-in link", {
     heading: "Sign in to Hourhand", intro: "Use the button below to sign in. The link works once and expires in 15 minutes.",
