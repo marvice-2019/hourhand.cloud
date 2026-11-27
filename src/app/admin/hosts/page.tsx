@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { HOSTS_PAGE, listHosts, REVIEW_FILTERS } from "@/lib/admin/queries";
+import { can } from "@/lib/admin/roles";
 import { requireStaff } from "@/lib/admin/session";
 import { getPool } from "@/lib/data/pg-store";
 import { formatDate } from "@/lib/format";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 const REVIEW_NAMES: Record<string, string> = { pending: "Waiting for approval", approved: "Approved", declined: "Declined", suspended: "Suspended" };
 
 export default async function AdminHostsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; status?: string }> }) {
-  await requireStaff("view_hosts");
+  const staff = await requireStaff("view_hosts");
   const { q = "", page: rawPage, status: rawStatus = "" } = await searchParams;
   const status = (REVIEW_FILTERS as readonly string[]).includes(rawStatus) ? rawStatus : "";
   const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
@@ -21,7 +22,10 @@ export default async function AdminHostsPage({ searchParams }: { searchParams: P
   const link = (p: number) => `/admin/hosts?${new URLSearchParams({ ...(q ? { q } : {}), ...(status ? { status } : {}), page: String(p) })}`;
   return (
     <div>
-      <h1 className="font-display text-xl text-text">Hosts</h1>
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h1 className="font-display text-xl text-text">Hosts</h1>
+        {can(staff.role, "view_customer_data") && <Link href="/admin/hosts/export" prefetch={false} download className={`font-semibold text-accent underline ${focusRing}`}>Download CSV</Link>}
+      </div>
       <form className="mt-4 flex max-w-xl items-end gap-3" role="search">
         <div className="flex-1"><Label htmlFor="q">Name, email or page address</Label><Input id="q" name="q" defaultValue={q} maxLength={100} /></div>
         <div><Label htmlFor="status">Status</Label>

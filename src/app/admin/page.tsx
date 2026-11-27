@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { focusRing } from "@/components/ui/focus";
 import { can } from "@/lib/admin/roles";
 import { countPending, getRequireApproval } from "@/lib/admin/review";
+import { signups } from "@/lib/admin/signups";
 import { requireStaff } from "@/lib/admin/session";
 import { setRequireApprovalAction } from "./actions";
 import { getPool } from "@/lib/data/pg-store";
@@ -14,7 +15,8 @@ export const dynamic = "force-dynamic";
 export default async function AdminOverviewPage() {
   const staff = await requireStaff("view_overview");
   const db = getPool(process.env.DATABASE_URL as string);
-  const [o, pending, requireApproval] = await Promise.all([overview(db, new Date()), countPending(db), getRequireApproval(db)]);
+  const [o, pending, requireApproval, joined] = await Promise.all([overview(db, new Date()), countPending(db), getRequireApproval(db), signups(db, new Date())]);
+  const peak = Math.max(1, ...joined.days.map((d) => d.count));
   const tiles: [string, number | string][] = [
     ["Hosts", o.hosts], ["New hosts, last 30 days", o.newHosts30d], ["Closed accounts", o.closedHosts],
     ["Paying: Solo", o.paidHosts.solo], ["Paying: Duo", o.paidHosts.duo], ["Hourhand payment failing", o.pastDueHosts],
@@ -42,6 +44,27 @@ export default async function AdminOverviewPage() {
             <Button type="submit" variant="secondary" size="sm">{requireApproval ? "Stop requiring approval" : "Require my approval for new hosts"}</Button>
           </form>
         )}
+      </section>
+      <section aria-labelledby="signups-heading" className="mt-8 grid max-w-4xl gap-6 lg:grid-cols-2">
+        <div>
+          <h2 id="signups-heading" className="font-semibold text-text">New hosts, last 30 days</h2>
+          <table className="mt-2 w-full text-sm">
+            <thead className="sr-only"><tr><th>Day</th><th>New hosts</th></tr></thead>
+            <tbody>
+              {joined.days.map((d) => (
+                <tr key={d.day}>
+                  <td className="w-28 py-0.5 pr-3 text-text-muted tabular-nums">{d.day}</td>
+                  <td className="py-0.5"><span className="flex items-center gap-2"><span aria-hidden className="block h-3 rounded-sm bg-accent" style={{ width: `${(d.count / peak) * 100}%`, minWidth: d.count ? "0.25rem" : 0 }} /><span className="tabular-nums text-text">{d.count}</span></span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h2 className="font-semibold text-text">How hosts sign in</h2>
+          <ul className="mt-2 grid gap-1 text-text">{joined.methods.map((m) => <li key={m.method}>{m.method}: <span className="tabular-nums">{m.hosts}</span></li>)}</ul>
+          <p className="mt-2 text-sm text-text-muted">A host with more than one way to sign in is counted under each.</p>
+        </div>
       </section>
     </div>
   );
