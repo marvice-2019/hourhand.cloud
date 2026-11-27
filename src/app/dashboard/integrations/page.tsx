@@ -17,6 +17,7 @@ import { zoomDeps, zoomStatus } from "@/lib/zoom/connection";
 import { connectRazorpay, connectStripe, disconnectRazorpayAction, disconnectStripeAction, disconnectZoomAction } from "./actions";
 import { WhatsAppBookingCard } from "./WhatsAppBookingCard";
 import { WebhooksCard } from "./WebhooksCard";
+import { ApiKeysCard } from "./ApiKeysCard";
 
 export const dynamic = "force-dynamic";
 
@@ -223,6 +224,8 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
       <WhatsAppBookingCard slug={user.slug} plan={plan} on={pool ? await whatsappBookingOn(pool, user.id) : false} notice={params.whatsapp} />
 
       <WebhooksCard pool={pool} hostId={user.id} notice={params.webhook} />
+
+      <ApiKeysCard pool={pool} hostId={user.id} timezone={user.timezone} notice={params.apikey} />
     </div>
   );
 }

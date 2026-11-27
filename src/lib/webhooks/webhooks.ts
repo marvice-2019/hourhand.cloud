@@ -3,6 +3,7 @@ import { request } from "node:https";
 import type pg from "pg";
 import { seal, tokenKey, unseal } from "../crypto/seal";
 import { NotFoundError } from "../data/types";
+import { BOOKING_PAYLOAD_COLUMNS, BOOKING_PAYLOAD_FROM, bookingPayload } from "../api/booking-payload";
 import { checkUrl, checkUrlShape, guardedLookup, type LookupAll } from "./guard";
 
 // Outgoing booking webhooks (db/migrations/0069_booking_webhooks.sql). A host adds up to 5 HTTPS URLs on the
@@ -91,21 +92,11 @@ const EVENT_FOR = { booked: "booking.created", cancelled: "booking.cancelled", r
 export async function queueBookingWebhooks(db: Pick<pg.PoolClient, "query">, bookingId: string, change: keyof typeof EVENT_FOR, now: Date): Promise<void> {
   const event = EVENT_FOR[change];
   const { rows: [b] } = await db.query(
-    `select b.id, b.host_id, b.start_at, b.end_at, b.status, b.location_kind, b.rescheduled_from_id, b.created_at,
-       e.id as event_type_id, e.name as event_name, e.slug as event_slug, e.duration_minutes,
-       i.name as guest_name, i.email as guest_email, i.phone as guest_phone, i.timezone as guest_timezone
-     from bookings b join event_types e on e.id = b.event_type_id join invitees i on i.booking_id = b.id
+    `select ${BOOKING_PAYLOAD_COLUMNS} from ${BOOKING_PAYLOAD_FROM}
      where b.id = $1 and exists (select 1 from webhook_endpoints w where w.user_id = b.host_id and w.active and $2 = any(w.events))`,
     [bookingId, event]);
   if (!b) return;
-  const data = {
-    booking: {
-      id: b.id, status: b.status, start: new Date(b.start_at).toISOString(), end: new Date(b.end_at).toISOString(),
-      location: b.location_kind ?? null, rescheduled_from: b.rescheduled_from_id ?? null, created_at: new Date(b.created_at).toISOString(),
-    },
-    event_type: { id: b.event_type_id, name: b.event_name, slug: b.event_slug, duration_minutes: b.duration_minutes },
-    guest: { name: b.guest_name, email: /\.invalid$/i.test(b.guest_email) ? null : b.guest_email, phone: b.guest_phone ?? null, timezone: b.guest_timezone },
-  };
+  const data = bookingPayload(b);
   await db.query(
     `insert into webhook_deliveries (endpoint_id, booking_id, event, payload, dedupe_key, next_at)
      select w.id, $1::uuid, $2::text, jsonb_build_object('event', $2::text, 'id', gen_random_uuid(), 'created_at', $4::text, 'data', $3::jsonb),

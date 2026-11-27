@@ -215,7 +215,7 @@ describe.skipIf(!BASE)("making briefs in the job runner (TEST_DATABASE_URL)", ()
     await prepareDueBriefs(pool, client, now);
     expect(calls).toHaveLength(0);
     expect(await briefFor(pool, priya.id, capped.id)).toMatchObject({ status: "skipped", reason: "monthly limit reached" });
-  });
+  }, 20_000); // makes up to MONTHLY_CAP (400) real bookings: about 2.5 s here, past the 5 s default on a busy CI machine
 
   it("turning it off stops new briefs and keeps old ones", async () => {
     const now = new Date();
