@@ -69,6 +69,11 @@ export default async function AvailabilityPage({ searchParams }: { searchParams:
       <div>
         <h1 className="font-display text-xl text-text">{t("availability.title")}</h1>
         <p className="mt-2 text-text-muted">{t("availability.intro")}</p>
+        <p className="mt-2 text-text">
+          {tNodes("availability.checkPrompt", {
+            link: <Link href="/dashboard/availability/check" className={`font-semibold text-accent underline ${focusRing}`}>{t("availability.checkLinkText")}</Link>,
+          })}
+        </p>
         {notice && <p role="status" className="mt-3 rounded-md bg-surface p-3 font-semibold text-text">{notice}</p>}
         {error && <p role="alert" className="mt-3 rounded-md bg-surface p-3 font-semibold text-danger">{error}</p>}
       </div>
