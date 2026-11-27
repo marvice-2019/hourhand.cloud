@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { hostDetail } from "@/lib/admin/queries";
@@ -71,7 +72,14 @@ export default async function AdminHostPage({ params, searchParams }: { params: 
           {row("Packages sold", h.counts.packagesSold)}{row("Active members", h.counts.activeMembers)}{row("Invoices issued", h.counts.invoices)}
         </dl></Card>
       </div>
-      <p className="mt-6 text-sm text-text-muted">Client names and details are not shown here. Your visit to this page is in the audit log.</p>
+      {can(staff.role, "view_customer_data") && (
+        <nav aria-label="Customer data" className="mt-6 flex flex-wrap gap-4">
+          <Link href={`/admin/hosts/${h.id}/clients`} className={`font-semibold text-accent underline ${focusRing}`}>Clients</Link>
+          <Link href={`/admin/hosts/${h.id}/bookings`} className={`font-semibold text-accent underline ${focusRing}`}>Bookings and answers</Link>
+          <Link href={`/admin/hosts/${h.id}/payments`} className={`font-semibold text-accent underline ${focusRing}`}>Payments and gateways</Link>
+        </nav>
+      )}
+      <p className="mt-6 text-sm text-text-muted">Your visit to this page, and to each customer-data page, is in the audit log.</p>
     </div>
   );
 }
