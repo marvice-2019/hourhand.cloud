@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
@@ -226,6 +226,11 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
   const [showGuests, setShowGuests] = useState(false);
   // The intake answers so far, so a conditional question appears as soon as the earlier answer matches.
   const [intake, setIntake] = useState<RawAnswers>({});
+  // B11: the address a code was emailed to, while the guest types it in; null before one is sent.
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [emailCode, setEmailCode] = useState("");
+  // Set by "Send a new code": the next submit asks for a fresh code instead of sending the one typed.
+  const skipCode = useRef(false);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -234,13 +239,23 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
     const current = readAnswers(e.currentTarget, questions);
     const answers = answersToSend(questions, current);
     const guests = String(data.get("guests") ?? "").split(/[\s,;]+/).filter(Boolean);
+    // A code goes with the request only for the address it was sent to; a changed address gets a new code.
+    const sendCode = codeSentTo !== null && codeSentTo === String(data.get("email") ?? "").trim() && !skipCode.current && emailCode.trim() !== "";
+    skipCode.current = false;
     setBusy(true); setFailed(false); setLimited(false); setExpired(false); setWeeksTaken(null);
     try {
       const res = await fetch("/api/bookings", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(duration ? { duration } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), ...(data.get("smsOptIn") ? { smsOptIn: true } : {}), ...(source ? { src: source } : {}), ...(onBehalf ? { onBehalf: true } : {}), locale, ...(offers && code.trim() ? { couponCode: code.trim() } : {}), ...(offers?.sliding && payMinor ? { payMinor } : {}) }),
+        body: JSON.stringify({ ...(linkToken ? { linkToken } : { slug, event }), start: slot, name: data.get("name"), email: data.get("email"), phone: data.get("phone") || undefined, timezone: tz, answers, idempotencyKey, ...(weeks > 1 ? { weeks } : {}), ...(duration ? { duration } : {}), ...(packageToken ? { packageToken } : {}), ...(guests.length ? { guests } : {}), ...(data.get("whatsappOptIn") ? { whatsappOptIn: true } : {}), ...(data.get("smsOptIn") ? { smsOptIn: true } : {}), ...(source ? { src: source } : {}), ...(onBehalf ? { onBehalf: true } : {}), locale, ...(offers && code.trim() ? { couponCode: code.trim() } : {}), ...(offers?.sliding && payMinor ? { payMinor } : {}), ...(sendCode ? { emailCode: emailCode.trim() } : {}) }),
       });
       const body = await res.json();
+      if (res.status === 202 && body.verification === "email_code_sent") {
+        setCodeSentTo(String(data.get("email") ?? "").trim()); setEmailCode(""); setErrors({}); setBusy(false);
+        setTimeout(() => document.getElementById("emailCode")?.focus(), 0);
+        return;
+      }
+      if (res.status === 400 && body.error === "code_expired") { setErrors({ emailCode: t(locale, "codeExpired") }); setBusy(false); return; }
+      if (res.status === 429 && body.error === "code_rate_limited") { setErrors({ emailCode: t(locale, body.reason === "too_many" ? "codeTooMany" : "codeTooSoon") }); setBusy(false); return; }
       if ((res.status === 201 || res.status === 200) && body.payment?.provider === "stripe" && typeof body.payment.url === "string") {
         // Stripe Checkout on the host's account. It can't run inside a frame, so an embedded booking page opens it in a new tab
         // and shows the held booking here; Stripe brings the guest back to the booked page, which checks the payment.
@@ -268,7 +283,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
       else if (res.status === 409) { setTaken(body.nextSlots ?? []); setErrors({}); }
       else if (res.status === 400) {
         // Server messages are English; show ours for the fields it names.
-        const own: Record<string, GuestKey> = { name: "errName", email: "errEmail", phone: "errPhone", smsOptIn: "errSmsPhone", timezone: "errTimezone", guests: "errGuests", couponCode: "offerCodeInvalid" };
+        const own: Record<string, GuestKey> = { name: "errName", email: "errEmail", phone: "errPhone", smsOptIn: "errSmsPhone", timezone: "errTimezone", guests: "errGuests", couponCode: "offerCodeInvalid", emailCode: "errEmailCode" };
         const fields = (body.fields ?? {}) as Record<string, string>;
         const byId = new Map(questions.map((q) => [q.id, q]));
         const answerError = (k: string) => {
@@ -417,6 +432,25 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
           {t(locale, packageRefused === "package_used_up" ? "packageUsedUp" : packageRefused === "package_expired" ? "packageExpired" : "packageOther")}
         </p>
       )}
+      {codeSentTo !== null && !held && (
+        <div className="grid gap-2 rounded-md bg-surface p-4">
+          <p className="text-text" role="status">{t(locale, "codeSent", { email: codeSentTo })}</p>
+          <div>
+            <Label htmlFor="emailCode">{t(locale, "codeLabel")}</Label>
+            <Input
+              id="emailCode" name="emailCode" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={6} value={emailCode}
+              onChange={(e) => { setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 6)); setErrors((x) => ({ ...x, emailCode: "" })); }}
+              error={errors.emailCode || undefined} className="max-w-40"
+            />
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <button type="button" disabled={busy} className={`min-h-11 text-sm font-semibold text-accent underline ${focusRing}`}
+              onClick={(e) => { skipCode.current = true; e.currentTarget.form?.requestSubmit(); }}>{t(locale, "sendNewCode")}</button>
+            <button type="button" className={`min-h-11 text-sm font-semibold text-accent underline ${focusRing}`}
+              onClick={() => { setCodeSentTo(null); setEmailCode(""); setErrors({}); document.getElementById("email")?.focus(); }}>{t(locale, "changeEmail")}</button>
+          </div>
+        </div>
+      )}
       {limited && <p className="text-danger" role="alert">{t(locale, "rateLimited")}</p>}
       {failed && <p className="text-danger" role="alert">{t(locale, "failed")}</p>}
       {expired && <p className="text-danger" role="alert">{t(locale, "holdExpired")}</p>}
@@ -430,7 +464,7 @@ function DetailsForm({ slug, event, linkToken, tz, slot, questions, paid, host, 
           <Button type="button" loading={busy} onClick={() => { const h = held; setHeld(null); void pay(h); }}>{t(locale, "pay", { price: offers ? money(held.payment.amount) : paid?.price ?? "" })}</Button>
         </div>
       ) : (
-        <Button type="submit" loading={busy}>{busy ? t(locale, "booking") : paid ? t(locale, paid.deposit ? "continuePayDeposit" : "continuePay", { price: seriesPrice }) : packageToken ? (weeks > 1 ? t(locale, "bookSessions", { n: weeks }) : t(locale, "bookWithPackage")) : t(locale, "bookThisTime")}</Button>
+        <Button type="submit" loading={busy}>{busy ? t(locale, "booking") : codeSentTo !== null ? t(locale, "confirmCode") : paid ? t(locale, paid.deposit ? "continuePayDeposit" : "continuePay", { price: seriesPrice }) : packageToken ? (weeks > 1 ? t(locale, "bookSessions", { n: weeks }) : t(locale, "bookWithPackage")) : t(locale, "bookThisTime")}</Button>
       )}
     </form>
   );

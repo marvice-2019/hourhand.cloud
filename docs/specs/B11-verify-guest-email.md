@@ -9,7 +9,7 @@ Cal.com ("Requires booker email verification") lets a host make guests prove the
 ## Guest
 - On an event type with the check on, after the guest picks a time, fills the form and presses Book, Hourhand emails a 6-digit code instead of booking. The page says "We've emailed a 6-digit code to {email}" with a code box, a Confirm button, "Send a new code" and "Change email".
 - The right code makes the booking exactly as today (approval request, payment checkout, or confirmed booking). Nothing is booked or held before the code is right, so the slot can be taken meanwhile; the guest then sees the usual "that time was just taken" message.
-- The email: subject "{code} is your code to book {event} with {host}", the code in large type, "It works for 10 minutes", and "If you didn't ask for this, ignore this email." In the guest's language (the 9 guest languages).
+- The email: subject "{code} is your code to book {event} with {host}", the code, "It works for 10 minutes", and "If you didn't ask for this, ignore this email." In the guest's language (the 9 guest languages).
 
 ## When the check is skipped
 - A booking the host makes for a client from the dashboard, one through a single-use link the host sent, and one paid by package link. The host chose the person in each case.
@@ -18,7 +18,7 @@ Cal.com ("Requires booker email verification") lets a host make guests prove the
 ## Rules
 - A code is 6 digits, works for 10 minutes and only for the event type and email address it was sent to (case-insensitive). Only its hash is stored.
 - 5 wrong tries on a code ends it; the guest asks for a new one.
-- A new code at most once a minute and 5 times an hour per event type and address. Codes count toward the booking page's existing rate limits too.
+- A new code at most once a minute and 5 times an hour per event type and address. Asking for a code counts toward the booking page's existing rate limits; entering one doesn't, since the code's own limits bound those tries.
 - A right code is used up when the booking is made, so it can't book twice.
 
 ## Data (migration 0076)
