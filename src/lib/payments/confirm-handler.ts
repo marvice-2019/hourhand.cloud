@@ -1,7 +1,7 @@
 import type { HandlerResult } from "../booking";
 import { isNamedError, type DataStore } from "../data/types";
 import { CONFIRM_PAYMENT_LIMIT, type createRateLimiter } from "../rate-limit";
-import { confirmPayment, type PaymentVerifyError } from "./booking-payments";
+import { authForPayment, confirmPayment, type PaymentVerifyError } from "./booking-payments";
 import type { PaymentCheckDeps } from "./booking-payments";
 import type pg from "pg";
 
@@ -22,7 +22,9 @@ export async function handleConfirmPayment(
 
   const booking = await store.getBookingByManageToken(body.manageToken as string);
   if (!booking) return { status: 404, body: { error: "not_found" } };
-  const auth = deps ? await deps.authFor(booking.hostId) : null;
+  // The account the order was made on: Hourhand's when it collects for this host (B18), else the host's own.
+  const row = deps && (await deps.pool.query("select host_id, collected_by, collected_via from payments where booking_id = $1 and provider = 'razorpay'", [booking.id])).rows[0];
+  const auth = deps ? await (row ? authForPayment(deps, row) : deps.authFor(booking.hostId)) : null;
   if (!deps || !auth) return { status: 409, body: { error: "payments_unavailable" } };
   try {
     const status = await confirmPayment(

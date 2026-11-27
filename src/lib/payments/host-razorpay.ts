@@ -15,7 +15,12 @@ export interface HostRazorpayAuth {
   keyId: string;
   /** Checkout's razorpay_signature for an order and payment. Lives here because an OAuth connection signs differently. */
   verifyPaymentSignature(orderId: string, paymentId: string, signature: string): boolean;
+  /** Set on Hourhand's own account when it collects for a host (B18): how the money is shared. Absent for a host's own. */
+  collection?: PlatformCollection;
 }
+
+/** Hourhand collecting a host's payments: 'split' sends the host's share to their Route account, 'platform' keeps it all. */
+export interface PlatformCollection { mode: "split" | "platform"; commissionBps: number; routeAccount: string | null }
 
 export type RazorpayMode = "test" | "live";
 

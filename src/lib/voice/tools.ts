@@ -231,7 +231,7 @@ async function createBooking(c: Ctx): Promise<HandlerResult> {
       return { status: 201, body: { status: "booked", when: spoken(booking.startAt, host.timezone, lang), service: service.name, confirmation_sent_by: [...(email ? ["email"] : []), ...(wa ? ["whatsapp"] : [])] } };
     }
     // Paid: never booked unpaid. The time is held 15 minutes and the caller gets a link to pay.
-    const auth = deps.payments && (await deps.payments.planFor(host.id)) !== "free" ? await deps.payments.authFor(host.id) : null;
+    const auth = deps.payments && (await deps.payments.planFor(host.id)) !== "free" ? await (deps.payments.collectFor ?? deps.payments.authFor)(host.id) : null;
     if (!deps.payments || !auth) return paymentIssue(c, name, phone, "Payments aren't set up for this service.");
     const { booking, payment } = await startPaidBooking(
       { pool: deps.pool, store: deps.store, auth, orders: deps.payments.ordersFor(auth) },

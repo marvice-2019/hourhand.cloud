@@ -351,6 +351,10 @@ export interface PaymentDeps {
   authFor(hostId: string): Promise<HostRazorpayAuth | null>;
   ordersFor(auth: HostRazorpayAuth): RazorpayOrders;
   planFor(hostId: string): Promise<Plan>;
+  /** The account that takes a host's new payments, which may be Hourhand's (B18). Falls back to authFor. */
+  collectFor?(hostId: string): Promise<HostRazorpayAuth | null>;
+  /** Hourhand's own Razorpay, for confirming a payment it collected for a host (B18). */
+  platformAuth?(): Promise<HostRazorpayAuth | null>;
   /** Hosts on Stripe Connect, and this site's public address for Checkout's return URLs. Absent where Stripe isn't set up. */
   stripe?: { deps: StripeDeps; baseUrl: string } | null;
 }
@@ -484,7 +488,7 @@ export async function handleCreateBooking(
     if (!payments || (await payments.planFor(host.id)) === "free") return { status: 409, body: { error: "payments_unavailable" } };
     // Prices saved before the currency was recorded are rupees.
     const currency = eventType.currency ?? "INR";
-    const auth = await payments.authFor(host.id);
+    const auth = await (payments.collectFor ?? payments.authFor)(host.id);
     if (auth && currency === "INR") paid = { provider: "razorpay", auth, deps: payments };
     else if (!auth && payments.stripe) {
       const s = await payments.stripe.deps.accountFor(host.id);

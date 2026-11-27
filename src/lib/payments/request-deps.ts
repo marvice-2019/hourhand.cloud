@@ -4,6 +4,7 @@ import { tokenKey } from "../crypto/seal";
 import type { PaymentDeps } from "../booking";
 import { getPool } from "../data/pg-store";
 import { loadHostRazorpay } from "./host-razorpay";
+import { collectingAuth, loadPlatformRazorpay } from "./platform";
 import { paymentAccountFor } from "../clinic/payments";
 import { razorpayOrders } from "./razorpay-orders";
 import { stripeCheckoutFromEnv, stripeDepsFor } from "./stripe-checkout";
@@ -23,6 +24,9 @@ export function requestPaymentDeps(): PaymentDeps | null {
     pool,
     // New payments go to the account collecting for the host now: a Clinic practice's owner, or the host's own.
     authFor: async (hostId) => loadHostRazorpay(pool, key, await paymentAccountFor(pool, hostId)),
+    // B18: a host whose guests pay Hourhand gets Hourhand's account here; everyone else their own, as above.
+    collectFor: (hostId) => collectingAuth(pool, key, hostId, async () => loadHostRazorpay(pool, key, await paymentAccountFor(pool, hostId))),
+    platformAuth: () => loadPlatformRazorpay(pool, key),
     ordersFor: (auth) => razorpayOrders(auth),
     planFor: (hostId) => hostPlan(pool, hostId),
     // Checkout's return URLs must be the public address; without BETTER_AUTH_URL (local dev only) localhost is used.

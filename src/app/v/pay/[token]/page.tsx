@@ -19,11 +19,12 @@ export default async function VoicePayPage({ params }: { params: Promise<{ token
   if (!booking) notFound();
   if (booking.status !== "pending_payment" || !booking.holdExpiresAt || booking.holdExpiresAt <= new Date()) redirect(`/b/${token}`);
   const deps = requestPaymentDeps();
-  const [host, eventType, auth, order] = await Promise.all([
-    store.getUser(booking.hostId), store.getEventType(booking.hostId, booking.eventTypeId), deps?.authFor(booking.hostId) ?? null,
-    deps?.pool.query("select provider_order_id, amount_minor, currency from payments where booking_id = $1 and provider = 'razorpay' and status = 'pending'", [booking.id]),
+  const [host, eventType, order] = await Promise.all([
+    store.getUser(booking.hostId), store.getEventType(booking.hostId, booking.eventTypeId), deps?.pool.query("select provider_order_id, amount_minor, currency, collected_via from payments where booking_id = $1 and provider = 'razorpay' and status = 'pending'", [booking.id]),
   ]);
   const row = order?.rows[0];
+  // The key the order was made on: Hourhand's when it collected for this host (B18), else the host's own.
+  const auth = !deps || !row ? null : row.collected_via === "platform" ? await (deps.platformAuth?.() ?? null) : await deps.authFor(booking.hostId);
   if (!host || !eventType || !auth || !row) redirect(`/b/${token}`);
   const tz = booking.invitee.timezone;
   const amount = formatMoney(row.amount_minor, "INR");
