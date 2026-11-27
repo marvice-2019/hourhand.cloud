@@ -19,6 +19,9 @@ import { stripeReady } from "./payments/stripe-connect";
 import type { HostRazorpayAuth } from "./payments/host-razorpay";
 import type { RazorpayOrders } from "./payments/razorpay-orders";
 import { approvalHoldUntil } from "./approval";
+import { hashGuestEmailCode, newGuestEmailCode } from "./guest-email-code";
+import { renderGuestEmailCode } from "./mail/templates";
+import { randomUUID } from "node:crypto";
 
 const MIN = 60_000;
 const DAY = 86_400_000;
@@ -190,6 +193,14 @@ export interface BookingRequest {
   smsOptIn: boolean;
   /** Asked for by the host's "book for them": honoured only for a signed-in actor on this host's account. */
   onBehalf: boolean;
+  /** B11: the 6-digit code emailed to the guest, on an event type that checks the guest's email; null = none sent yet. */
+  emailCode: string | null;
+}
+
+/** B11: what sends and checks guest email codes. The route passes the real mailer and server key. */
+export interface EmailCodeDeps {
+  secret: string;
+  send(mail: { to: string; subject: string; html: string; text: string; idempotencyKey: string }): Promise<unknown>;
 }
 
 export type Validation = { ok: true; value: BookingRequest } | { ok: false; fields: Record<string, string> };
@@ -221,6 +232,8 @@ export function validateBookingRequest(input: unknown): Validation {
   const whatsappOptIn = body.whatsappOptIn === true;
   if (whatsappOptIn && !fields.phone && !waNumber(phone)) fields.phone = "For WhatsApp updates, enter your number with country code, like +91 98765 43210.";
   const smsOptIn = body.smsOptIn === true;
+  const emailCode = str("emailCode");
+  if (emailCode && !/^\d{6}$/.test(emailCode)) fields.emailCode = "Enter the 6-digit code from the email.";
   // The host booking for a client from their dashboard. Only a request; the route checks who is signed in.
   const onBehalf = body.onBehalf === true;
   if (smsOptIn && !fields.phone && !smsNumber(phone)) fields.smsOptIn = "Text updates go to Indian mobile numbers only, like +91 98765 43210.";
@@ -263,7 +276,7 @@ export function validateBookingRequest(input: unknown): Validation {
   if (Object.keys(fields).length > 0 || !start) return { ok: false, fields };
   return {
     ok: true,
-    value: { slug: str("slug"), event: str("event"), linkToken: linkToken || null, start, name, email, timezone: body.timezone as string, phone: phone || null, answers, idempotencyKey, weeks: weeks as number, packageToken: packageToken || null, durationMinutes: duration as number | null, guests, locale: isLocale(body.locale) ? body.locale : "en", whatsappOptIn, smsOptIn, onBehalf },
+    value: { slug: str("slug"), event: str("event"), linkToken: linkToken || null, start, name, email, timezone: body.timezone as string, phone: phone || null, answers, idempotencyKey, weeks: weeks as number, packageToken: packageToken || null, durationMinutes: duration as number | null, guests, locale: isLocale(body.locale) ? body.locale : "en", whatsappOptIn, smsOptIn, onBehalf, emailCode: emailCode || null },
   };
 }
 
@@ -320,7 +333,7 @@ function report(reporter: FunnelReporter | undefined, step: FunnelStep): void {
  */
 export async function handleCreateBooking(
   store: DataStore, input: unknown, now: Date, limit?: { clientKey: string; limiter: Limiter }, payments?: PaymentDeps | null, funnel?: FunnelReporter,
-  actor?: { hostId: string } | null,
+  actor?: { hostId: string } | null, codes?: EmailCodeDeps | null,
 ): Promise<HandlerResult> {
   const v = validateBookingRequest(input);
   if (!v.ok) return { status: 400, body: { error: "invalid_request", fields: v.fields } };
@@ -395,6 +408,9 @@ export async function handleCreateBooking(
   // An event type that asks for approval takes a request from its booking page (B9). The host's own choices are
   // confirmed at once: a booking they make for a client, one through their single-use link, or one paid by package.
   const asRequest = eventType.requiresApproval && !req.onBehalf && !found.linkToken && !req.packageToken && !priceMinor;
+  // B11: a guest booking from the public page proves their email with a code first. The host chose the person for a
+  // booking they make, a single-use link they sent and a package link, so those skip it.
+  const verifying = eventType.verifyGuestEmail && !req.onBehalf && !found.linkToken && !req.packageToken;
   const bookingInput = {
     eventTypeId: eventType.id, startAt: req.start, idempotencyKey: req.idempotencyKey, ...(req.weeks > 1 ? { weeks: req.weeks } : {}),
     ...(asRequest ? { approvalUntil: approvalHoldUntil(now, req.start) } : {}),
@@ -473,10 +489,15 @@ export async function handleCreateBooking(
     }
 
     // Charged only once the request has passed every check, so a guest fixing a mistake or picking another slot isn't refused.
-    if (limit && (!limit.limiter.take(`booking-ip:${limit.clientKey}`, BOOKING_LIMITS.perIp) || !limit.limiter.take(`booking-email:${req.email.toLowerCase()}`, BOOKING_LIMITS.perEmail))) {
+    // A submit carrying an email code isn't charged: the code's own limits (5 tries, 5 codes an hour) bound those.
+    if (limit && !(verifying && req.emailCode) && (!limit.limiter.take(`booking-ip:${limit.clientKey}`, BOOKING_LIMITS.perIp) || !limit.limiter.take(`booking-email:${req.email.toLowerCase()}`, BOOKING_LIMITS.perEmail))) {
       return { status: 429, body: { error: "too_many_requests" } };
     }
     if (intakeRefusal) return intakeRefusal;
+    if (verifying) {
+      const refusal = await checkGuestEmail(store, codes, { eventType, host, req, now });
+      if (refusal) return refusal;
+    }
 
     if (paid && priceMinor) {
       const started = await startPaid(paid, priceMinor, 201);
@@ -496,6 +517,34 @@ export async function handleCreateBooking(
     if (isNamedError<PackageUnavailableError>(err, "PackageUnavailableError")) return { status: 409, body: { error: `package_${err.reason}` } };
     throw err;
   }
+}
+
+/**
+ * B11: without a code, emails one and stops (202); with one, checks it. Returns null only when the code is right, so the
+ * booking goes ahead; the code is used up then, so it can't book twice.
+ */
+async function checkGuestEmail(
+  store: DataStore, codes: EmailCodeDeps | null | undefined, a: { eventType: EventType; host: User; req: BookingRequest; now: Date },
+): Promise<HandlerResult | null> {
+  if (!codes) return { status: 502, body: { error: "code_send_failed" } };
+  const { eventType, host, req, now } = a;
+  if (req.emailCode) {
+    const checked = await store.checkGuestEmailCode(eventType.id, req.email, hashGuestEmailCode(req.emailCode, eventType.id, req.email, codes.secret), now);
+    if (checked === "ok") return null;
+    if (checked === "wrong") return { status: 400, body: { error: "invalid_request", fields: { emailCode: "That code isn't right. Check the email and try again." } } };
+    return { status: 400, body: { error: "code_expired" } };
+  }
+  const code = newGuestEmailCode();
+  const issued = await store.issueGuestEmailCode(eventType.id, req.email, hashGuestEmailCode(code, eventType.id, req.email, codes.secret), now);
+  if (!issued.ok) return { status: 429, body: { error: "code_rate_limited", reason: issued.reason } };
+  const mail = renderGuestEmailCode({ locale: isLocale(req.locale) ? req.locale : "en", code, guestName: req.name, hostName: host.name, eventName: eventType.name });
+  try {
+    await codes.send({ to: req.email, subject: mail.subject, html: mail.html, text: mail.text, idempotencyKey: `guest-email-code:${randomUUID()}` });
+  } catch (error) {
+    console.error("guest email code not sent", { eventTypeId: eventType.id, error: (error as Error).message });
+    return { status: 502, body: { error: "code_send_failed" } };
+  }
+  return { status: 202, body: { verification: "email_code_sent" } };
 }
 
 /** Tells the booking page to say "Request sent" rather than "You're booked" (B9). */

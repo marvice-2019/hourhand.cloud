@@ -8,6 +8,9 @@ import { store } from "@/lib/data";
 import { getPool } from "@/lib/data/pg-store";
 import { requestPaymentDeps } from "@/lib/payments/request-deps";
 import { clientIp, rateLimiter } from "@/lib/rate-limit";
+import { getMailer } from "@/lib/mail/mailer";
+import { guestEmailCodeSecret } from "@/lib/guest-email-code";
+import type { EmailCodeDeps } from "@/lib/booking";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +32,13 @@ export async function POST(request: NextRequest) {
     ? (step) => { const now = new Date(); after(() => track(getPool(process.env.DATABASE_URL as string), { headers: request.headers, clientKey }, { ...step, source: sourceFromBody(src) }, now)); }
     : undefined;
   const { status, body } = await handleCreateBooking(store, input, new Date(), { clientKey, limiter: rateLimiter }, requestPaymentDeps(), funnel,
-    ctx ? { hostId: ctx.host.id } : null);
+    ctx ? { hostId: ctx.host.id } : null, emailCodes());
   return NextResponse.json(body, { status });
+}
+
+/** B11: the mailer and server key for guest email codes; null when the key isn't set, so the code step reports it can't send. */
+function emailCodes(): EmailCodeDeps | null {
+  let secret: string;
+  try { secret = guestEmailCodeSecret(); } catch { return null; }
+  return { secret, send: (mail) => getMailer().send(mail) };
 }

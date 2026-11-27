@@ -266,6 +266,64 @@ describe.skipIf(!URL_)("pg store (TEST_DATABASE_URL)", () => {
   });
 
   // Runs last: it closes and then purges Arun's account.
+  describe("guest email codes (B11)", () => {
+    const T0 = at("2034-05-01T06:00:00Z");
+    const later = (ms: number) => new Date(T0.getTime() + ms);
+    let n = 0;
+    // A fresh address per test, so the per-address limits of one test don't reach the next.
+    const fresh = () => `Code.Guest${++n}@Example.com`;
+
+    it("stores the setting on the event type and clears it", async () => {
+      const on = await store.updateEventType(priya.id, intro.id, { ...draftOf(intro), verifyGuestEmail: true });
+      expect(on.verifyGuestEmail).toBe(true);
+      expect((await store.getEventType(priya.id, intro.id))!.verifyGuestEmail).toBe(true);
+      expect((await store.updateEventType(priya.id, intro.id, { ...draftOf(on), verifyGuestEmail: false })).verifyGuestEmail).toBe(false);
+    });
+
+    it("takes the right code once, for its event type and address only, any case", async () => {
+      const email = fresh();
+      expect(await store.issueGuestEmailCode(coaching.id, email, "hash-a", T0)).toEqual({ ok: true });
+      expect(await store.checkGuestEmailCode(intro.id, email, "hash-a", later(1000))).toBe("expired");
+      expect(await store.checkGuestEmailCode(coaching.id, "someone.else@example.com", "hash-a", later(1000))).toBe("expired");
+      expect(await store.checkGuestEmailCode(coaching.id, email.toLowerCase(), "hash-a", later(1000))).toBe("ok");
+      expect(await store.checkGuestEmailCode(coaching.id, email, "hash-a", later(2000))).toBe("expired");
+    });
+
+    it("counts wrong tries and ends the code on the 5th", async () => {
+      const email = fresh();
+      await store.issueGuestEmailCode(coaching.id, email, "hash-b", T0);
+      for (let i = 0; i < 5; i++) expect(await store.checkGuestEmailCode(coaching.id, email, "nope", later(1000))).toBe("wrong");
+      expect(await store.checkGuestEmailCode(coaching.id, email, "hash-b", later(2000))).toBe("expired");
+    });
+
+    it("refuses a code after 10 minutes and only checks the newest", async () => {
+      const email = fresh();
+      await store.issueGuestEmailCode(coaching.id, email, "hash-old", T0);
+      expect(await store.checkGuestEmailCode(coaching.id, email, "hash-old", later(10 * 60_000))).toBe("expired");
+      await store.issueGuestEmailCode(coaching.id, email, "hash-new", later(11 * 60_000));
+      expect(await store.checkGuestEmailCode(coaching.id, email, "hash-old", later(11 * 60_000 + 1))).toBe("wrong");
+      expect(await store.checkGuestEmailCode(coaching.id, email, "hash-new", later(11 * 60_000 + 2))).toBe("ok");
+    });
+
+    it("sends a new code at most once a minute and 5 times an hour", async () => {
+      const email = fresh();
+      expect(await store.issueGuestEmailCode(coaching.id, email, "h1", T0)).toEqual({ ok: true });
+      expect(await store.issueGuestEmailCode(coaching.id, email.toUpperCase(), "h1b", later(59_000))).toEqual({ ok: false, reason: "too_soon" });
+      for (let i = 1; i < 5; i++) expect(await store.issueGuestEmailCode(coaching.id, email, `h${i + 1}`, later(i * 61_000))).toEqual({ ok: true });
+      expect(await store.issueGuestEmailCode(coaching.id, email, "h6", later(5 * 61_000))).toEqual({ ok: false, reason: "too_many" });
+      expect(await store.issueGuestEmailCode(coaching.id, email, "h7", later(61 * 60_000))).toEqual({ ok: true });
+      const { rows } = await pool.query("select distinct email from guest_email_codes where code_hash like 'h%' and email = $1", [email.toLowerCase()]);
+      expect(rows).toEqual([{ email: email.toLowerCase() }]);
+    });
+
+    it("lets a right code through only once when two checks race", async () => {
+      const email = fresh();
+      await store.issueGuestEmailCode(coaching.id, email, "hash-race", T0);
+      const results = await Promise.all([1, 2].map(() => store.checkGuestEmailCode(coaching.id, email, "hash-race", later(1000))));
+      expect(results.sort()).toEqual(["expired", "ok"]);
+    });
+  });
+
   describe("account deletion", () => {
     it("closes the account at once and purges it only after 30 days", async () => {
       const now = at("2030-06-01T00:00:00Z");

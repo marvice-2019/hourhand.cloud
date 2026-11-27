@@ -141,3 +141,25 @@ describe("memory store single-use booking links", () => {
   });
 });
 
+
+describe("memory store guest email codes (B11)", () => {
+  const T0 = new Date("2034-05-01T06:00:00Z");
+  const later = (ms: number) => new Date(T0.getTime() + ms);
+
+  it("takes the right code once, counts wrong tries and limits resends, like the Postgres store", async () => {
+    const store = createMemoryStore(buildSeed(T0));
+    expect(await store.issueGuestEmailCode("et1", "A@Example.com", "hash", T0)).toEqual({ ok: true });
+    expect(await store.issueGuestEmailCode("et1", "a@example.com", "hash2", later(30_000))).toEqual({ ok: false, reason: "too_soon" });
+    expect(await store.checkGuestEmailCode("et1", "a@example.com", "nope", later(1000))).toBe("wrong");
+    expect(await store.checkGuestEmailCode("et2", "a@example.com", "hash", later(1000))).toBe("expired");
+    expect(await store.checkGuestEmailCode("et1", "A@EXAMPLE.COM", "hash", later(2000))).toBe("ok");
+    expect(await store.checkGuestEmailCode("et1", "a@example.com", "hash", later(3000))).toBe("expired");
+
+    await store.issueGuestEmailCode("et1", "b@example.com", "hb", T0);
+    for (let i = 0; i < 5; i++) await store.checkGuestEmailCode("et1", "b@example.com", "nope", later(1000));
+    expect(await store.checkGuestEmailCode("et1", "b@example.com", "hb", later(2000))).toBe("expired");
+
+    await store.issueGuestEmailCode("et1", "c@example.com", "hc", T0);
+    expect(await store.checkGuestEmailCode("et1", "c@example.com", "hc", later(10 * 60_000))).toBe("expired");
+  });
+});

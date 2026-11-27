@@ -64,6 +64,8 @@ export const eventTypes: Record<keyof typeof en, string> = {
   "eventTypes.hiddenHint": "यह आपके बुकिंग पेज पर नहीं दिखेगा। जिसे भी आप इसका लिंक भेजेंगे, वह फिर भी बुक कर सकता है।",
   "eventTypes.requiresApproval": "हर बुकिंग को मैं पहले मंज़ूरी दूँगा",
   "eventTypes.requiresApprovalHint": "मेहमान एक अनुरोध भेजते हैं, जो समय को 48 घंटे तक रोके रखता है। आपके मंज़ूर करने पर ही यह बुकिंग बनता है, ईमेल से या बुकिंग्स पेज से। सिर्फ़ मुफ़्त वन-ऑन-वन इवेंट टाइप पर, दोहराव 1 के साथ।",
+  "eventTypes.verifyGuestEmail": "बुकिंग से पहले मेहमान का ईमेल जाँचें",
+  "eventTypes.verifyGuestEmailHint": "मेहमान हमारे भेजे ईमेल का 6 अंकों का कोड डालते हैं। इससे फ़र्ज़ी और गलत ईमेल वाली बुकिंग रुकती हैं।",
   "eventTypes.location": "कहाँ मिलेंगे",
   "eventTypes.teamsHint": "Teams लिंक तब बनते हैं जब बुकिंग ऑफ़िस या स्कूल वाले Outlook कैलेंडर में जाती है।",
   "eventTypes.description": "विवरण",

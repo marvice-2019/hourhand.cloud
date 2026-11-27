@@ -77,6 +77,8 @@ export interface EventType {
   durationOptions: DurationOption[];
   /** Bookings wait for the host's approval, holding the slot meanwhile (B9). Only on a free one-on-one type with no repeats. */
   requiresApproval: boolean;
+  /** Guests enter a 6-digit code emailed to them before the booking is made (B11). */
+  verifyGuestEmail: boolean;
 }
 
 /** One length an event type offers, with its own price in paise (null = the event type's price). */
@@ -234,6 +236,11 @@ export interface BusyBlock {
   start: Date;
   end: Date;
 }
+
+/** B11: whether a new guest email code was stored, or why not. */
+export type GuestEmailCodeIssue = { ok: true } | { ok: false; reason: "too_soon" | "too_many" };
+/** B11: what checking a guest email code found. */
+export type GuestEmailCodeCheck = "ok" | "wrong" | "expired";
 
 /** B9: what the host (approve, decline) or the guest (withdraw) does with a request. */
 export type RequestDecision = "approve" | "decline" | "withdraw";
@@ -404,6 +411,16 @@ export interface DataStore {
    * changes; otherwise the result says what became of it. Throws NotFoundError unless the booking belongs to `hostId`.
    */
   decideRequest(hostId: string, bookingId: string, decision: RequestDecision, now: Date): Promise<RequestOutcome>;
+  /**
+   * B11: store a new email code (its hash) for this event type and address, valid 10 minutes. Refused when one was made
+   * under a minute ago (too_soon) or 5 in the last hour (too_many). Addresses are compared in lower case.
+   */
+  issueGuestEmailCode(eventTypeId: string, email: string, codeHash: string, now: Date): Promise<GuestEmailCodeIssue>;
+  /**
+   * B11: check a code against the newest one for this event type and address. A match uses it up ("ok"); a miss counts a
+   * try ("wrong"), and the 5th ends it. No code, or one used, expired or out of tries: "expired".
+   */
+  checkGuestEmailCode(eventTypeId: string, email: string, codeHash: string, now: Date): Promise<GuestEmailCodeCheck>;
   /** B10: the host asks the guest to pick a new time; the guest gets one email. The booking itself doesn't change. */
   askToReschedule(hostId: string, bookingId: string, note: string | null, now: Date): Promise<RescheduleAskOutcome>;
   /** Atomically books `startAt` for the same guest and cancels the old booking. The overlap check ignores the old booking. */
@@ -481,6 +498,8 @@ export type EventTypeDraft = Pick<EventType,
   "bufferBeforeMinutes" | "bufferAfterMinutes" | "dailyLimit" | "cancelCutoffMinutes" | "priceMinor" | "currency" | "hidden" | "maxRepeats" | "depositMinor" | "redirectUrl" | "weeklyLimit" | "cancelPolicy" | "seatLimit"> & {
   /** Left out = false. */
   requiresApproval?: boolean;
+  /** Left out = false. */
+  verifyGuestEmail?: boolean;
   /** Left out = only durationMinutes (no choice). */
   durationOptions?: DurationOption[];
   location: { kind: LocationKind; value: string | null } | null;

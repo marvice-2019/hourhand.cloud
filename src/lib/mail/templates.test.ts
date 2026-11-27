@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BookingEmailKind } from "../data/notifications";
-import { renderBookingMail, renderCalendarAlert, renderMagicLink, type BookingMailContext } from "./templates";
+import { renderBookingMail, renderCalendarAlert, renderGuestEmailCode, renderMagicLink, type BookingMailContext } from "./templates";
 
 const ctx: BookingMailContext = {
   bookingId: "b1", eventName: "Coaching", hostName: "Priya Sharma", hostEmail: "priya@example.com", hostTimezone: "Asia/Kolkata", hostTimeFormat: "24h",
@@ -153,5 +153,27 @@ describe("asking the guest to pick a new time (B10)", () => {
 
   it("leaves the note row out when the host wrote none", () => {
     expect(renderBookingMail("reschedule_request_guest", ctx).text).not.toContain("Note from");
+  });
+});
+
+describe("guest email code (B11)", () => {
+  const c = { locale: "en" as const, code: "042917", guestName: "Kiran", hostName: "Priya <b>Sharma</b>", eventName: "Coaching" };
+
+  it("shows the code, event and host, and says what to do if it wasn't asked for", () => {
+    const m = renderGuestEmailCode(c);
+    expect(m.subject).toBe("042917 is your code to book Coaching with Priya <b>Sharma</b>");
+    expect(m.text).toContain("Code: 042917");
+    expect(m.text).toContain("It works for 10 minutes.");
+    expect(m.text).toContain("ignore this email");
+  });
+
+  it("escapes the host's name in the HTML", () => {
+    const html = renderGuestEmailCode(c).html;
+    expect(html).toContain("Priya &lt;b&gt;Sharma&lt;/b&gt;");
+    expect(html).not.toContain("<b>Sharma</b>");
+  });
+
+  it("is written in the guest's language", () => {
+    expect(renderGuestEmailCode({ ...c, locale: "hi" }).subject).toContain("आपका कोड 042917");
   });
 });

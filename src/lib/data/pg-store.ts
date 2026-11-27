@@ -5,6 +5,7 @@ import { closeAccount, purgeClosedAccounts } from "./account-lifecycle";
 import { queueBookingNotifications } from "./notifications";
 import { insertConsent } from "../privacy/consent";
 import { seal, tokenKey, unseal } from "../crypto/seal";
+import { sameGuestEmailCodeHash } from "../guest-email-code";
 import { bookingNoteAad, clientNoteAad } from "../privacy/notes";
 import { getKeepVersions, listRevisions, recordRevision, setKeepVersions } from "../privacy/note-history";
 import { pollHolds } from "../polls/holds";
@@ -44,7 +45,7 @@ const USER = "id, email, coalesce(name, '') as name, slug, timezone, time_format
 const toUser = (r: Row): User => ({ id: r.id as string, email: r.email as string, name: hostDisplayName(r.name as string | null, r.email as string), slug: r.slug as string, timezone: r.timezone as string, timeFormat: r.time_format as User["timeFormat"], locale: r.locale as string, hostLocale: (r.host_locale as string | null) ?? "en" });
 
 const EVENT = `id, user_id, schedule_id, name, slug, description, duration_minutes, min_notice_minutes, booking_window_days, start_increment_minutes,
-  buffer_before_minutes, buffer_after_minutes, daily_limit, cancel_cutoff_minutes, price_minor, currency, hidden, active, position, kind, max_repeats, deposit_minor, redirect_url, weekly_limit, cancellation_policy, seat_limit, duration_options, duration_prices, requires_approval`;
+  buffer_before_minutes, buffer_after_minutes, daily_limit, cancel_cutoff_minutes, price_minor, currency, hidden, active, position, kind, max_repeats, deposit_minor, redirect_url, weekly_limit, cancellation_policy, seat_limit, duration_options, duration_prices, requires_approval, verify_guest_email`;
 const toEventType = (r: Row): EventType => ({
   id: r.id as string, userId: r.user_id as string, scheduleId: r.schedule_id as string | null, name: r.name as string, slug: r.slug as string,
   description: r.description as string | null, durationMinutes: r.duration_minutes as number, minNoticeMinutes: r.min_notice_minutes as number,
@@ -55,6 +56,7 @@ const toEventType = (r: Row): EventType => ({
   seatLimit: (r.seat_limit as number | null) ?? null,
   durationOptions: ((r.duration_options as number[] | null) ?? []).map((minutes, i) => ({ minutes, priceMinor: ((r.duration_prices as (number | null)[] | null) ?? [])[i] ?? null })),
   requiresApproval: r.requires_approval === true,
+  verifyGuestEmail: r.verify_guest_email === true,
 });
 
 const BOOKING = `select b.id, b.event_type_id, b.host_id, b.start_at, b.end_at, b.buffered_start, b.buffered_end, b.status, b.hold_expires_at, b.location_kind, b.join_url, b.idempotency_key,
@@ -275,7 +277,7 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
 
   const draftValues = (d: EventTypeDraft) => [d.name, d.slug, d.description, d.durationMinutes, d.minNoticeMinutes, d.bookingWindowDays, d.startIncrementMinutes,
     d.bufferBeforeMinutes, d.bufferAfterMinutes, d.dailyLimit, d.cancelCutoffMinutes, d.priceMinor, d.priceMinor === null && d.depositMinor === null ? null : (d.currency ?? "INR"), d.hidden, d.maxRepeats, d.priceMinor === null ? d.depositMinor : null, d.redirectUrl, d.weeklyLimit, d.cancelPolicy, d.seatLimit === null ? "one_on_one" : "group", d.seatLimit,
-    (d.durationOptions ?? []).map((o) => o.minutes), (d.durationOptions ?? []).map((o) => o.priceMinor), d.requiresApproval === true];
+    (d.durationOptions ?? []).map((o) => o.minutes), (d.durationOptions ?? []).map((o) => o.priceMinor), d.requiresApproval === true, d.verifyGuestEmail === true];
 
   async function slugSafe<T>(work: () => Promise<T>): Promise<T> {
     try {
@@ -609,6 +611,39 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
         return settle(error, idempotencyKey, isSameRequest);
       }
     },
+    async issueGuestEmailCode(eventTypeId, email, codeHash, now) {
+      if (!isId(eventTypeId)) throw new NotFoundError("Event type");
+      const address = email.toLowerCase();
+      return tx(async (client) => {
+        // One code at a time per event type and address: two requests racing past the limits would both be let through.
+        await client.query("select pg_advisory_xact_lock(hashtext($1))", [`guest-email-code:${eventTypeId}:${address}`]);
+        const { rows: [recent] } = await client.query(
+          `select count(*)::int as hour, count(*) filter (where created_at > $3::timestamptz - interval '1 minute')::int as minute
+             from guest_email_codes where event_type_id = $1 and email = $2 and created_at > $3::timestamptz - interval '1 hour'`,
+          [eventTypeId, address, now]);
+        if (recent.minute > 0) return { ok: false, reason: "too_soon" } as const;
+        if (recent.hour >= 5) return { ok: false, reason: "too_many" } as const;
+        await client.query(
+          "insert into guest_email_codes (event_type_id, email, code_hash, expires_at, created_at) values ($1, $2, $3, $4::timestamptz + interval '10 minutes', $4)",
+          [eventTypeId, address, codeHash, now]);
+        return { ok: true } as const;
+      });
+    },
+    async checkGuestEmailCode(eventTypeId, email, codeHash, now) {
+      if (!isId(eventTypeId)) return "expired";
+      return tx(async (client) => {
+        const { rows: [latest] } = await client.query(
+          `select id, code_hash, expires_at, attempts, used_at from guest_email_codes
+             where event_type_id = $1 and email = $2 order by created_at desc limit 1 for update`, [eventTypeId, email.toLowerCase()]);
+        if (!latest || latest.used_at !== null || (latest.expires_at as Date).getTime() <= now.getTime() || latest.attempts >= 5) return "expired";
+        if (!sameGuestEmailCodeHash(latest.code_hash as string, codeHash)) {
+          await client.query("update guest_email_codes set attempts = attempts + 1 where id = $1", [latest.id]);
+          return "wrong";
+        }
+        await client.query("update guest_email_codes set used_at = $2 where id = $1", [latest.id, now]);
+        return "ok";
+      });
+    },
     async decideRequest(hostId, bookingId, decision, now) {
       if (!isId(hostId) || !isId(bookingId)) throw new NotFoundError("Booking");
       const outcome = await tx(async (client): Promise<RequestOutcome> => {
@@ -819,8 +854,8 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
       return slugSafe(() => tx(async (client) => {
         const { rows } = await client.query(
           `insert into event_types (user_id, schedule_id, name, slug, description, duration_minutes, min_notice_minutes, booking_window_days, start_increment_minutes,
-             buffer_before_minutes, buffer_after_minutes, daily_limit, cancel_cutoff_minutes, price_minor, currency, hidden, max_repeats, deposit_minor, redirect_url, weekly_limit, cancellation_policy, kind, seat_limit, duration_options, duration_prices, requires_approval, position)
-           values ($1, (select id from availability_schedules where user_id = $1 and is_default), $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,
+             buffer_before_minutes, buffer_after_minutes, daily_limit, cancel_cutoff_minutes, price_minor, currency, hidden, max_repeats, deposit_minor, redirect_url, weekly_limit, cancellation_policy, kind, seat_limit, duration_options, duration_prices, requires_approval, verify_guest_email, position)
+           values ($1, (select id from availability_schedules where user_id = $1 and is_default), $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,
              (select coalesce(max(position), -1) + 1 from event_types where user_id = $1))
            returning ${EVENT}`, [userId, ...draftValues(draft)]);
         const eventType = toEventType(rows[0]);
@@ -836,7 +871,7 @@ export function createPgStore(pool: pg.Pool, opts: { noteKey?: () => Buffer } = 
              start_increment_minutes = $9, buffer_before_minutes = $10, buffer_after_minutes = $11, daily_limit = $12, cancel_cutoff_minutes = $13,
              price_minor = $14, currency = $15, hidden = $16, max_repeats = $17, deposit_minor = $18, redirect_url = $19, weekly_limit = $20, cancellation_policy = $21,
              kind = case when kind = 'one_off' then kind else $22 end, seat_limit = case when kind = 'one_off' then null else $23::int end,
-             duration_options = $24, duration_prices = $25, requires_approval = $26
+             duration_options = $24, duration_prices = $25, requires_approval = $26, verify_guest_email = $27
            where user_id = $1 and id = $2 returning ${EVENT}`, [userId, id, ...draftValues(draft)]);
         await setLocation(client, id, draft);
         return toEventType(rows[0]);
