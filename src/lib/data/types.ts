@@ -440,6 +440,12 @@ export interface DataStore {
   createEventType(userId: string, draft: EventTypeDraft): Promise<EventType>;
   updateEventType(userId: string, id: string, draft: EventTypeDraft): Promise<EventType>;
   setEventTypeActive(userId: string, id: string, active: boolean): Promise<EventType>;
+  /**
+   * B13: a copy of the event type with all its settings, location, questions (conditions kept) and per-type settings,
+   * named "<name> (copy)" with the first free "<slug>-copy" link, switched off and last in the list. Bookings, links,
+   * packages and memberships stay with the original. Throws NotFoundError unless it is the user's own (not a one-off).
+   */
+  duplicateEventType(userId: string, id: string): Promise<EventType>;
   /** Throws EventTypeInUseError while bookings still point at it (bookings.event_type_id is on delete restrict). */
   deleteEventType(userId: string, id: string, now?: Date): Promise<void>;
   /** Replaces the event type's questions; list order becomes position. */

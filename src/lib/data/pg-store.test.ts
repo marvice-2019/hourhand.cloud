@@ -266,6 +266,53 @@ describe.skipIf(!URL_)("pg store (TEST_DATABASE_URL)", () => {
   });
 
   // Runs last: it closes and then purges Arun's account.
+  describe("copying an event type (B13)", () => {
+    it("copies every setting, the location, questions with their condition, and per-type settings, switched off and last", async () => {
+      const source = await store.createEventType(priya.id, {
+        ...draftOf(intro), name: "Deep dive", slug: "deep-dive", description: "Ninety minutes", durationMinutes: 90, bufferAfterMinutes: 15,
+        hidden: true, weeklyLimit: 3, cancelPolicy: "A day's notice.", requiresApproval: true, verifyGuestEmail: true,
+        location: { kind: "in_person", value: "12 MG Road" },
+      });
+      await pool.query("update event_types set reminder_minutes = '{120}', color = '#123456' where id = $1", [source.id]);
+      await store.saveQuestions(priya.id, source.id, [
+        { id: null, label: "First time?", kind: "single_select", required: true, choices: ["Yes", "No"] },
+        { id: null, label: "What changed since last time?", kind: "long_text", required: false, choices: [], showIf: { questionIndex: 0, values: ["No"] } },
+      ]);
+      await pool.query("insert into follow_up_settings (event_type_id, user_id, thank_you, feedback, delay_hours) values ($1, $2, true, true, 24)", [source.id, priya.id]);
+
+      const copy = await store.duplicateEventType(priya.id, source.id);
+      expect(copy.id).not.toBe(source.id);
+      expect(copy).toMatchObject({ name: "Deep dive (copy)", slug: "deep-dive-copy", active: false, description: "Ninety minutes", durationMinutes: 90,
+        bufferAfterMinutes: 15, hidden: true, weeklyLimit: 3, cancelPolicy: "A day's notice.", requiresApproval: true, verifyGuestEmail: true });
+      expect(copy.position).toBe(Math.max(...(await store.listEventTypes(priya.id)).map((e) => e.position)));
+      const { rows: [raw] } = await pool.query("select reminder_minutes, color from event_types where id = $1", [copy.id]);
+      expect(raw).toEqual({ reminder_minutes: [120], color: "#123456" });
+      expect((await store.listEventLocations(priya.id, copy.id)).map((l) => [l.kind, l.value])).toEqual([["in_person", "12 MG Road"]]);
+
+      const questions = await store.listCustomQuestions(priya.id, copy.id);
+      const originals = await store.listCustomQuestions(priya.id, source.id);
+      expect(questions.map((q) => q.label)).toEqual(["First time?", "What changed since last time?"]);
+      expect(questions.map((q) => q.id).some((id) => originals.some((o) => o.id === id))).toBe(false);
+      // The condition points at the copy's own first question, not the original's.
+      expect(questions[1].showIf).toEqual({ questionId: questions[0].id, values: ["No"] });
+      const { rows: [followUps] } = await pool.query("select thank_you, feedback, delay_hours from follow_up_settings where event_type_id = $1", [copy.id]);
+      expect(followUps).toEqual({ thank_you: true, feedback: true, delay_hours: 24 });
+
+      // The original is untouched, and a second copy takes the next free link.
+      expect((await store.getEventType(priya.id, source.id))!).toMatchObject({ name: "Deep dive", slug: "deep-dive", active: true });
+      expect((await store.duplicateEventType(priya.id, source.id)).slug).toBe("deep-dive-copy-2");
+    });
+
+    it("copies no bookings, and refuses someone else's event type or a one-off meeting", async () => {
+      const copy = await store.duplicateEventType(priya.id, coaching.id);
+      expect((await store.listBookings(priya.id)).some((b) => b.eventTypeId === copy.id)).toBe(false);
+      await expect(store.duplicateEventType(arun.id, coaching.id)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(store.duplicateEventType(priya.id, "not-an-id")).rejects.toBeInstanceOf(NotFoundError);
+      const { rows: [oneOff] } = await pool.query("update event_types set kind = 'one_off' where id = $1 returning id", [copy.id]);
+      await expect(store.duplicateEventType(priya.id, oneOff.id)).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
   describe("guest email codes (B11)", () => {
     const T0 = at("2034-05-01T06:00:00Z");
     const later = (ms: number) => new Date(T0.getTime() + ms);

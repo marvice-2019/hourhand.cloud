@@ -405,3 +405,20 @@ export function checkQuestions(questions: readonly QuestionDraft[]):
   });
   return ok ? { ok: true, value } : { ok: false, errors, codes };
 }
+
+/** B13: the name a copied event type starts with. */
+export function copyName(name: string): string {
+  return `${name} (copy)`;
+}
+
+/**
+ * B13: the first free link for a copy of `slug`: "<slug>-copy", then "<slug>-copy-2", "-copy-3"… The base is cut so the
+ * result keeps to the 60-character link limit.
+ */
+export function copySlug(slug: string, taken: ReadonlySet<string>): string {
+  for (let n = 1; ; n++) {
+    const suffix = n === 1 ? "-copy" : `-copy-${n}`;
+    const candidate = `${slug.slice(0, 60 - suffix.length).replace(/-+$/, "")}${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}

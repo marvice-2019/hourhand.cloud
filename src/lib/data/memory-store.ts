@@ -7,6 +7,7 @@ import { hashLinkToken, newLinkToken } from "../links";
 import { checkOneOff, oneOffSlug } from "./one-off";
 import { sameGuestEmailCodeHash } from "../guest-email-code";
 import { DECLINED_REASON, LAPSED_REASON } from "../approval";
+import { copyName, copySlug } from "../event-types";
 import {
   DefaultScheduleError, EventTypeInUseError, LinkUnavailableError, ScheduleInUseError, ScheduleLimitError, ScheduleNameTakenError, type AvailabilitySchedule, LinkUsedError, NotFoundError, RequestKeyConflictError, SlotTakenError, SlugTakenError, type BookingLink, type BookingWithInvitee,
   type CreateBookingInput, type CustomQuestion, type DataStore, type EventType, type EventTypeDraft, type Interval,
@@ -473,6 +474,24 @@ export function createMemoryStore(seed: Seed = buildSeed(new Date())): DataStore
     },
     async setEventTypeActive(userId, id, active) {
       return Object.assign(owned(userId, id), { active });
+    },
+    async duplicateEventType(userId, id) {
+      const source = owned(userId, id);
+      if (source.kind === "one_off") throw new NotFoundError("Event type");
+      const mine = db.eventTypes.filter((e) => e.userId === userId);
+      const copy: EventType = {
+        ...structuredClone(source), id: randomUUID(), name: copyName(source.name), slug: copySlug(source.slug, new Set(mine.map((e) => e.slug))),
+        active: false, position: Math.max(-1, ...mine.map((e) => e.position)) + 1,
+      };
+      db.eventTypes.push(copy);
+      for (const l of db.locations.filter((l) => l.eventTypeId === id)) db.locations.push({ ...l, id: randomUUID(), eventTypeId: copy.id });
+      const questions = db.questions.filter((q) => q.eventTypeId === id).sort((a, b) => a.position - b.position);
+      const ids = new Map(questions.map((q) => [q.id, randomUUID()]));
+      for (const q of questions) {
+        const target = q.showIf ? ids.get(q.showIf.questionId) : undefined;
+        db.questions.push({ ...q, id: ids.get(q.id)!, eventTypeId: copy.id, choices: [...q.choices], showIf: q.showIf && target ? { questionId: target, values: [...q.showIf.values] } : null });
+      }
+      return copy;
     },
     async deleteEventType(userId, id, now = new Date()) {
       owned(userId, id);

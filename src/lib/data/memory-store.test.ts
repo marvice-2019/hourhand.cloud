@@ -163,3 +163,24 @@ describe("memory store guest email codes (B11)", () => {
     expect(await store.checkGuestEmailCode("et1", "c@example.com", "hc", later(10 * 60_000))).toBe("expired");
   });
 });
+
+describe("memory store copying an event type (B13)", () => {
+  it("copies the settings, location and questions with their condition, switched off and last, like Postgres", async () => {
+    const store = createMemoryStore(buildSeed(new Date("2030-01-01T00:00:00Z")));
+    const priya = (await store.getUserBySlug("priya"))!;
+    const coaching = (await store.listEventTypes(priya.id)).find((e) => e.slug === "coaching")!;
+    await store.saveQuestions(priya.id, coaching.id, [
+      { id: null, label: "First time?", kind: "single_select", required: true, choices: ["Yes", "No"] },
+      { id: null, label: "What changed?", kind: "long_text", required: false, choices: [], showIf: { questionIndex: 0, values: ["No"] } },
+    ]);
+    const copy = await store.duplicateEventType(priya.id, coaching.id);
+    expect(copy).toMatchObject({ name: `${coaching.name} (copy)`, slug: "coaching-copy", active: false, durationMinutes: coaching.durationMinutes });
+    expect(copy.position).toBe(Math.max(...(await store.listEventTypes(priya.id)).map((e) => e.position)));
+    expect((await store.listEventLocations(priya.id, copy.id)).map((l) => l.kind)).toEqual((await store.listEventLocations(priya.id, coaching.id)).map((l) => l.kind));
+    const questions = await store.listCustomQuestions(priya.id, copy.id);
+    expect(questions[1].showIf).toEqual({ questionId: questions[0].id, values: ["No"] });
+    expect((await store.getEventType(priya.id, coaching.id))!.active).toBe(true);
+    expect((await store.duplicateEventType(priya.id, coaching.id)).slug).toBe("coaching-copy-2");
+    await expect(store.duplicateEventType("usr_someone_else", coaching.id)).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
