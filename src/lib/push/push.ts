@@ -149,14 +149,21 @@ const statusOf = (e: unknown): number | null => {
   return typeof s === "number" ? s : null;
 };
 
+/** The push service's own words on a refusal (Apple answers {"reason":"BadJwtToken"}, for one), cut short. */
+const reasonOf = (e: unknown): string => {
+  const body = (e as { body?: unknown } | null)?.body;
+  return typeof body === "string" ? body.replace(/\s+/g, " ").trim().slice(0, 200) : "";
+};
+
 /**
  * Sends one alert to every device the host turned alerts on for. A device whose push address is gone (404, 410) is
  * dropped. Throws when none took it and at least one failed; `sent: 0` with nothing thrown means no device has alerts on.
+ * Every refusal is logged, also when another device took the alert, so a phone that never gets one can be traced.
  */
-export async function sendToHost(db: Db, deps: PushDeps, userId: string, message: PushMessage, now: Date): Promise<{ sent: number; removed: number }> {
+export async function sendToHost(db: Db, deps: PushDeps, userId: string, message: PushMessage, now: Date): Promise<{ sent: number; removed: number; failed: number }> {
   const { rows } = await db.query("select id, endpoint, p256dh, auth from push_subscriptions where user_id = $1 order by created_at", [userId]);
   const payload = JSON.stringify(message);
-  let sent = 0, removed = 0;
+  let sent = 0, removed = 0, failed = 0;
   let failure: PushError | null = null;
   for (const row of rows) {
     if (!isPushEndpoint(row.endpoint)) { await db.query("delete from push_subscriptions where id = $1", [row.id]); removed++; continue; }
@@ -168,9 +175,12 @@ export async function sendToHost(db: Db, deps: PushDeps, userId: string, message
       const status = statusOf(e);
       if (status === 404 || status === 410) { await db.query("delete from push_subscriptions where id = $1", [row.id]); removed++; continue; }
       const host = new URL(row.endpoint).hostname;
-      failure = new PushError(`${host} answered ${status ?? (e as Error).message}`.slice(0, 300), status === null || status === 429 || status >= 500);
+      const reason = reasonOf(e);
+      failure = new PushError(`${host} answered ${status ?? (e as Error).message}${reason ? ` ${reason}` : ""}`.slice(0, 300), status === null || status === 429 || status >= 500);
+      failed++;
+      console.warn(`[push] ${failure.message}`);
     }
   }
   if (sent === 0 && failure) throw failure;
-  return { sent, removed };
+  return { sent, removed, failed };
 }
