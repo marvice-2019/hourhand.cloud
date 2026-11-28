@@ -3,12 +3,15 @@ import { audit, can, type Actor } from "./roles";
 
 // Super admins approve, decline and suspend host accounts. A host who isn't approved can still sign in and set up,
 // but their booking pages are hidden and take no new bookings (the public lookups check review_status). Nothing here
-// deletes an account or touches billing, and every change is in the audit log.
+// deletes an account or touches billing, every change is in the audit log, and the host is emailed about each one.
 
 type Db = Pick<pg.Pool, "query">;
 
 export type ReviewStatus = "pending" | "approved" | "declined" | "suspended";
 export type ReviewAction = "approve" | "decline" | "suspend" | "reactivate";
+
+/** The status each action leaves the host in, for the email that tells them (rendered only while it still holds). */
+export const reviewTarget = (action: ReviewAction): ReviewStatus => MOVES[action].to;
 
 /** Which action moves which status: anything else is refused, so a click on a stale page can't skip a step. */
 const MOVES: Record<ReviewAction, { from: readonly ReviewStatus[]; to: ReviewStatus }> = {
@@ -51,6 +54,11 @@ export async function setHostReview(db: Db, actor: Actor, hostId: string, action
     throw new HostReviewRefused(!u ? "no_account" : u.deleted_at ? "closed" : "bad_transition");
   }
   await audit(db, actor, `host.${action}`, "user", hostId, { email: r.email, status: move.to });
+  // The host hears about it (B22): one email per move, rendered when sent and skipped if a later move overtook it.
+  await db.query(
+    `insert into notifications (booking_id, user_id, channel, kind, recipient, send_at, dedupe_key)
+     values (null, $1, 'email', 'account_review_host', $2, $3, $4) on conflict (dedupe_key) do nothing`,
+    [hostId, r.email, now, `account_review:${hostId}:${action}:${now.toISOString()}`]);
   return move.to;
 }
 

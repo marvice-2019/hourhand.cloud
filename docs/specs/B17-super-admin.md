@@ -13,7 +13,8 @@ area at /admin already had an overview, a host search, host details, staff and a
 - A host who isn't approved can sign in and set up; the dashboard says why their pages are hidden and who to write
   to (the grievance contact on the privacy page). Their public page, every page found by their slug (custom domain,
   packages, polls, memberships), single-use links, their practice listing and routing forms are hidden, and they
-  take no new bookings or reschedules. Guests can still cancel. No emails are sent on these moves yet.
+  take no new bookings or reschedules. Guests can still cancel. The host is emailed about each move, in their language
+  (B22: `account_review_host`, one per move, skipped when sent if a later move has overtaken it or the account closed).
 - Hosts list: a status filter and a status line on each host who isn't approved.
 
 ## Customer data (super admins only, every view logged)

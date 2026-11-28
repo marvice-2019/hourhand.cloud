@@ -9,6 +9,7 @@ import { createPgStore } from "../data/pg-store";
 import { listAudit, type Actor } from "./roles";
 import { actionsFor, countPending, getRequireApproval, markForReviewIfRequired, reviewStatusOf, setHostReview, setRequireApproval } from "./review";
 import { listHosts } from "./queries";
+import { renderAccountReviewMail } from "../mail/templates";
 
 const BASE = process.env.TEST_DATABASE_URL;
 
@@ -134,5 +135,33 @@ describe.skipIf(!BASE)("host review (Postgres)", () => {
 
     const actions = (await listAudit(pool)).map((e) => e.action);
     expect(actions).toEqual(expect.arrayContaining(["host.suspend", "host.reactivate", "host.approve", "host.decline", "settings.require_approval.on", "settings.require_approval.off"]));
+  });
+
+  it("emails the host once for every move, and a refused move emails no one", async () => {
+    const id = (await pool.query("insert into users (email, slug) values ('meena@example.in', 'meena-rev') returning id")).rows[0].id as string;
+    const mails = async () => (await pool.query(
+      "select recipient, dedupe_key from notifications where kind = 'account_review_host' and user_id = $1 order by send_at", [id])).rows;
+    const t1 = new Date("2034-05-01T10:00:00Z"), t2 = new Date("2034-05-02T10:00:00Z");
+    expect(await setHostReview(pool, owner, id, "suspend", t1)).toBe("suspended");
+    await expect(setHostReview(pool, owner, id, "suspend", t2)).rejects.toMatchObject({ reason: "bad_transition" });
+    await expect(setHostReview(pool, admin, id, "reactivate", t2)).rejects.toMatchObject({ reason: "not_allowed" });
+    expect(await setHostReview(pool, owner, id, "reactivate", t2)).toBe("approved");
+    expect(await mails()).toEqual([
+      { recipient: "meena@example.in", dedupe_key: `account_review:${id}:suspend:${t1.toISOString()}` },
+      { recipient: "meena@example.in", dedupe_key: `account_review:${id}:reactivate:${t2.toISOString()}` },
+    ]);
+  });
+});
+
+describe("account review emails", () => {
+  it("tells the host what changed, in their own language", () => {
+    const url = "https://h/dashboard";
+    expect(renderAccountReviewMail({ action: "approve", url }).subject).toBe("Your Hourhand booking page is live");
+    const suspended = renderAccountReviewMail({ action: "suspend", url });
+    expect(suspended.subject).toBe("Your Hourhand booking page is paused");
+    expect(suspended.text).toContain("takes no new bookings");
+    expect(suspended.text).toContain(url);
+    expect(renderAccountReviewMail({ action: "decline", url, hostLocale: "ta" }).subject).toBe("உங்கள் Hourhand கணக்கு அங்கீகரிக்கப்படவில்லை");
+    expect(renderAccountReviewMail({ action: "reactivate", url, hostLocale: "hi" }).subject).toBe("आपका Hourhand बुकिंग पेज फिर से लाइव है");
   });
 });

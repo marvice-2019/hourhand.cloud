@@ -15,7 +15,7 @@ import { invoiceById } from "../gst/invoices";
 import { monthlyEarnings } from "../earnings";
 import { requestForEmail } from "../privacy/rights";
 import { paymentAccount, priceCurrency } from "../payments/host-payments";
-import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderProductMail, renderQuestionMail, renderRenewalReminder, renderPollClosedMail, renderPollVoterMail, renderSeatInviteMail, renderWaitlistMail, renderDataRequestMail, renderZoomAlert, type BookingMailContext, type RenderedMail } from "../mail/templates";
+import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderProductMail, renderQuestionMail, renderRenewalReminder, renderPollClosedMail, renderPollVoterMail, renderSeatInviteMail, renderWaitlistMail, renderDataRequestMail, renderZoomAlert, renderAccountReviewMail, type BookingMailContext, type RenderedMail } from "../mail/templates";
 import { PLAN_NAMES, PRICES, type BillingInterval, type PaidPlan } from "../billing/plans";
 import { freeSlots } from "../booking";
 import { pollMailData } from "../polls/polls";
@@ -37,6 +37,7 @@ import type { SmsConfig } from "../sms/config";
 import { queueSmsFallback, sendBookingSms, smsSkipReason } from "../sms/outbox";
 import { SmsError } from "../sms/provider";
 import { renderMembership } from "../memberships/mail";
+import { reviewTarget, type ReviewAction } from "../admin/review";
 
 // Runs due rows of the notifications queue: emails, writes to the host's calendar (Google, Microsoft, iCloud) and to
 // their Zoom (a meeting per booking). Several workers can run
@@ -570,6 +571,17 @@ async function renderDataRequest(pool: pg.Pool, c: Claimed, baseUrl: string): Pr
   return renderDataRequestMail({ kind: r.kind, dueAt: r.dueAt, timezone: u?.timezone ?? "Asia/Kolkata", url: `${baseUrl}/dashboard/clients/requests`, hostLocale: u?.host_locale });
 }
 
+/** B22: the host's account review email, skipped if the account has moved on (a later move sends its own) or closed. */
+async function renderAccountReview(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
+  const m = /^account_review:([0-9a-f-]{36}):(approve|decline|suspend|reactivate):/.exec(c.dedupe_key);
+  if (!m) return { skip: "not a review email" };
+  const action = m[2] as ReviewAction;
+  const { rows: [u] } = await pool.query("select review_status, host_locale, deleted_at from users where id = $1", [m[1]]);
+  if (!u || u.deleted_at) return { skip: "account closed" };
+  if (u.review_status !== reviewTarget(action)) return { skip: `account is ${u.review_status}` };
+  return renderAccountReviewMail({ action, url: `${baseUrl}/dashboard`, hostLocale: u.host_locale });
+}
+
 const isPollKind = (kind: NotificationKind) => kind === "poll_voter_link" || kind === "poll_host_closed";
 
 /** A meeting poll email: an invitee's change link (signed when it is sent), or the host's nudge to pick a time. */
@@ -714,7 +726,7 @@ export async function processDueNotifications(
       continue;
     }
     // Host emails about their account rather than a booking.
-    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind) || c.kind === "data_request_host" || c.kind === "membership_guest" || c.kind === "membership_host" || isClinicMail(c.kind) || c.kind === "referral_reward_host" || isQuestionKind(c.kind) || isProductKind(c.kind);
+    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind) || c.kind === "data_request_host" || c.kind === "membership_guest" || c.kind === "membership_host" || isClinicMail(c.kind) || c.kind === "referral_reward_host" || isQuestionKind(c.kind) || isProductKind(c.kind) || c.kind === "account_review_host";
     if (!isAccountMail) {
       if (!r?.id) { await skip(c, "booking no longer exists"); continue; }
       const why = skipReason(c.kind, r, now);
@@ -811,6 +823,7 @@ export async function processDueNotifications(
           : c.kind === "waitlist_guest" ? await renderWaitlist(pool, c, opts.baseUrl, now)
           : c.kind === "seat_invite" ? await renderSeatInvite(pool, c, opts.baseUrl)
           : c.kind === "data_request_host" ? await renderDataRequest(pool, c, opts.baseUrl)
+          : c.kind === "account_review_host" ? await renderAccountReview(pool, c, opts.baseUrl)
           : c.kind === FOLLOW_UP_KIND ? await buildFollowUp(pool, c, opts.baseUrl, now, followUpLinkKey())
           : isPollKind(c.kind) ? await renderPoll(pool, c, opts.baseUrl, now)
           : c.kind === "membership_guest" || c.kind === "membership_host" ? await renderMembership(pool, c, opts.baseUrl, now)

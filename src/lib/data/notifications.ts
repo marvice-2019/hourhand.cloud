@@ -33,7 +33,9 @@ export type InvoiceEmailKind = "invoice_guest";
 export type MembershipEmailKind = "membership_guest" | "membership_host";
 /** Last month's earnings, to the host on the 1st. */
 export type EarningsEmailKind = "earnings_host";
-export type NotificationKind = BookingEmailKind | CalendarJobKind | VideoJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | ClinicMailKind | "calendar_alert_host" | "zoom_alert_host" | "renewal_reminder_host" | PollEmailKind | "follow_up_guest" | "data_request_host" | MembershipEmailKind | "referral_reward_host" | QuestionEmailKind | ProductEmailKind;
+export type NotificationKind = BookingEmailKind | CalendarJobKind | VideoJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | ClinicMailKind | "calendar_alert_host" | "zoom_alert_host" | "renewal_reminder_host" | PollEmailKind | "follow_up_guest" | "data_request_host" | MembershipEmailKind | "referral_reward_host" | QuestionEmailKind | ProductEmailKind
+  /** B22: a super admin approved, declined, suspended or reactivated the host's account. */
+  | "account_review_host";
 /** Ask a question (B19): the host hears about a new one, the guest gets the answer or the news it was declined. */
 export type QuestionEmailKind = "question_host" | "question_answer_guest" | "question_declined_guest"
   /** B21: the host's reminder a day before a question is due, and both sides' note that it was closed for missing it. */
