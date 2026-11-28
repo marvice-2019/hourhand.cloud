@@ -598,6 +598,22 @@ export function renderReferralRewardMail(c: { role: "referrer" | "referred"; oth
   });
 }
 
+const REVIEW_MAIL: Record<"approve" | "decline" | "suspend" | "reactivate", [HostKey, HostKey, HostKey]> = {
+  approve: ["mail.subjReviewApproved", "mail.hReviewApproved", "mail.iReviewApproved"],
+  decline: ["mail.subjReviewDeclined", "mail.hReviewDeclined", "mail.iReviewDeclined"],
+  suspend: ["mail.subjReviewSuspended", "mail.hReviewSuspended", "mail.iReviewSuspended"],
+  reactivate: ["mail.subjReviewReactivated", "mail.hReviewReactivated", "mail.iReviewReactivated"],
+};
+
+/** B22: the host's note that a super admin approved, declined, suspended or reactivated their account. */
+export function renderAccountReviewMail(c: { action: keyof typeof REVIEW_MAIL; url: string; hostLocale?: string | null }): RenderedMail {
+  const [subject, heading, intro] = REVIEW_MAIL[c.action];
+  return render(h(c, subject), {
+    heading: h(c, heading), intro: h(c, intro), rows: [],
+    link: { label: h(c, "mail.openInHourhand"), url: c.url }, footer: h(c, "mail.footerPlain"),
+  });
+}
+
 export interface QuestionMailContext {
   hostName: string; hostEmail: string; guestName: string; guestEmail: string; question: string; answer: string | null;
   priceMinor: number; dueAt: Date | null; timezone: string; guestUrl: string; dashboardUrl: string; hostLocale?: string | null;
