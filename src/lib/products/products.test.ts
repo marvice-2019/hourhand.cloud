@@ -13,6 +13,7 @@ import {
   confirmOrder, fileTypeFor, listOrders, MAX_DOWNLOADS, orderByToken, publicProduct, publicProducts, refundOrder, runProductJobs,
   saveProduct, saveProductFile, startOrder, takeDownload, type ProductInput,
 } from "./products";
+import { handleStartOrder } from "./handlers";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const auth = keyPairAuth("rzp_test_ProductHost1", "p-secret");
@@ -174,5 +175,13 @@ describe.skipIf(!BASE)("digital products (Postgres)", () => {
     expect((await orderByToken(pool, closed.token))?.status).toBe("paid");
     expect(await runProductJobs(jobDeps, new Date(Date.now() + 2 * 86_400_000))).toMatchObject({ failed: 1 });
     expect((await orderByToken(pool, unpaid.token))?.status).toBe("failed");
+  });
+  it("refuses a paid product on the free plan and an unknown product", async () => {
+    const fake = fakeRazorpay();
+    const deps = { pool, authFor: async () => auth, ordersFor: () => fake.orders, planFor: async () => "free" as const };
+    expect(await handleStartOrder(pool, deps, "priya", "templates", buy(), new Date())).toMatchObject({ status: 409 });
+    expect(await handleStartOrder(pool, { ...deps, planFor: async () => "solo" as const }, "priya", "templates", buy(), new Date())).toMatchObject({ status: 200, body: { status: "pending" } });
+    expect(await handleStartOrder(pool, deps, "priya", "nope", buy(), new Date())).toMatchObject({ status: 404 });
+    expect(await handleStartOrder(pool, deps, "arun", "templates", buy(), new Date())).toMatchObject({ status: 404 });
   });
 });
