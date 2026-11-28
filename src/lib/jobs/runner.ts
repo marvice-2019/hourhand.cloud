@@ -7,6 +7,7 @@ import type { Mailer } from "../mail/mailer";
 import { lapseRequests } from "../approval-jobs";
 import { processRefunds, reconcilePayments, releaseDeposits, type PaymentCheckDeps } from "../payments/booking-payments";
 import { reconcilePurchases } from "../packages/packages";
+import { runQuestionJobs } from "../questions/questions";
 import { recordMissingFees, recordMissingStripeFees } from "../payments/fees";
 import { processStripeRefunds, reconcileStripePayments, reconcileStripePurchases, type StripeDeps } from "../payments/stripe-checkout";
 import { queueMonthlyReports } from "../earnings";
@@ -73,6 +74,8 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
         if (opts.payments) await releaseDeposits(opts.pool, new Date()).catch((error) => console.error("[jobs] deposit release failed", error));
         if (opts.payments) await processRefunds({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] refunds failed", error));
         if (opts.payments) await reconcilePurchases({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] package check failed", error));
+        // Paid questions (B19): payments to settle, and declined ones to refund.
+        if (opts.payments) await runQuestionJobs({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] question check failed", error));
         if (opts.payments) await recordMissingFees({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] fee check failed", error));
         // Stripe hosts: payments the webhook hasn't settled, refunds (deposits released above included), package purchases.
         if (opts.stripe) await reconcileStripePayments(opts.stripe, new Date()).catch((error) => console.error("[jobs] Stripe payment check failed", error));

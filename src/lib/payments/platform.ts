@@ -200,7 +200,11 @@ export async function hostBalances(db: Db): Promise<HostBalance[]> {
        where collected_via = 'platform' and transfer_account is null and status in ('paid', 'refund_pending', 'refunded')
        union all
        select host_id, currency, price_minor, 0, commission_minor from package_purchases
-       where collected_via = 'platform' and transfer_account is null and status = 'paid'),
+       where collected_via = 'platform' and transfer_account is null and status = 'paid'
+       union all
+       -- Paid questions (B19); a declined one is refunded in full, so it isn't owed.
+       select host_id, currency, price_minor, 0, commission_minor from questions
+       where collected_via = 'platform' and transfer_account is null and price_minor > 0 and status in ('open', 'answered')),
      owed as (
        select host_id, currency, sum(amount)::int as collected, sum(refunded)::int as refunded, sum(commission)::int as commission,
          sum(greatest(amount - refunded - commission, 0))::int as share

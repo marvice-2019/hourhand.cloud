@@ -53,4 +53,5 @@ export const nav: Record<keyof typeof en, string> = {
   "nav.installIos": "Share मेन्यू से Add to Home Screen चुनें",
   "nav.install": "ऐप इंस्टॉल करें",
   "nav.dismiss": "हटाएँ",
+  "nav.questions": "सवाल",
 };

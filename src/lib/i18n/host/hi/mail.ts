@@ -143,4 +143,9 @@ export const mail: Record<keyof typeof en, string> = {
   "mail.vNextRenewal": "आपका अगला रिन्यूअल",
   "mail.lReferrals": "अपना प्लान और रेफ़रल देखें",
   "mail.nReferral": "Razorpay पर रिन्यूअल का फिर भी ₹1 लगता है, जो Razorpay की सबसे कम राशि है। अगर आप UPI AutoPay या eMandate से पेमेंट करते हैं, तो Razorpay रिन्यूअल पर छूट नहीं दे सकता, इसलिए यह महीना आपका पेड प्लान ख़त्म होने के बाद Solo के रूप में जुड़ता है। फ़्री महीने कैश में नहीं बदले जा सकते।",
+  "mail.subjQuestion": "{guest} का नया सवाल",
+  "mail.hQuestion": "आपके लिए एक नया सवाल है",
+  "mail.iQuestion": "{guest} <{email}> ने आपसे एक सवाल पूछा है। Hourhand में जवाब दें, उन्हें आपका जवाब ईमेल से मिल जाएगा।",
+  "mail.rQuestion": "सवाल",
+  "mail.rAnswerBy": "जवाब देने की आख़िरी तारीख़",
 };

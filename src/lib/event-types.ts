@@ -12,7 +12,7 @@ export const BUFFER = { min: 0, max: 240 } as const;
 export const BOOKING_WINDOW = { min: 1, max: 730 } as const;
 export const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,59}$/;
 /** /<host>/portal is the client portal and /<host>/opengraph-image the share card, so no event type can take those links. */
-export const RESERVED_EVENT_SLUGS: ReadonlySet<string> = new Set(["portal", "opengraph-image"]);
+export const RESERVED_EVENT_SLUGS: ReadonlySet<string> = new Set(["portal", "opengraph-image", "ask"]);
 export const SLUG_TAKEN = "That link is already used by another event type";
 /** Guest prices in paise: ₹1 to ₹5,00,000. */
 export const PRICE = { min: 100, max: 50_000_000 } as const;
