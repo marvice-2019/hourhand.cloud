@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { hostDisplayName } from "../display-name";
 import { renderPracticeInviteMail, renderWaitlistMail, type RenderedMail } from "../mail/templates";
 
 // Emails the Clinic plan sends, rendered by the job worker. Kinds start with "practice_" so the worker hands them here.
@@ -17,14 +18,14 @@ export async function renderClinicMail(pool: Pick<pg.Pool, "query">, c: Row, bas
     const m = /^practice-waitlist:([0-9a-f-]{36})$/.exec(c.dedupe_key);
     if (!m) return { skip: "not a practice waitlist email" };
     const { rows: [w] } = await pool.query(
-      `select w.name, w.timezone, b.start_at, e.name as event_name, e.slug as event_slug, e.active, u.name as host_name, u.slug as host_slug, u.deleted_at
+      `select w.name, w.timezone, b.start_at, e.name as event_name, e.slug as event_slug, e.active, u.name as host_name, u.email::text as host_email, u.slug as host_slug, u.deleted_at
        from practice_waitlist w join bookings b on b.id = $2 join event_types e on e.id = b.event_type_id join users u on u.id = b.host_id
        where w.id = $1`, [m[1], c.booking_id]);
     if (!w) return { skip: "waitlist entry gone" };
     if (new Date(w.start_at).getTime() <= now.getTime()) return { skip: "the time has passed" };
     if (!w.active || w.deleted_at || !w.host_slug) return { skip: "event no longer bookable" };
     const start = new Date(w.start_at);
-    return renderWaitlistMail({ guestName: w.name, hostName: w.host_name, eventName: w.event_name, start, timezone: w.timezone,
+    return renderWaitlistMail({ guestName: w.name, hostName: hostDisplayName(w.host_name, w.host_email), eventName: w.event_name, start, timezone: w.timezone,
       url: `${baseUrl}/${w.host_slug}/${w.event_slug}?at=${encodeURIComponent(start.toISOString())}` });
   }
   if (c.kind === "practice_invite") {

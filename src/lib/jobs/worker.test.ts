@@ -1,6 +1,7 @@
 // The email queue against real Postgres. Runs only with TEST_DATABASE_URL; uses its own database (<name>_jobs) so it
 // can run beside the store's tests, and drops and recreates it on every run.
 import pg from "pg";
+import { hostDisplayName } from "../display-name";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { migrate } from "../../../scripts/migrate";
 import { seed } from "../../../scripts/seed";
@@ -139,6 +140,22 @@ describe.skipIf(!BASE)("email queue (TEST_DATABASE_URL)", () => {
     await processDueNotifications(pool, mailer, { baseUrl, now: new Date(b.startAt.getTime() - 59 * MIN) });
     expect(sent.map((m) => m.subject)).toHaveLength(2); // both reminders are due by then; the 24-hour one was simply late
     expect(sent.every((m) => m.subject.startsWith("Reminder:"))).toBe(true);
+  });
+
+  it("a host who never set a name is named from their email in the guest's emails, never by the address itself", async () => {
+    const { rows: [{ name }] } = await pool.query("select name from users where id = $1", [priya.id]);
+    await pool.query("update users set name = null where id = $1", [priya.id]);
+    try {
+      await book();
+      const { mailer, sent } = fakeMailer();
+      await processDueNotifications(pool, mailer, { baseUrl });
+      const mail = sent.find((m) => m.to === guest.email)!;
+      expect(mail.subject).not.toContain(priya.email);
+      expect(mail.text).not.toContain(`with ${priya.email}`);
+      expect(mail.text).toContain(`with ${hostDisplayName(null, priya.email)}`);
+    } finally {
+      await pool.query("update users set name = $2 where id = $1", [priya.id, name]);
+    }
   });
 
   it("retries a temporary failure later, and gives up after the last attempt into the dead-letter state", async () => {

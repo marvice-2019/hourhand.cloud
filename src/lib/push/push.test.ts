@@ -75,13 +75,13 @@ describe("bookingPushMessage", () => {
 const BASE = process.env.TEST_DATABASE_URL;
 
 /** A push sender that records what it sends, or fails with the status it is told to. */
-function fakePush(status?: (endpoint: string) => number | null) {
+function fakePush(status?: (endpoint: string) => number | null, body?: (endpoint: string) => string) {
   const sent: { endpoint: string; payload: unknown }[] = [];
   const deps: PushDeps = {
     config: pushConfig(env)!,
     async send(s, payload) {
       const code = status?.(s.endpoint) ?? null;
-      if (code) throw Object.assign(new Error(`status ${code}`), { statusCode: code });
+      if (code) throw Object.assign(new Error(`status ${code}`), { statusCode: code, body: body?.(s.endpoint) ?? "" });
       sent.push({ endpoint: s.endpoint, payload: JSON.parse(payload) });
     },
   };
@@ -172,6 +172,23 @@ describe.skipIf(!BASE)("phone alerts (TEST_DATABASE_URL)", () => {
     expect(sent[0].payload).toMatchObject({ title: "New booking", url: `/dashboard/bookings/${b.id}` });
     expect((await pushRows(b.id))[0].status).toBe("sent");
     expect(await countSubscriptions(pool, priya.id)).toBe(1);
+  });
+
+  it("drops a device that turned alerts on under an old server key, and keeps one refused for another reason", async () => {
+    await saveSubscription(pool, priya.id, sub("apple-old"), null, new Date());
+    await saveSubscription(pool, priya.id, sub("google-old"), null, new Date());
+    await saveSubscription(pool, priya.id, sub("bad"), null, new Date());
+    const codes: Record<string, number> = { "apple-old": 400, "google-old": 403, bad: 400 };
+    const bodies: Record<string, string> = {
+      "apple-old": '{"reason":"VapidPkHashMismatch"}',
+      "google-old": "the VAPID keys in the authorization header do not correspond to the ones used to create the subscriptions.",
+      bad: '{"reason":"BadJwtToken"}',
+    };
+    const name = (e: string) => e.slice(e.lastIndexOf("/") + 1);
+    await expect(sendToHost(pool, fakePush((e) => codes[name(e)], (e) => bodies[name(e)]).deps, priya.id, testPushMessage("en"), new Date()))
+      .rejects.toMatchObject({ retryable: false, message: expect.stringContaining("BadJwtToken") });
+    const { rows } = await pool.query("select endpoint from push_subscriptions where user_id = $1", [priya.id]);
+    expect(rows.map((r) => r.endpoint)).toEqual([sub("bad").endpoint]);
   });
 
   it("retries when the push service is down, and skips when alerts are off here or no device is left", async () => {

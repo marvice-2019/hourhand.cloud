@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { hostDisplayName } from "../display-name";
 import { NotFoundError } from "../data/types";
 import { formatDate } from "../format";
 import { isLocale, type Locale } from "../i18n/guest";
@@ -292,7 +293,7 @@ export async function buildFollowUp(db: Db, n: { booking_id: string | null; reci
   if ("skip" in plan) return plan;
   const optOut = optOutToken(key, r.host_id, n.recipient);
   return renderFollowUpMail({
-    locale, guestName: r.guest_name, hostName: r.host_name || r.host_email, hostEmail: r.host_email, eventName: r.event_name,
+    locale, guestName: r.guest_name, hostName: hostDisplayName(r.host_name, r.host_email), hostEmail: r.host_email, eventName: r.event_name,
     feedbackUrl: `${baseUrl}/b/feedback/${feedbackToken(key, r.id, now)}`,
     optOutUrl: `${baseUrl}/b/stop/${optOut}${lang ? `?${lang}` : ""}`,
     oneClickUrl: `${baseUrl}/api/follow-ups/stop/${optOut}`,
@@ -309,7 +310,7 @@ export type FeedbackPage = { state: "invalid" } | { state: "expired" } | Feedbac
 async function feedbackBooking(db: Db, key: Buffer, bookingId: string, baseUrl: string, now: Date): Promise<FeedbackBooking | null> {
   const { rows: [r] } = await db.query(
     `select b.id, b.host_id, b.status, b.start_at, i.name as guest_name, i.email as guest_email, i.timezone, i.locale,
-       e.name as event_name, e.slug as event_slug, e.active as event_active, e.kind as event_kind, coalesce(nullif(u.name, ''), u.email) as host_name, u.slug as host_slug, u.deleted_at,
+       e.name as event_name, e.slug as event_slug, e.active as event_active, e.kind as event_kind, u.name as host_name, u.email::text as host_email, u.slug as host_slug, u.deleted_at,
        coalesce(s.review_ask, false) as review_ask, coalesce(s.thank_you, false) as thank_you, p.reviews_url,
        (select f.rating from booking_feedback f where f.booking_id = b.id) as rating
      from bookings b join invitees i on i.booking_id = b.id join event_types e on e.id = b.event_type_id join users u on u.id = b.host_id
@@ -319,7 +320,7 @@ async function feedbackBooking(db: Db, key: Buffer, bookingId: string, baseUrl: 
   const locale: Locale = isLocale(r.locale) ? r.locale : "en";
   const bookable = r.thank_you && r.event_active && r.event_kind !== "one_off" && r.host_slug;
   return {
-    bookingId: r.id, hostId: r.host_id, hostName: r.host_name, eventName: r.event_name, startAt: new Date(r.start_at), timezone: r.timezone, locale, answered: r.rating !== null, rating: r.rating ?? null,
+    bookingId: r.id, hostId: r.host_id, hostName: hostDisplayName(r.host_name, r.host_email), eventName: r.event_name, startAt: new Date(r.start_at), timezone: r.timezone, locale, answered: r.rating !== null, rating: r.rating ?? null,
     reviewAsk: r.review_ask, reviewsUrl: r.reviews_url ?? null,
     rebookUrl: bookable ? rebookUrl(baseUrl, key, r.host_slug, r.event_slug, r.id, locale, now) : null,
   };
@@ -385,10 +386,10 @@ export async function optOutPage(db: Db, key: Buffer, token: unknown): Promise<{
   const t = readOptOutToken(key, token);
   if (!t) return null;
   const { rows: [r] } = await db.query(
-    `select coalesce(nullif(u.name, ''), u.email) as host_name, u.locale,
+    `select u.name as host_name, u.email::text as host_email, u.locale,
        exists (select 1 from follow_up_opt_outs o where o.host_id = u.id and o.email = $2) as done
      from users u where u.id = $1 and u.deleted_at is null`, [t.hostId, t.email]);
-  return r ? { hostName: r.host_name, hostLocale: r.locale ?? null, done: r.done } : null;
+  return r ? { hostName: hostDisplayName(r.host_name, r.host_email), hostLocale: r.locale ?? null, done: r.done } : null;
 }
 
 /** Records the opt-out and drops that guest's follow-ups still queued for this host. Doing it twice is fine. */

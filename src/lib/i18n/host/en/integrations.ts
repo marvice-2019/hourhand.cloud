@@ -105,7 +105,7 @@ export const integrations = {
   "integrations.whNoEvents": "Pick at least one kind of booking to send.",
   "integrations.whTooMany": "You can have up to {n} webhooks. Remove one to add another.",
   "integrations.apiTitle": "API keys",
-  "integrations.apiBody": "Let n8n, Zapier, Make, a CRM or a spreadsheet read your bookings and event types. A key reads your whole account, so keep it private and give each tool its own.",
+  "integrations.apiBody": "Let n8n, Zapier, Make, a CRM or a spreadsheet read your bookings, event types, questions and product orders. A key reads your whole account, so keep it private and give each tool its own.",
   "integrations.apiHow": "Send the key as an Authorization: Bearer header. Your bookings are at:",
   "integrations.apiNotSetUp": "API keys aren't switched on for this server yet.",
   "integrations.apiPrefix": "{prefix}…",

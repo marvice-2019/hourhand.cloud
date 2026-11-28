@@ -156,8 +156,18 @@ const reasonOf = (e: unknown): string => {
 };
 
 /**
- * Sends one alert to every device the host turned alerts on for. A device whose push address is gone (404, 410) is
- * dropped. Throws when none took it and at least one failed; `sent: 0` with nothing thrown means no device has alerts on.
+ * A refusal that no retry can cure for this device: its push address is gone (404, 410), or the device turned alerts on
+ * under another server key than this server signs with (Apple answers 400 {"reason":"VapidPkHashMismatch"}; Google's
+ * 403 says the keys "do not correspond"), which happens once the server's key is changed.
+ */
+const deviceIsGone = (status: number | null, reason: string): boolean =>
+  status === 404 || status === 410
+  || (status === 400 && reason.includes("VapidPkHashMismatch"))
+  || (status === 403 && /do not correspond/i.test(reason));
+
+/**
+ * Sends one alert to every device the host turned alerts on for. A device whose push address is gone, or that turned
+ * alerts on under an old server key, is dropped (its owner turns alerts on again in Settings). Throws when none took it and at least one failed; `sent: 0` with nothing thrown means no device has alerts on.
  * Every refusal is logged, also when another device took the alert, so a phone that never gets one can be traced.
  */
 export async function sendToHost(db: Db, deps: PushDeps, userId: string, message: PushMessage, now: Date): Promise<{ sent: number; removed: number; failed: number }> {
@@ -173,9 +183,9 @@ export async function sendToHost(db: Db, deps: PushDeps, userId: string, message
       sent++;
     } catch (e) {
       const status = statusOf(e);
-      if (status === 404 || status === 410) { await db.query("delete from push_subscriptions where id = $1", [row.id]); removed++; continue; }
-      const host = new URL(row.endpoint).hostname;
       const reason = reasonOf(e);
+      if (deviceIsGone(status, reason)) { await db.query("delete from push_subscriptions where id = $1", [row.id]); removed++; continue; }
+      const host = new URL(row.endpoint).hostname;
       failure = new PushError(`${host} answered ${status ?? (e as Error).message}${reason ? ` ${reason}` : ""}`.slice(0, 300), status === null || status === 429 || status >= 500);
       failed++;
       console.warn(`[push] ${failure.message}`);

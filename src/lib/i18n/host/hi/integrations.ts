@@ -102,7 +102,7 @@ export const integrations: Record<keyof typeof en, string> = {
   "integrations.whNoEvents": "भेजने के लिए कम से कम एक तरह की बुकिंग चुनें।",
   "integrations.whTooMany": "आप ज़्यादा से ज़्यादा {n} वेबहुक रख सकते हैं। नया जोड़ने के लिए एक हटाएँ।",
   "integrations.apiTitle": "API कुंजियाँ",
-  "integrations.apiBody": "n8n, Zapier, Make, CRM या स्प्रेडशीट को अपनी बुकिंग और इवेंट टाइप पढ़ने दें। एक कुंजी पूरा अकाउंट पढ़ सकती है, इसलिए इसे निजी रखें और हर टूल को अलग कुंजी दें।",
+  "integrations.apiBody": "n8n, Zapier, Make, CRM या स्प्रेडशीट को अपनी बुकिंग, इवेंट टाइप, सवाल और प्रोडक्ट ऑर्डर पढ़ने दें। एक कुंजी पूरा अकाउंट पढ़ सकती है, इसलिए इसे निजी रखें और हर टूल को अलग कुंजी दें।",
   "integrations.apiHow": "कुंजी को Authorization: Bearer हेडर में भेजें। आपकी बुकिंग यहाँ हैं:",
   "integrations.apiNotSetUp": "इस सर्वर पर API कुंजियाँ अभी चालू नहीं हैं।",
   "integrations.apiPrefix": "{prefix}…",
