@@ -1,6 +1,6 @@
 // Hourhand's emails. Every message has a plain-text and an HTML version with the same content.
 import type { InviteeAnswer, LocationKind } from "../data/types";
-import type { BookingEmailKind } from "../data/notifications";
+import type { BookingEmailKind, QuestionEmailKind } from "../data/notifications";
 import { formatDate, formatTime, zoneName, type HourCycle } from "../format";
 import { GUEST_LOCATION_LABELS } from "../location-labels";
 import { formatMoney } from "../billing/plans";
@@ -606,7 +606,33 @@ export interface QuestionMailContext {
 const excerpt = (s: string, n = 400) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 /** Ask a question (B19): the host's note of a new question, and the guest's answer or the news that it was declined. */
-export function renderQuestionMail(kind: "question_host" | "question_answer_guest" | "question_declined_guest", c: QuestionMailContext): RenderedMail {
+export function renderQuestionMail(kind: QuestionEmailKind, c: QuestionMailContext): RenderedMail {
+  if (kind === "question_due_host" || kind === "question_expired_host") {
+    const l = hl(c);
+    const rows: Row[] = [[h(c, "mail.rQuestion"), excerpt(c.question)]];
+    if (c.dueAt) rows.push([h(c, "mail.rAnswerBy"), formatDate(c.dueAt, c.timezone, l)]);
+    if (kind === "question_due_host") {
+      return render(h(c, "mail.subjQuestionDue", { guest: c.guestName }), {
+        heading: h(c, "mail.hQuestionDue"), intro: h(c, "mail.iQuestionDue", { guest: c.guestName }),
+        rows, link: { label: h(c, "mail.openInHourhand"), url: c.dashboardUrl }, footer: hostFooter(c),
+      });
+    }
+    if (c.priceMinor > 0) rows.push([h(c, "mail.rRefunded"), hostMoney(c.priceMinor, "INR", l)]);
+    return render(h(c, "mail.subjQuestionExpired", { guest: c.guestName }), {
+      heading: h(c, "mail.hQuestionExpired"), intro: h(c, c.priceMinor > 0 ? "mail.iQuestionExpiredPaid" : "mail.iQuestionExpired", { guest: c.guestName }),
+      rows, link: { label: h(c, "mail.openInHourhand"), url: c.dashboardUrl }, footer: hostFooter(c),
+    });
+  }
+  if (kind === "question_expired_guest") {
+    return render(`${c.hostName} didn't answer your question in time`, {
+      heading: "Your question wasn't answered in time",
+      intro: c.priceMinor > 0
+        ? `Hi ${c.guestName}, ${c.hostName} didn't answer your question by the date they promised, so it has been closed. Your payment of ${formatAmount(c.priceMinor, "INR")} is being refunded in full to the way you paid; banks usually take 5 to 7 working days.`
+        : `Hi ${c.guestName}, ${c.hostName} didn't answer your question by the date they promised, so it has been closed.`,
+      rows: [["Your question", excerpt(c.question)]],
+      footer: `Sent by Hourhand for ${c.hostName}. Reply to this email to reach them.`,
+    }, { replyTo: c.hostEmail });
+  }
   if (kind === "question_host") {
     const l = hl(c);
     const rows: Row[] = [[h(c, "mail.rQuestion"), excerpt(c.question)]];

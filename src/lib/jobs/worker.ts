@@ -619,21 +619,28 @@ async function renderPackage(pool: pg.Pool, c: Claimed, baseUrl: string): Promis
   });
 }
 
-const isQuestionKind = (k: string): k is "question_host" | "question_answer_guest" | "question_declined_guest" =>
-  k === "question_host" || k === "question_answer_guest" || k === "question_declined_guest";
+const QUESTION_KINDS = ["question_host", "question_answer_guest", "question_declined_guest", "question_due_host", "question_expired_guest", "question_expired_host"] as const;
+type QuestionKind = (typeof QUESTION_KINDS)[number];
+const isQuestionKind = (k: string): k is QuestionKind => (QUESTION_KINDS as readonly string[]).includes(k);
+const CLOSED: string[] = ["declined", "refund_pending", "refunded"];
+/** The question states each email still makes sense in; an email queued for a state the question has left is skipped. */
+const QUESTION_WANT: Record<QuestionKind, string[]> = {
+  question_host: ["open", "answered", ...CLOSED], question_answer_guest: ["answered"], question_declined_guest: CLOSED,
+  question_due_host: ["open"], question_expired_guest: CLOSED, question_expired_host: CLOSED,
+};
 
 /** Ask a question (B19): rendered from the question as it is now, so an email for a state it has left is skipped. */
 async function renderQuestion(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
-  const m = /^question:([0-9a-f-]{36}):(question_host|question_answer_guest|question_declined_guest)$/.exec(c.dedupe_key);
-  if (!m) return { skip: "not a question email" };
+  const m = /^question:([0-9a-f-]{36}):([a-z_]+)$/.exec(c.dedupe_key);
+  if (!m || !isQuestionKind(m[2])) return { skip: "not a question email" };
+  const kind = m[2];
   const { rows: [q] } = await pool.query(
     `select q.guest_name, q.guest_email::text as guest_email, q.question, q.answer, q.price_minor, q.due_at, q.status, q.token,
        u.name as host_name, u.email::text as host_email, u.timezone, u.host_locale
      from questions q join users u on u.id = q.host_id where q.id = $1`, [m[1]]);
   if (!q) return { skip: "question not found" };
-  const want = { question_host: ["open", "answered", "declined", "refund_pending", "refunded"], question_answer_guest: ["answered"], question_declined_guest: ["declined", "refund_pending", "refunded"] }[m[2] as "question_host"];
-  if (!want.includes(q.status)) return { skip: `question is ${q.status}` };
-  return renderQuestionMail(m[2] as "question_host", {
+  if (!QUESTION_WANT[kind].includes(q.status)) return { skip: `question is ${q.status}` };
+  return renderQuestionMail(kind, {
     hostName: q.host_name, hostEmail: q.host_email, guestName: q.guest_name, guestEmail: q.guest_email, question: q.question, answer: q.answer,
     priceMinor: q.price_minor, dueAt: q.due_at, timezone: q.timezone, guestUrl: `${baseUrl}/q/${q.token}`, dashboardUrl: `${baseUrl}/dashboard/questions`, hostLocale: q.host_locale,
   });

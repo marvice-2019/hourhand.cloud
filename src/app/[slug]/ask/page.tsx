@@ -22,7 +22,7 @@ export default async function AskPage({ params }: { params: Promise<{ slug: stri
       <h1 className="font-display text-xl text-text">Ask {host.name} a question</h1>
       {offer.intro && <p className="mt-2 whitespace-pre-line text-text">{offer.intro}</p>}
       <p className="mt-2 text-text-muted">
-        {price ? `${price} for a written answer` : "Free"}, usually within {offer.responseDays} {offer.responseDays === 1 ? "day" : "days"}. The answer comes to your email.
+        {price ? `${price} for a written answer` : "Free"}, usually within {offer.responseDays} {offer.responseDays === 1 ? "day" : "days"}. The answer comes to your email.{price ? " If it isn't answered within a day after that, you get your money back in full." : ""}
       </p>
       <AskQuestion slug={host.slug} hostName={host.name} price={price} />
       <BookingFooter hostId={host.id} />

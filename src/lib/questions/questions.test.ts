@@ -11,7 +11,7 @@ import { renderQuestionMail } from "../mail/templates";
 import { keyPairAuth, type HostRazorpayAuth } from "../payments/host-razorpay";
 import { razorpayOrders } from "../payments/razorpay-orders";
 import { handleConfirmQuestion, handleStartQuestion } from "./handlers";
-import { answerQuestion, declineQuestion, listQuestions, publicOffer, questionByToken, runQuestionJobs, saveOffer, startQuestion } from "./questions";
+import { answerQuestion, applyQuestionPayment, declineQuestion, listQuestions, publicOffer, questionByToken, runQuestionDeadlines, runQuestionJobs, saveOffer, startQuestion } from "./questions";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const auth = keyPairAuth("rzp_test_QuestionHost1", "q-secret");
@@ -172,6 +172,51 @@ describe.skipIf(!BASE)("ask a question (Postgres)", () => {
     const { rows: [row] } = await pool.query("select collected_via, commission_minor, transfer_account from questions where token = $1", [r.token]);
     expect(row).toEqual({ collected_via: "platform", commission_minor: 4_990, transfer_account: "acc_HostQ1234" });
   });
+
+  it("reminds the host a day before a question is due, and closes it a day after, refunding a paid one in full", async () => {
+    const DAY = 86_400_000;
+    const t0 = new Date("2050-01-01T10:00:00Z");
+    const at = (days: number) => new Date(t0.getTime() + days * DAY);
+    const fake = fakeRazorpay();
+    // A paid question, answer due in 3 days, and a free one due in 2.
+    await saveOffer(pool, priya.id, { active: true, priceMinor: 49_900, responseDays: 3, intro: "" });
+    const paid = await startQuestion({ pool, auth, orders: fake.orders }, (await publicOffer(pool, "priya"))!, ask(), t0);
+    const paidId = (await questionByToken(pool, paid.token))!.id;
+    fake.state.payments.set("pay_d1", { id: "pay_d1", order_id: paid.payment!.orderId, amount: 49_900, currency: "INR", status: "captured" });
+    expect(await applyQuestionPayment(pool, paidId, "pay_d1", t0)).toBe("open");
+    await saveOffer(pool, priya.id, { active: true, priceMinor: 0, responseDays: 2, intro: "" });
+    const free = await startQuestion({ pool, auth: null, orders: null }, (await publicOffer(pool, "priya"))!, ask(), t0);
+    const freeId = (await questionByToken(pool, free.token))!.id;
+    // An answered question is never touched.
+    const done = await startQuestion({ pool, auth: null, orders: null }, (await publicOffer(pool, "priya"))!, ask(), t0);
+    const doneId = (await questionByToken(pool, done.token))!.id;
+    expect(await answerQuestion(pool, priya.id, doneId, "Done.", t0)).toBe("answered");
+
+    const due = async (id: string) => (await notes("question_due_host")).filter((r) => r.dedupe_key.includes(id));
+    // 1.5 days in: only the free one is due within a day, and it's reminded once however often the pass runs.
+    await runQuestionDeadlines(pool, at(1.5));
+    await runQuestionDeadlines(pool, at(1.6));
+    expect(await due(freeId)).toEqual([{ recipient: priya.email, dedupe_key: `question:${freeId}:question_due_host` }]);
+    expect(await due(paidId)).toEqual([]);
+    expect((await questionByToken(pool, free.token))?.status).toBe("open");
+
+    // 3.5 days in: the free one is a day and a half late and is closed; the paid one is only half a day late.
+    await runQuestionDeadlines(pool, at(3.5));
+    expect(await questionByToken(pool, free.token)).toMatchObject({ status: "declined", expired: true });
+    expect((await questionByToken(pool, paid.token))?.status).toBe("open");
+    // A day after it was due, the paid one is closed and goes to the refund pass, which refunds it in full.
+    await runQuestionDeadlines(pool, at(4));
+    expect(await questionByToken(pool, paid.token)).toMatchObject({ status: "refund_pending", expired: true });
+    expect(await answerQuestion(pool, priya.id, paidId, "Too late.", at(4))).toBe("not_open");
+    await runQuestionJobs({ pool, authFor: async () => auth, ordersFor: () => fake.orders }, at(4.1));
+    expect((await questionByToken(pool, paid.token))?.status).toBe("refunded");
+    expect(fake.state.refunds).toContainEqual(expect.objectContaining({ receipt: `q-${paidId}` }));
+    for (const id of [freeId, paidId]) {
+      expect((await notes("question_expired_guest")).filter((r) => r.dedupe_key.includes(id))).toEqual([{ recipient: "asha@example.in", dedupe_key: `question:${id}:question_expired_guest` }]);
+      expect((await notes("question_expired_host")).filter((r) => r.dedupe_key.includes(id))).toEqual([{ recipient: priya.email, dedupe_key: `question:${id}:question_expired_host` }]);
+    }
+    expect((await questionByToken(pool, done.token))).toMatchObject({ status: "answered", expired: false });
+  });
 });
 
 describe("question emails", () => {
@@ -185,5 +230,14 @@ describe("question emails", () => {
     expect(answer.text).toContain("Practise.");
     expect(renderQuestionMail("question_host", { ...base, hostLocale: "ta" }).subject).toBe("Asha இடமிருந்து புதிய கேள்வி");
     expect(renderQuestionMail("question_declined_guest", base).text).toContain("refunded in full");
+  });
+  it("tells the host a question is due, and both sides when one was closed for missing it", () => {
+    expect(renderQuestionMail("question_due_host", base).subject).toBe("Answer Asha's question by tomorrow");
+    const guest = renderQuestionMail("question_expired_guest", base);
+    expect(guest.subject).toBe("Priya didn't answer your question in time");
+    expect(guest.text).toContain("refunded in full");
+    expect(renderQuestionMail("question_expired_guest", { ...base, priceMinor: 0 }).text).not.toContain("refund");
+    expect(renderQuestionMail("question_expired_host", base).text).toContain("refunding their payment in full");
+    expect(renderQuestionMail("question_expired_host", { ...base, hostLocale: "hi" }).subject).toBe("Asha का सवाल बंद कर दिया गया");
   });
 });
