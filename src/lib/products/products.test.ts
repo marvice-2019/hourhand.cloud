@@ -14,6 +14,7 @@ import {
   saveProduct, saveProductFile, startOrder, takeDownload, type ProductInput,
 } from "./products";
 import { handleStartOrder } from "./handlers";
+import { renderProductMail } from "../mail/templates";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const auth = keyPairAuth("rzp_test_ProductHost1", "p-secret");
@@ -183,5 +184,12 @@ describe.skipIf(!BASE)("digital products (Postgres)", () => {
     expect(await handleStartOrder(pool, { ...deps, planFor: async () => "solo" as const }, "priya", "templates", buy(), new Date())).toMatchObject({ status: 200, body: { status: "pending" } });
     expect(await handleStartOrder(pool, deps, "priya", "nope", buy(), new Date())).toMatchObject({ status: 404 });
     expect(await handleStartOrder(pool, deps, "arun", "templates", buy(), new Date())).toMatchObject({ status: 404 });
+  });
+  it("renders the sale notice in the host's language and the buyer's receipt with their link", () => {
+    const c = { hostName: "Priya", hostEmail: "p@x.in", buyerName: "Asha", buyerEmail: "a@x.in", productTitle: "Guide", priceMinor: 19_900, buyerUrl: "https://h.test/d/abc", dashboardUrl: "https://h.test/dashboard/products" };
+    expect(renderProductMail("product_sale_host", { ...c, hostLocale: "ta" }).subject).toBe("புதிய விற்பனை: Guide");
+    const receipt = renderProductMail("product_receipt_buyer", c);
+    expect(receipt.text).toContain("https://h.test/d/abc");
+    expect(renderProductMail("product_refund_buyer", c).text).toContain("no longer works");
   });
 });

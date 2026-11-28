@@ -634,3 +634,36 @@ export function renderQuestionMail(kind: "question_host" | "question_answer_gues
     footer: `Sent by Hourhand for ${c.hostName}. Reply to this email to reach them.`,
   }, { replyTo: c.hostEmail });
 }
+
+export interface ProductMailContext {
+  hostName: string; hostEmail: string; buyerName: string; buyerEmail: string; productTitle: string; priceMinor: number;
+  buyerUrl: string; dashboardUrl: string; hostLocale?: string | null;
+}
+
+/** Digital products (B20): the host's sale notice, the buyer's receipt with their download page, and a refund notice. */
+export function renderProductMail(kind: "product_sale_host" | "product_receipt_buyer" | "product_refund_buyer", c: ProductMailContext): RenderedMail {
+  if (kind === "product_sale_host") {
+    const l = hl(c);
+    const rows: Row[] = [[h(c, "mail.rProduct"), c.productTitle], [h(c, "mail.rBuyer"), `${c.buyerName} <${c.buyerEmail}>`]];
+    if (c.priceMinor > 0) rows.push([h(c, "mail.rPaid"), hostMoney(c.priceMinor, "INR", l)]);
+    return render(h(c, "mail.subjProductSale", { product: c.productTitle }), {
+      heading: h(c, "mail.hProductSale"), intro: h(c, "mail.iProductSale", { buyer: c.buyerName }),
+      rows, link: { label: h(c, "mail.openInHourhand"), url: c.dashboardUrl }, footer: hostFooter(c),
+    });
+  }
+  if (kind === "product_receipt_buyer") {
+    const rows: Row[] = [["Product", c.productTitle]];
+    if (c.priceMinor > 0) rows.push(["Paid", formatAmount(c.priceMinor, "INR")]);
+    return render(`Your ${c.productTitle} from ${c.hostName}`, {
+      heading: "Thanks for your order", intro: `Hi ${c.buyerName}, your order from ${c.hostName} is ready. Keep this email: the link below is yours alone.`,
+      rows, link: { label: "Get it now", url: c.buyerUrl },
+      footer: `Sent by Hourhand for ${c.hostName}. Reply to this email to reach them.`,
+    }, { replyTo: c.hostEmail });
+  }
+  return render(`${c.hostName} refunded your order`, {
+    heading: "Your order was refunded",
+    intro: `Hi ${c.buyerName}, ${c.hostName} refunded your order for ${c.productTitle}. ${formatAmount(c.priceMinor, "INR")} is going back to the way you paid; banks usually take 5 to 7 working days. The download link no longer works.`,
+    rows: [["Product", c.productTitle]],
+    footer: `Sent by Hourhand for ${c.hostName}. Reply to this email to reach them.`,
+  }, { replyTo: c.hostEmail });
+}

@@ -15,7 +15,7 @@ import { invoiceById } from "../gst/invoices";
 import { monthlyEarnings } from "../earnings";
 import { requestForEmail } from "../privacy/rights";
 import { paymentAccount, priceCurrency } from "../payments/host-payments";
-import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderQuestionMail, renderRenewalReminder, renderPollClosedMail, renderPollVoterMail, renderSeatInviteMail, renderWaitlistMail, renderDataRequestMail, renderZoomAlert, type BookingMailContext, type RenderedMail } from "../mail/templates";
+import { renderBookingMail, renderCalendarAlert, renderEarningsMail, renderInvoiceMail, renderPackageMail, renderProductMail, renderQuestionMail, renderRenewalReminder, renderPollClosedMail, renderPollVoterMail, renderSeatInviteMail, renderWaitlistMail, renderDataRequestMail, renderZoomAlert, type BookingMailContext, type RenderedMail } from "../mail/templates";
 import { PLAN_NAMES, PRICES, type BillingInterval, type PaidPlan } from "../billing/plans";
 import { freeSlots } from "../booking";
 import { pollMailData } from "../polls/polls";
@@ -639,6 +639,26 @@ async function renderQuestion(pool: pg.Pool, c: Claimed, baseUrl: string): Promi
   });
 }
 
+const isProductKind = (k: string): k is "product_sale_host" | "product_receipt_buyer" | "product_refund_buyer" =>
+  k === "product_sale_host" || k === "product_receipt_buyer" || k === "product_refund_buyer";
+
+/** Digital products (B20): rendered from the order as it is now, so an email for a state it has left is skipped. */
+async function renderProduct(pool: pg.Pool, c: Claimed, baseUrl: string): Promise<RenderedMail | { skip: string }> {
+  const m = /^product:([0-9a-f-]{36}):(product_sale_host|product_receipt_buyer|product_refund_buyer)$/.exec(c.dedupe_key);
+  if (!m) return { skip: "not a product email" };
+  const { rows: [o] } = await pool.query(
+    `select o.buyer_name, o.buyer_email::text as buyer_email, o.price_minor, o.status, o.token, p.title,
+       u.name as host_name, u.email::text as host_email, u.host_locale
+     from product_orders o join digital_products p on p.id = o.product_id join users u on u.id = o.host_id where o.id = $1`, [m[1]]);
+  if (!o) return { skip: "order not found" };
+  const want = { product_sale_host: ["paid", "refund_pending", "refunded"], product_receipt_buyer: ["paid"], product_refund_buyer: ["refund_pending", "refunded"] }[m[2] as "product_sale_host"];
+  if (!want.includes(o.status)) return { skip: `order is ${o.status}` };
+  return renderProductMail(m[2] as "product_sale_host", {
+    hostName: o.host_name, hostEmail: o.host_email, buyerName: o.buyer_name, buyerEmail: o.buyer_email, productTitle: o.title, priceMinor: o.price_minor,
+    buyerUrl: `${baseUrl}/d/${o.token}`, dashboardUrl: `${baseUrl}/dashboard/products`, hostLocale: o.host_locale,
+  });
+}
+
 /** The follow-up links' signing key, or null when TOKEN_ENCRYPTION_KEY isn't set (follow-ups are then skipped, saying why). */
 function followUpLinkKey(): Buffer | null {
   try { return linkKey(); } catch { return null; }
@@ -687,7 +707,7 @@ export async function processDueNotifications(
       continue;
     }
     // Host emails about their account rather than a booking.
-    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind) || c.kind === "data_request_host" || c.kind === "membership_guest" || c.kind === "membership_host" || isClinicMail(c.kind) || c.kind === "referral_reward_host" || isQuestionKind(c.kind);
+    const isAccountMail = c.kind === "calendar_alert_host" || c.kind === "zoom_alert_host" || c.kind === "renewal_reminder_host" || c.kind === "package_guest" || c.kind === "package_host" || c.kind === "invoice_guest" || c.kind === "earnings_host" || c.kind === "waitlist_guest" || c.kind === "seat_invite" || isPollKind(c.kind) || c.kind === "data_request_host" || c.kind === "membership_guest" || c.kind === "membership_host" || isClinicMail(c.kind) || c.kind === "referral_reward_host" || isQuestionKind(c.kind) || isProductKind(c.kind);
     if (!isAccountMail) {
       if (!r?.id) { await skip(c, "booking no longer exists"); continue; }
       const why = skipReason(c.kind, r, now);
@@ -778,6 +798,7 @@ export async function processDueNotifications(
           : c.kind === "renewal_reminder_host" ? await renderRenewal(pool, c, opts.baseUrl)
           : c.kind === "package_guest" || c.kind === "package_host" ? await renderPackage(pool, c, opts.baseUrl)
           : isQuestionKind(c.kind) ? await renderQuestion(pool, c, opts.baseUrl)
+          : isProductKind(c.kind) ? await renderProduct(pool, c, opts.baseUrl)
           : c.kind === "invoice_guest" ? await renderInvoice(pool, c, opts.baseUrl)
           : c.kind === "earnings_host" ? await renderEarnings(pool, c, opts.baseUrl, now)
           : c.kind === "waitlist_guest" ? await renderWaitlist(pool, c, opts.baseUrl, now)

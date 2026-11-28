@@ -148,4 +148,9 @@ export const mail: Record<keyof typeof en, string> = {
   "mail.iQuestion": "{guest} <{email}> உங்களிடம் ஒரு கேள்வி கேட்டுள்ளார். Hourhand-இல் பதில் அளியுங்கள், உங்கள் பதில் அவருக்கு மின்னஞ்சலில் கிடைக்கும்.",
   "mail.rQuestion": "கேள்வி",
   "mail.rAnswerBy": "பதில் அளிக்க வேண்டிய நாள்",
+  "mail.subjProductSale": "புதிய விற்பனை: {product}",
+  "mail.hProductSale": "உங்களுக்கு ஒரு விற்பனை நடந்துள்ளது",
+  "mail.iProductSale": "{buyer} உங்கள் தயாரிப்புகளில் ஒன்றை வாங்கியுள்ளார். அவருக்கு டவுன்லோடு லிங்க் கிடைத்துவிட்டது.",
+  "mail.rProduct": "தயாரிப்பு",
+  "mail.rBuyer": "வாங்கியவர்",
 };
