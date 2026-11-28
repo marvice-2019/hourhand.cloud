@@ -1,5 +1,5 @@
 import type pg from "pg";
-import type { PaymentCheckDeps } from "./booking-payments";
+import { authForPayment, type PaymentCheckDeps } from "./booking-payments";
 import { isZeroDecimal, type StripeDeps, type StripeFee } from "./stripe-checkout";
 
 // The payment provider's fee on each captured payment, fetched for any row that doesn't have it yet: payments captured
@@ -15,7 +15,7 @@ export interface FeeResult { checked: number; recorded: number; errors: number }
 
 type Table = "payments" | "package_purchases";
 type Provider = "razorpay" | "stripe";
-interface DueRow { id: string; host_id: string; provider_payment_id: string; currency: string }
+interface DueRow { id: string; host_id: string; collected_by: string | null; collected_via: string; provider_payment_id: string; currency: string }
 
 async function claim(pool: pg.Pool, table: Table, provider: Provider, now: Date, limit: number): Promise<DueRow[]> {
   const status = table === "payments" ? "status in ('paid', 'refund_pending', 'refunded')" : "status = 'paid'";
@@ -27,7 +27,7 @@ async function claim(pool: pg.Pool, table: Table, provider: Provider, now: Date,
            or (fee_checked_at < $1::timestamptz - $3 * interval '1 millisecond' and paid_at > $1::timestamptz - $4 * interval '1 millisecond'))
        order by fee_checked_at nulls first, paid_at desc limit $2 for update skip locked)
      update ${table} t set fee_checked_at = $1 from due where t.id = due.id
-     returning t.id, t.host_id, t.provider_payment_id, t.currency`, [now, limit, RETRY_MS, RETRY_FOR_MS, provider]);
+     returning t.id, t.host_id, t.collected_by, t.collected_via, t.provider_payment_id, t.currency`, [now, limit, RETRY_MS, RETRY_FOR_MS, provider]);
   return rows;
 }
 
@@ -57,7 +57,8 @@ async function run(
 /** Records Razorpay's fee on up to `limit` payments and `limit` package purchases that don't have one yet. */
 export function recordMissingFees(deps: PaymentCheckDeps & { pool: pg.Pool }, now: Date, limit = 20): Promise<FeeResult> {
   return run(deps.pool, "razorpay", now, limit, async (row) => {
-    const auth = await deps.authFor(row.host_id);
+    // The account that took the payment: Hourhand's for one it collected (B18), else the host's (or practice's).
+    const auth = await authForPayment(deps, row);
     if (!auth) return null; // Razorpay disconnected: tried again only while the payment is recent
     return (await deps.ordersFor(auth).getPayment(row.provider_payment_id)).fee;
   });

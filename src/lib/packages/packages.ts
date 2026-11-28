@@ -6,7 +6,8 @@ import { kickJobs } from "../jobs/kick";
 import { invoiceForPurchase } from "../gst/invoices";
 import type { Plan } from "../billing/plans";
 import { OfferRefusedError, resolvePrice, type AppliedOffer, type ResolvePriceInput } from "../offers/offers";
-import type { PaymentCheckDeps } from "../payments/booking-payments";
+import { authForPayment, type PaymentCheckDeps } from "../payments/booking-payments";
+import { collectionTerms } from "../payments/platform";
 import type { HostRazorpayAuth } from "../payments/host-razorpay";
 import type { PaymentFee, RazorpayOrders, RazorpayPayment } from "../payments/razorpay-orders";
 
@@ -247,13 +248,17 @@ export async function startPurchase(
   const orderId = await inTx(pool, async (client) => {
     const { rows: [locked] } = await client.query("select provider_order_id from package_purchases where id = $1 for update", [row.id]);
     if (locked.provider_order_id) return locked.provider_order_id as string;
+    // Who takes the money (the host, or Hourhand for them, B18) is fixed on the purchase now, like a booking's payment.
+    const terms = collectionTerms(auth, row.price_minor, CURRENCY);
     let order;
     try {
-      order = await orders.createOrder({ amount: row.price_minor, currency: CURRENCY, receipt: `pkg-${row.id}`, notes: { package_purchase_id: row.id } });
+      order = await orders.createOrder({ amount: row.price_minor, currency: CURRENCY, receipt: `pkg-${row.id}`, notes: { package_purchase_id: row.id }, transfers: terms.transfers });
     } catch (error) {
       throw new PurchaseStartError(`Payment could not start: ${(error as Error).message}`, error instanceof BillingApiError && error.retryable);
     }
-    await client.query("update package_purchases set provider_order_id = $2, updated_at = now() where id = $1", [row.id, order.id]);
+    await client.query(
+      "update package_purchases set provider_order_id = $2, collected_via = $3, commission_minor = $4, transfer_account = $5, updated_at = now() where id = $1",
+      [row.id, order.id, terms.collectedVia, terms.commissionMinor, terms.transferAccount]);
     return order.id;
   });
   return { token: row.token, status: "pending", payment: checkout(orderId), ...offer };
@@ -345,7 +350,7 @@ export async function reconcilePurchases(deps: PaymentCheckDeps & { pool: pg.Poo
          and (checked_at is null or checked_at < $1::timestamptz - $3 * interval '1 millisecond')
        order by checked_at nulls first, created_at limit $2 for update skip locked)
      update package_purchases p set checked_at = $1 from due where p.id = due.id
-     returning p.id, p.host_id, p.collected_by, p.provider_order_id, p.price_minor, p.currency, p.created_at`, [now, limit, RECHECK_MS]);
+     returning p.id, p.host_id, p.collected_by, p.collected_via, p.provider_order_id, p.price_minor, p.currency, p.created_at`, [now, limit, RECHECK_MS]);
   const result: PurchaseReconcileResult = { claimed: rows.length, paid: 0, failed: 0, errors: 0 };
   const giveUp = async (r: { id: string; created_at: Date }) => {
     if (now.getTime() - new Date(r.created_at).getTime() <= GIVE_UP_MS) return;
@@ -357,7 +362,7 @@ export async function reconcilePurchases(deps: PaymentCheckDeps & { pool: pg.Poo
       // Its order never got made: nothing can be paid, so it just times out.
       if (!r.provider_order_id) { await giveUp(r); continue; }
       // The account that took the money (a Clinic practice's, or the host's own), even if the host has since moved.
-      const auth = deps.accountAuth && r.collected_by ? await deps.accountAuth(r.collected_by) : await deps.authFor(r.host_id);
+      const auth = await authForPayment(deps, r);
       if (!auth) {
         await pool.query("update package_purchases set last_error = 'Razorpay disconnected', updated_at = $2 where id = $1", [r.id, now]);
         await giveUp(r);

@@ -6,6 +6,7 @@ import { getPool } from "../data/pg-store";
 import { createMailer } from "../mail/mailer";
 import type { PaymentCheckDeps } from "../payments/booking-payments";
 import { loadHostRazorpay } from "../payments/host-razorpay";
+import { loadPlatformRazorpay } from "../payments/platform";
 import { paymentAccountFor } from "../clinic/payments";
 import { razorpayOrders } from "../payments/razorpay-orders";
 import { stripeCheckoutFromEnv, stripeDepsFor, type StripeDeps } from "../payments/stripe-checkout";
@@ -43,6 +44,8 @@ export function startJobsFromEnv(env: Record<string, string | undefined> = proce
       // Existing payments are checked and refunded on the account that collected them (payments.collected_by).
       authFor: async (hostId) => loadHostRazorpay(pool, key, await paymentAccountFor(pool, hostId)),
       accountAuth: (accountId) => loadHostRazorpay(pool, key, accountId),
+      // Payments Hourhand collected for a host (B18) are checked and refunded on Hourhand's own account.
+      platformAuth: () => loadPlatformRazorpay(pool, key),
       ordersFor: (auth) => razorpayOrders(auth),
     };
     const stripeApi = stripeCheckoutFromEnv(env);

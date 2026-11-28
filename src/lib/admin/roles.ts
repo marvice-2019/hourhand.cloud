@@ -5,17 +5,18 @@ import type pg from "pg";
 //   super_admin  everything an admin can, plus granting and revoking staff, reading the audit log, giving hosts a
 //                complimentary plan, approving, declining and suspending hosts, and reading a host's customer data
 //                (clients, bookings with their answers, private notes, payments). Every customer-data view is logged.
+//                Only a super admin sets Hourhand's own payment gateway, commissions and how each host is paid (B18).
 // Super admins in SUPER_ADMIN_EMAILS are fixed by the server's environment: the app can't remove them.
 
 type Db = Pick<pg.Pool, "query">;
 type Env = Record<string, string | undefined>;
 
 export type StaffRole = "admin" | "super_admin";
-export type Permission = "view_overview" | "view_hosts" | "manage_staff" | "view_audit" | "manage_plans" | "review_hosts" | "view_customer_data";
+export type Permission = "view_overview" | "view_hosts" | "manage_staff" | "view_audit" | "manage_plans" | "review_hosts" | "view_customer_data" | "manage_payments";
 
 const GRANTS: Record<StaffRole, readonly Permission[]> = {
   admin: ["view_overview", "view_hosts"],
-  super_admin: ["view_overview", "view_hosts", "manage_staff", "view_audit", "manage_plans", "review_hosts", "view_customer_data"],
+  super_admin: ["view_overview", "view_hosts", "manage_staff", "view_audit", "manage_plans", "review_hosts", "view_customer_data", "manage_payments"],
 };
 
 export const ROLE_NAMES: Record<StaffRole, string> = { admin: "Admin", super_admin: "Super admin" };

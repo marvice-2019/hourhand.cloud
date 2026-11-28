@@ -5,6 +5,7 @@ import { creditNoteForRefund } from "../gst/invoices";
 import { applyPurchasePayment } from "../packages/packages";
 import { applyCapturedPayment, expireHold, PaymentStartError } from "./booking-payments";
 import { recordRefund, REFUND_DUE_SQL, targetOf } from "./series";
+import { stripeApplicationFee } from "./platform";
 import { applicationFeeMinor, loadHostStripe, STRIPE_API_VERSION, stripeApiBase, type HostStripe } from "./stripe-connect";
 
 // Guests paying a Stripe-connected host. Each payment is a Stripe Checkout Session created on the host's own account
@@ -236,7 +237,8 @@ export async function startStripeBooking(
   const existing = await stripeRowFor(pool, booking.id);
   if (existing) return { booking, payment: checkout(existing) };
 
-  const fee = applicationFeeMinor(priceMinor);
+  // Hourhand's cut: the host's commission when a super admin set them to split (B18), the standard fee otherwise.
+  const fee = await stripeApplicationFee(pool, booking.hostId, priceMinor);
   let session: StripeSession;
   try {
     session = await api.createSession(host.accountId, {
@@ -272,7 +274,8 @@ export async function startStripePurchase(
 ): Promise<{ url: string; amount: number; currency: string }> {
   const { pool, api, host } = deps;
   if (input.currency !== host.currency) throw new PaymentStartError("The package is priced in another currency than the host's Stripe account", false);
-  const fee = applicationFeeMinor(input.amountMinor);
+  const { rows: [owner] } = await pool.query("select host_id from package_purchases where id = $1", [input.purchaseId]);
+  const fee = owner ? await stripeApplicationFee(pool, owner.host_id, input.amountMinor) : applicationFeeMinor(input.amountMinor);
   return inTx(pool, async (client) => {
     const { rows: [locked] } = await client.query("select provider_order_id, checkout_url, created_at from package_purchases where id = $1 for update", [input.purchaseId]);
     if (locked.provider_order_id) return { url: locked.checkout_url as string, amount: input.amountMinor, currency: input.currency };

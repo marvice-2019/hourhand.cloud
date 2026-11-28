@@ -6,6 +6,7 @@ import { kickJobs } from "../jobs/kick";
 import { creditNoteForRefund, invoiceForPayment } from "../gst/invoices";
 import type { HostRazorpayAuth } from "./host-razorpay";
 import { recordRefund, REFUND_DUE_SQL, targetOf } from "./series";
+import { collectionTerms } from "./platform";
 import type { PaymentFee, RazorpayOrders, RazorpayPayment } from "./razorpay-orders";
 
 // Priced bookings: the guest pays the host's own Razorpay account. The booking holds its slot as pending_payment while
@@ -77,9 +78,11 @@ export async function startPaidBooking(
   const existing = await paymentFor(pool, booking.id);
   if (existing) return { booking, payment: checkout(existing) };
 
+  // Who takes the money (the host, or Hourhand for them) is fixed on the row now, so confirming and refunding use that account.
+  const terms = collectionTerms(auth, priceMinor, CURRENCY);
   let order;
   try {
-    order = await orders.createOrder({ amount: priceMinor, currency: CURRENCY, receipt: booking.id, notes: { booking_id: booking.id } });
+    order = await orders.createOrder({ amount: priceMinor, currency: CURRENCY, receipt: booking.id, notes: { booking_id: booking.id }, transfers: terms.transfers });
   } catch (error) {
     // Without an order the guest can't pay, so free the slot now rather than holding it until the hold lapses.
     await pool.query(
@@ -93,8 +96,9 @@ export async function startPaidBooking(
     const raced = await paymentFor(client, booking.id);
     if (raced) return raced;
     await client.query(
-      `insert into payments (booking_id, host_id, provider, provider_order_id, amount_minor, currency, status, kind, sessions) values ($1, $2, 'razorpay', $3, $4, $5, 'pending', $6, $7)`,
-      [booking.id, booking.hostId, order.id, priceMinor, CURRENCY, kind, sessions]);
+      `insert into payments (booking_id, host_id, provider, provider_order_id, amount_minor, currency, status, kind, sessions, collected_via, commission_minor, transfer_account)
+       values ($1, $2, 'razorpay', $3, $4, $5, 'pending', $6, $7, $8, $9, $10)`,
+      [booking.id, booking.hostId, order.id, priceMinor, CURRENCY, kind, sessions, terms.collectedVia, terms.commissionMinor, terms.transferAccount]);
     return { provider_order_id: order.id, amount_minor: priceMinor, currency: CURRENCY };
   });
   return { booking, payment: checkout(row) };
@@ -180,14 +184,20 @@ export interface PaymentCheckDeps {
    * payment uses this, so a Clinic practitioner who has since left still has it refunded from the practice's account.
    */
   accountAuth?(accountId: string): Promise<HostRazorpayAuth | null>;
+  /** Hourhand's own Razorpay, for payments it collected for a host (payments.collected_via = 'platform', B18). */
+  platformAuth?(): Promise<HostRazorpayAuth | null>;
+  /** The account that takes a host's new payments, which may be Hourhand's (B18). Falls back to authFor. */
+  collectFor?(hostId: string): Promise<HostRazorpayAuth | null>;
 }
 
-const authForPayment = (deps: PaymentCheckDeps, row: { host_id: string; collected_by?: string | null }) =>
-  deps.accountAuth && row.collected_by ? deps.accountAuth(row.collected_by) : deps.authFor(row.host_id);
+/** The account that took an existing payment: Hourhand's when it collected for the host, else the host's (or practice's). */
+export const authForPayment = (deps: PaymentCheckDeps, row: { host_id: string; collected_by?: string | null; collected_via?: string | null }): Promise<HostRazorpayAuth | null> =>
+  row.collected_via === "platform" ? (deps.platformAuth?.() ?? Promise.resolve(null))
+    : deps.accountAuth && row.collected_by ? deps.accountAuth(row.collected_by) : deps.authFor(row.host_id);
 
 export interface ReconcileResult { claimed: number; confirmed: number; refundPending: number; expired: number; errors: number }
 
-interface DueRow { booking_id: string; host_id: string; collected_by: string | null; provider_order_id: string; booking_status: string; hold_expires_at: Date | null; cancelled_at: Date | null }
+interface DueRow { booking_id: string; host_id: string; collected_by: string | null; collected_via: string; provider_order_id: string; booking_status: string; hold_expires_at: Date | null; cancelled_at: Date | null }
 
 // A payment is only checked once it is a minute old and at most once a minute, so a guest still in Checkout isn't polled.
 const RECHECK_MS = 60_000;
@@ -223,7 +233,7 @@ export async function reconcilePayments(deps: PaymentCheckDeps & { pool: pg.Pool
        for update of p skip locked)
      update payments p set checked_at = $1 from due, bookings b
      where p.id = due.id and b.id = p.booking_id
-     returning p.booking_id, p.host_id, p.collected_by, p.provider_order_id, b.status as booking_status, b.hold_expires_at, b.cancelled_at`,
+     returning p.booking_id, p.host_id, p.collected_by, p.collected_via, p.provider_order_id, b.status as booking_status, b.hold_expires_at, b.cancelled_at`,
     [now, limit, RECHECK_MS]);
   const result: ReconcileResult = { claimed: rows.length, confirmed: 0, refundPending: 0, expired: 0, errors: 0 };
   const count = (r: "confirmed" | "already" | "refund_pending") => {
@@ -293,7 +303,7 @@ export async function releaseDeposits(pool: pg.Pool, now: Date, limit = 50): Pro
 export interface RefundResult { claimed: number; refunded: number; errors: number }
 
 interface RefundRow {
-  id: string; booking_id: string; host_id: string; collected_by: string | null; provider_payment_id: string; status: string;
+  id: string; booking_id: string; host_id: string; collected_by: string | null; collected_via: string; transfer_account: string | null; provider_payment_id: string; status: string;
   amount_minor: number; refunded_minor: number; refund_due_minor: number;
 }
 
@@ -316,7 +326,7 @@ export async function processRefunds(deps: PaymentCheckDeps & { pool: pg.Pool },
        limit $2
        for update skip locked)
      update payments p set checked_at = $1 from due where p.id = due.id
-     returning p.id, p.booking_id, p.host_id, p.collected_by, p.provider_payment_id, p.status, p.amount_minor, p.refunded_minor, p.refund_due_minor`,
+     returning p.id, p.booking_id, p.host_id, p.collected_by, p.collected_via, p.transfer_account, p.provider_payment_id, p.status, p.amount_minor, p.refunded_minor, p.refund_due_minor`,
     [now, limit, REFUND_RETRY_MS]);
   const result: RefundResult = { claimed: rows.length, refunded: 0, errors: 0 };
   const setError = (row: RefundRow, message: string) =>
@@ -351,9 +361,11 @@ export async function processRefunds(deps: PaymentCheckDeps & { pool: pg.Pool },
       // else names its amount, with a receipt fixed by the running total, so a repeat is refused ("Duplicate receipt")
       // and the next round finds the refund in the list above. A refund Razorpay reports as pending counts as done.
       const whole = done === 0 && target === row.amount_minor;
+      // A split payment also pulls back what Route sent the host, so Hourhand isn't left paying the refund alone.
+      const reverseAll = row.transfer_account ? { reverseAll: true } : {};
       const refund = await orders.refund(row.provider_payment_id, whole
-        ? { receipt: `hh-${row.id}`, notes: { booking_id: row.booking_id } }
-        : { amount: target - done, receipt: `r${row.id.replaceAll("-", "")}${target.toString(36)}`, notes: { booking_id: row.booking_id } });
+        ? { receipt: `hh-${row.id}`, notes: { booking_id: row.booking_id }, ...reverseAll }
+        : { amount: target - done, receipt: `r${row.id.replaceAll("-", "")}${target.toString(36)}`, notes: { booking_id: row.booking_id }, ...reverseAll });
       // A full refund (no amount asked) returns everything left on the payment, whatever figure comes back with it.
       await markRefunded(row, refund.id, whole ? target : done + refund.amount);
     } catch (error) {

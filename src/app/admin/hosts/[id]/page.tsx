@@ -10,6 +10,10 @@ import { actionsFor, reviewStatusOf, type ReviewAction, type ReviewStatus } from
 import { requireStaff } from "@/lib/admin/session";
 import { getPool } from "@/lib/data/pg-store";
 import { formatDate } from "@/lib/format";
+import { Input, Label } from "@/components/ui/Input";
+import { formatMoney } from "@/lib/billing/plans";
+import { defaultCommissionBps, hostBalances, hostPaymentSettings, hostPayouts, platformRazorpayStatus, type PaymentMode } from "@/lib/payments/platform";
+import { setHostPaymentsAction } from "../../payments/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +32,17 @@ const RESULTS: Record<string, [string, boolean]> = {
   review_closed: ["That account is closed.", false],
   review_self: ["You can't review your own account.", false],
   review_not_allowed: ["Only a super admin can approve, decline or suspend hosts.", false],
+  payments_saved: ["Saved. New payments from this host's guests follow it; payments already started keep their account.", true],
+  no_route_account: ["Splitting needs the host's Razorpay Route linked account id (acc_…).", false],
+  bad_commission: ["Enter a commission from 0% to 50%, or leave it empty for the default.", false],
+  format: ["A Razorpay Route account id starts with acc_.", false],
+  bad_mode: ["Pick how this host's guests pay.", false],
+};
+
+const MODE_LABELS: Record<PaymentMode, string> = {
+  own: "Host's own Razorpay or Stripe (default)",
+  split: "Hourhand's Razorpay, split at once with the host (Route)",
+  platform: "Hourhand collects in full and pays the host out",
 };
 
 const REVIEW_LABELS: Record<ReviewStatus, string> = { pending: "Waiting for approval", approved: "Approved", declined: "Declined", suspended: "Suspended" };
@@ -47,6 +62,10 @@ export default async function AdminHostPage({ params, searchParams }: { params: 
   const s = h.subscription;
   const paying = Boolean(s?.provider) && s!.plan !== "free" && s!.status !== "cancelled";
   const message = result ? RESULTS[result] : undefined;
+  const managesPayments = can(staff.role, "manage_payments");
+  const [pay, defaultBps, gateway, balance, payouts] = managesPayments
+    ? await Promise.all([hostPaymentSettings(db, h.id), defaultCommissionBps(db), platformRazorpayStatus(db), hostBalances(db).then((all) => all.find((b) => b.hostId === h.id)), hostPayouts(db, h.id)])
+    : [null, 0, null, undefined, []];
   return (
     <div className="max-w-3xl">
       <h1 className="font-display text-xl text-text">{h.name || "(no name)"}</h1>
@@ -95,6 +114,40 @@ export default async function AdminHostPage({ params, searchParams }: { params: 
           {row("Packages sold", h.counts.packagesSold)}{row("Active members", h.counts.activeMembers)}{row("Invoices issued", h.counts.invoices)}
         </dl></Card>
       </div>
+      {managesPayments && pay && (
+        <Card className="mt-4">
+          <h2 className="mb-3 font-semibold text-text">How this host&apos;s guests pay</h2>
+          <form action={setHostPaymentsAction} className="grid gap-3">
+            <input type="hidden" name="hostId" value={h.id} />
+            <fieldset className="grid gap-2">
+              <legend className="text-sm font-semibold text-text">Payments go to</legend>
+              {(Object.keys(MODE_LABELS) as PaymentMode[]).map((m) => (
+                <label key={m} className="flex items-center gap-2 text-text">
+                  <input type="radio" name="mode" value={m} defaultChecked={pay.mode === m} className={focusRing} /> {MODE_LABELS[m]}
+                </label>
+              ))}
+            </fieldset>
+            <div><Label htmlFor="commission">Hourhand&apos;s commission (%)</Label>
+              <Input id="commission" name="commission" inputMode="decimal" defaultValue={pay.commissionBps === null ? "" : String(pay.commissionBps / 100)} placeholder={`Default: ${defaultBps / 100}`} className="w-32" /></div>
+            <div><Label htmlFor="routeAccount">Razorpay Route linked account id (for split)</Label>
+              <Input id="routeAccount" name="routeAccount" defaultValue={pay.routeAccount ?? ""} placeholder="acc_…" spellCheck={false} /></div>
+            <div><Button type="submit" size="sm">Save</Button></div>
+          </form>
+          <p className="mt-3 text-sm text-text-muted">
+            Applies to new Razorpay payments for bookings and packages. A Stripe host set to split pays the commission as Stripe&apos;s application fee; memberships always go to the host.
+            {pay.mode !== "own" && !gateway && " Hourhand's Razorpay isn't connected, so this host's guests can't pay until it is (Payments page)."}
+            {pay.mode === "platform" && " Collecting in full can need an RBI payment aggregator licence: check with your CA before using live keys."}
+          </p>
+          {balance && (
+            <p className="mt-3 text-text">Hourhand owes this host <strong>{formatMoney(balance.owedMinor, balance.currency)}</strong> (paid out so far {formatMoney(balance.paidOutMinor, balance.currency)}). Record payouts on the <Link href="/admin/payments" className={`text-accent underline ${focusRing}`}>Payments page</Link>.</p>
+          )}
+          {payouts.length > 0 && (
+            <ul className="mt-2 grid gap-1 text-sm text-text-muted">
+              {payouts.map((p) => <li key={p.id}>{formatDate(p.paidAt, tz)}: {formatMoney(p.amountMinor, p.currency)}, ref {p.reference}{p.recordedBy ? `, by ${p.recordedBy}` : ""}</li>)}
+            </ul>
+          )}
+        </Card>
+      )}
       {can(staff.role, "view_customer_data") && (
         <nav aria-label="Customer data" className="mt-6 flex flex-wrap gap-4">
           <Link href={`/admin/hosts/${h.id}/clients`} className={`font-semibold text-accent underline ${focusRing}`}>Clients</Link>
