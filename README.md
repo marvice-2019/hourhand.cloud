@@ -169,6 +169,7 @@ Hosts on Solo or Duo can charge guests for an event type, in rupees through Razo
 - **Rescheduling** keeps the payment: no refund, no second charge.
 - **Disconnecting Razorpay** is refused while a guest's payment is still being confirmed or refunded. **Closing an account** refunds paid upcoming bookings, and the 30-day purge waits until those refunds have gone through.
 - **Free hosts:** a priced event of a host whose plan lapsed can't be booked; guests are told to contact the host.
+- **Ask a question** (Dashboard → Questions, off by default): guests send one written question at `/<slug>/ask`, free or paid in rupees, and get the host's written answer by email and on a private page. The host sets the price, "reply within" 1 to 14 days and a short intro. A paid question needs a paid plan and an account that can take the money (the host's own Razorpay, or Hourhand's under platform payments); it opens only once Razorpay shows the payment captured. Declining a paid question refunds it in full. Unpaid questions lapse after a day (spec: docs/specs/B19-questions.md).
 - **Not built:** Stripe for non-INR (Stripe is invite-only for Indian businesses), partial refunds or cancellation fees, deposits, payment links for existing bookings, and the host's own webhook (not needed: Hourhand checks Razorpay itself).
 
 ## Booking webhooks

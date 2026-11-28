@@ -28,6 +28,7 @@ import { profile } from "./en/profile";
 import { referrals } from "./en/referrals";
 import { routing } from "./en/routing";
 import { push } from "./en/push";
+import { questions } from "./en/questions";
 import { seat } from "./en/seat";
 import { settings } from "./en/settings";
 import { voice } from "./en/voice";
@@ -36,7 +37,7 @@ import { ta } from "./ta";
 
 const en = {
   ...common, ...nav, ...bookings, ...clients, ...profile, ...eventTypes, ...links, ...packages, ...earnings, ...invoices,
-  ...availability, ...calendars, ...integrations, ...domain, ...plan, ...seat, ...settings, ...mail, ...polls, ...getBooked, ...memberships, ...feedback, ...offers, ...analytics, ...voice, ...intake, ...referrals, ...routing, ...push,
+  ...availability, ...calendars, ...integrations, ...domain, ...plan, ...seat, ...settings, ...mail, ...polls, ...getBooked, ...memberships, ...feedback, ...offers, ...analytics, ...voice, ...intake, ...referrals, ...routing, ...push, ...questions,
 };
 
 export type HostKey = keyof typeof en;
