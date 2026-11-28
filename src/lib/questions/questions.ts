@@ -6,6 +6,7 @@ import type { HostRazorpayAuth } from "../payments/host-razorpay";
 import { collectionTerms } from "../payments/platform";
 import type { RazorpayOrders, RazorpayPayment } from "../payments/razorpay-orders";
 import type { QuestionEmailKind } from "../data/notifications";
+import { queueSaleWebhook } from "../webhooks/webhooks";
 
 // Ask a question (B19, like Topmate's Priority DM). A host offers to answer one written question for a price (or free).
 // The guest sends it from /<slug>/ask, pays the host's Razorpay (or Hourhand's, B18) and gets a private link (/q/<token>).
@@ -135,9 +136,14 @@ async function openQuestion(client: Db, id: string, now: Date, paid: { paymentId
     `update questions q set status = 'open', due_at = $2::timestamptz + o.response_days * interval '1 day', updated_at = $2,
        provider_payment_id = coalesce($3, q.provider_payment_id), paid_at = case when $3::text is null then q.paid_at else $2 end, last_error = null
      from question_offers o where q.id = $1 and o.host_id = q.host_id and q.status in ('pending', 'failed')
-     returning q.id, q.host_id, (select email::text from users where id = q.host_id) as host_email`, [id, now, paid?.paymentId ?? null]);
+     returning q.id, q.host_id, q.guest_name, q.guest_email::text as guest_email, q.question, q.price_minor, q.currency, q.due_at,
+       (select email::text from users where id = q.host_id) as host_email`, [id, now, paid?.paymentId ?? null]);
   if (!q) return false;
   await notify(client, q, "question_host", q.host_email, now);
+  await queueSaleWebhook(client, q.host_id, "question.received", q.id, {
+    question_id: q.id, guest_name: q.guest_name, guest_email: q.guest_email, question: q.question,
+    price_minor: q.price_minor, currency: q.currency, due_at: q.due_at ? new Date(q.due_at).toISOString() : null, received_at: now.toISOString(),
+  }, now);
   return true;
 }
 
@@ -311,10 +317,14 @@ export async function answerQuestion(pool: pg.Pool, hostId: string, id: string, 
   if (!UUID.test(id)) return "not_found";
   const result = await inTx(pool, async (client) => {
     const { rows: [q] } = await client.query(
-      "update questions set status = 'answered', answer = $3, answered_at = $4, updated_at = $4 where id = $1 and host_id = $2 and status = 'open' returning id, host_id, guest_email::text as guest_email",
+      `update questions set status = 'answered', answer = $3, answered_at = $4, updated_at = $4 where id = $1 and host_id = $2 and status = 'open'
+       returning id, host_id, guest_name, guest_email::text as guest_email, question`,
       [id, hostId, text, now]);
     if (!q) return (await client.query("select 1 from questions where id = $1 and host_id = $2", [id, hostId])).rows.length ? "not_open" as const : "not_found" as const;
     await notify(client, q, "question_answer_guest", q.guest_email, now);
+    await queueSaleWebhook(client, q.host_id, "question.answered", q.id, {
+      question_id: q.id, guest_name: q.guest_name, guest_email: q.guest_email, question: q.question, answer: text, answered_at: now.toISOString(),
+    }, now);
     return "answered" as const;
   });
   if (result === "answered") kickJobs();
