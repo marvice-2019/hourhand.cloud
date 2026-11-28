@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { hostDisplayName } from "../display-name";
 import { renderMembershipMail, type MembershipMailContext, type RenderedMail } from "../mail/templates";
 import { creditsLeft } from "./memberships";
 
@@ -13,7 +14,7 @@ export async function renderMembership(pool: pg.Pool, c: { kind: string; dedupe_
   if (!r) return { skip: "membership gone" };
   const left = await creditsLeft(pool, { id: r.id, status: r.status, cancelAtPeriodEnd: r.cancel_at_period_end, paidThrough: r.paid_through }, now);
   const ctx: MembershipMailContext = {
-    what: m[2] as MembershipMailContext["what"], hostName: r.host_name, hostEmail: r.host_email, guestName: r.guest_name, guestEmail: r.guest_email,
+    what: m[2] as MembershipMailContext["what"], hostName: hostDisplayName(r.host_name, r.host_email), hostEmail: r.host_email, guestName: r.guest_name, guestEmail: r.guest_email,
     planName: r.plan_name, sessions: r.sessions, priceMinor: r.price_minor, creditsLeft: left, paidThrough: r.paid_through, timezone: r.timezone,
     memberUrl: `${baseUrl}/member/${r.token}`, dashboardUrl: `${baseUrl}/dashboard/memberships`, hostLocale: r.host_locale,
   };

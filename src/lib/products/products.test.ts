@@ -1,5 +1,6 @@
 // B20: digital products, against real Postgres and a fake Razorpay (only with TEST_DATABASE_URL; uses its own database
 // <name>_p, dropped and recreated on every run).
+import { hostDisplayName } from "../display-name";
 import { createHmac } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -133,6 +134,20 @@ describe.skipIf(!BASE)("digital products (Postgres)", () => {
     expect(await takeDownload(pool, "0".repeat(48))).toBe("not_found");
     // A free order has nothing to refund.
     expect(await refundOrder(pool, priya.id, order.id, new Date())).toBe("not_refundable");
+  });
+
+  it("names a host who never set a name from their email on the shop and download pages, never blank", async () => {
+    await pool.query("update users set name = null where id = $1", [priya.id]);
+    try {
+      const expected = hostDisplayName(null, priya.email);
+      expect((await publicProducts(pool, "priya"))?.host.name).toBe(expected);
+      const found = (await publicProduct(pool, "priya", "guide"))!;
+      expect(found.host.name).toBe(expected);
+      const a = await startOrder({ pool, auth: null, orders: null }, found, buy({ email: "nameless@example.in" }), new Date());
+      expect((await orderByToken(pool, a.token))?.hostName).toBe(expected);
+    } finally {
+      await pool.query("update users set name = $2 where id = $1", [priya.id, priya.name]);
+    }
   });
 
   it("takes payment, opens the download only on a captured payment, and refunds the host's own order once", async () => {

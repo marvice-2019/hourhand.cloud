@@ -1,3 +1,4 @@
+import { hostDisplayName } from "../display-name";
 import type pg from "pg";
 import { BillingApiError } from "../billing/providers";
 import { kickJobs } from "../jobs/kick";
@@ -68,10 +69,10 @@ export interface PublicOffer { host: { id: string; name: string; slug: string };
 /** A host's offer as guests see it: only while it is on and the host's pages are public (approved, not closed). */
 export async function publicOffer(db: Db, slug: string): Promise<PublicOffer | null> {
   const { rows: [r] } = await db.query(
-    `select u.id, u.name, u.slug::text as slug, o.price_minor, o.response_days, o.intro
+    `select u.id, u.name, u.email::text as email, u.slug::text as slug, o.price_minor, o.response_days, o.intro
      from users u join question_offers o on o.host_id = u.id
      where u.slug = $1 and o.active and u.deleted_at is null and u.review_status = 'approved'`, [slug]);
-  return r ? { host: { id: r.id, name: r.name, slug: r.slug }, offer: { active: true, priceMinor: r.price_minor, currency: "INR", responseDays: r.response_days, intro: r.intro } } : null;
+  return r ? { host: { id: r.id, name: hostDisplayName(r.name, r.email), slug: r.slug }, offer: { active: true, priceMinor: r.price_minor, currency: "INR", responseDays: r.response_days, intro: r.intro } } : null;
 }
 
 const toQuestion = (r: Record<string, unknown>): Question => ({
@@ -86,9 +87,9 @@ const COLUMNS = "id, token, guest_name, guest_email::text as guest_email, questi
 export async function questionByToken(db: Db, token: string): Promise<(Question & { hostName: string; hostSlug: string }) | null> {
   if (!TOKEN.test(token)) return null;
   const { rows: [r] } = await db.query(
-    `select ${COLUMNS.split(", ").map((c) => `q.${c}`).join(", ")}, u.name as host_name, u.slug::text as host_slug
+    `select ${COLUMNS.split(", ").map((c) => `q.${c}`).join(", ")}, u.name as host_name, u.email::text as host_email, u.slug::text as host_slug
      from questions q join users u on u.id = q.host_id where q.token = $1`, [token]);
-  return r ? { ...toQuestion(r), hostName: r.host_name, hostSlug: r.host_slug } : null;
+  return r ? { ...toQuestion(r), hostName: hostDisplayName(r.host_name, r.host_email), hostSlug: r.host_slug } : null;
 }
 
 /** A host's questions, newest first: everything a guest actually sent (not ones whose payment never went through). */

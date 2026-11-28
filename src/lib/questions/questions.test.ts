@@ -1,5 +1,6 @@
 // B19: Ask a question, against real Postgres and a fake Razorpay (only with TEST_DATABASE_URL; uses its own database
 // <name>_q, dropped and recreated on every run).
+import { hostDisplayName } from "../display-name";
 import { createHmac } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -106,6 +107,19 @@ describe.skipIf(!BASE)("ask a question (Postgres)", () => {
     expect(q).toMatchObject({ status: "open", hostName: priya.name, question: input.question });
     expect(q.dueAt).toEqual(new Date("2034-03-03T10:00:00Z"));
     expect(await notes("question_host")).toEqual([{ recipient: priya.email, dedupe_key: `question:${q.id}:question_host` }]);
+  });
+
+  it("names a host who never set a name from their email on the guest's pages, never blank", async () => {
+    await pool.query("update users set name = null where id = $1", [priya.id]);
+    try {
+      const found = (await publicOffer(pool, "priya"))!;
+      expect(found.host.name).toBe(hostDisplayName(null, priya.email));
+      expect(found.host.name).not.toBe("");
+      const a = await startQuestion({ pool, auth: null, orders: null }, found, ask({ question: "Who answers this?" }), new Date("2034-03-01T10:00:00Z"));
+      expect((await questionByToken(pool, a.token))?.hostName).toBe(hostDisplayName(null, priya.email));
+    } finally {
+      await pool.query("update users set name = $2 where id = $1", [priya.id, priya.name]);
+    }
   });
 
   it("answers only the host's own open question, and emails the guest the answer", async () => {

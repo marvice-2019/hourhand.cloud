@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { hostDisplayName } from "../display-name";
 import { accessTokenFor } from "../calendar/connections";
 import type { GoogleClient } from "../calendar/google";
 import { CalendarApiError, PROVIDER_NAMES, type CalendarProvider, type CalendarProviderId, type CalendarProviders } from "../calendar/provider";
@@ -138,7 +139,7 @@ type ContextRow = Record<string, unknown>;
 function toContext(r: ContextRow, baseUrl: string, audience: VideoAudience = "guest"): BookingMailContext {
   return {
     bookingId: r.id as string, eventName: r.event_name as string,
-    hostName: r.host_name as string, hostEmail: r.host_email as string, hostTimezone: r.host_timezone as string, hostTimeFormat: r.host_time_format as HourCycle, hostLocale: (r.host_locale as string | null) ?? "en",
+    hostName: hostDisplayName(r.host_name as string | null, r.host_email as string), hostEmail: r.host_email as string, hostTimezone: r.host_timezone as string, hostTimeFormat: r.host_time_format as HourCycle, hostLocale: (r.host_locale as string | null) ?? "en",
     guestName: r.guest_name as string, guestEmail: r.guest_email as string, guestTimezone: r.guest_timezone as string, locale: (r.guest_locale as string | null) ?? "en",
     startAt: new Date(r.start_at as Date), endAt: new Date(r.end_at as Date),
     location: r.location_kind ? { kind: r.location_kind as LocationKind, value: (r.location_value as string | null) ?? null } : null,
@@ -596,13 +597,13 @@ async function renderWaitlist(pool: pg.Pool, c: Claimed, baseUrl: string, now: D
   const m = /^waitlist:([0-9a-f-]{36})$/.exec(c.dedupe_key);
   if (!m) return { skip: "not a waitlist email" };
   const { rows: [w] } = await pool.query(
-    `select w.name, w.timezone, b.start_at, e.name as event_name, e.slug as event_slug, e.active, u.name as host_name, u.slug as host_slug, u.deleted_at
+    `select w.name, w.timezone, b.start_at, e.name as event_name, e.slug as event_slug, e.active, u.name as host_name, u.email::text as host_email, u.slug as host_slug, u.deleted_at
      from waitlist w join bookings b on b.id = $2 join event_types e on e.id = w.event_type_id join users u on u.id = w.host_id where w.id = $1`, [m[1], c.booking_id]);
   if (!w) return { skip: "waitlist entry gone" };
   if (new Date(w.start_at).getTime() <= now.getTime()) return { skip: "the time has passed" };
   if (!w.active || w.deleted_at || !w.host_slug) return { skip: "event no longer bookable" };
   const start = new Date(w.start_at);
-  return renderWaitlistMail({ guestName: w.name, hostName: w.host_name, eventName: w.event_name, start, timezone: w.timezone,
+  return renderWaitlistMail({ guestName: w.name, hostName: hostDisplayName(w.host_name, w.host_email), eventName: w.event_name, start, timezone: w.timezone,
     url: `${baseUrl}/${w.host_slug}/${w.event_slug}?at=${encodeURIComponent(start.toISOString())}` });
 }
 
@@ -625,7 +626,7 @@ async function renderPackage(pool: pg.Pool, c: Claimed, baseUrl: string): Promis
      where p.id = $1`, [m[1]]);
   if (!p || p.status !== "paid") return { skip: "package not paid" };
   return renderPackageMail(c.kind as "package_guest" | "package_host", {
-    hostName: p.host_name, hostEmail: p.host_email, guestName: p.guest_name, guestEmail: p.guest_email, packageName: p.package_name, eventName: p.event_name,
+    hostName: hostDisplayName(p.host_name, p.host_email), hostEmail: p.host_email, guestName: p.guest_name, guestEmail: p.guest_email, packageName: p.package_name, eventName: p.event_name,
     sessions: p.sessions, priceMinor: p.price_minor, currency: p.currency, provider: p.provider, expiresAt: p.expires_at, timezone: p.timezone,
     buyerUrl: `${baseUrl}/p/${p.token}`, dashboardUrl: `${baseUrl}/dashboard/packages`, hostLocale: p.host_locale,
   });
@@ -653,7 +654,7 @@ async function renderQuestion(pool: pg.Pool, c: Claimed, baseUrl: string): Promi
   if (!q) return { skip: "question not found" };
   if (!QUESTION_WANT[kind].includes(q.status)) return { skip: `question is ${q.status}` };
   return renderQuestionMail(kind, {
-    hostName: q.host_name, hostEmail: q.host_email, guestName: q.guest_name, guestEmail: q.guest_email, question: q.question, answer: q.answer,
+    hostName: hostDisplayName(q.host_name, q.host_email), hostEmail: q.host_email, guestName: q.guest_name, guestEmail: q.guest_email, question: q.question, answer: q.answer,
     priceMinor: q.price_minor, dueAt: q.due_at, timezone: q.timezone, guestUrl: `${baseUrl}/q/${q.token}`, dashboardUrl: `${baseUrl}/dashboard/questions`, hostLocale: q.host_locale,
   });
 }
@@ -673,7 +674,7 @@ async function renderProduct(pool: pg.Pool, c: Claimed, baseUrl: string): Promis
   const want = { product_sale_host: ["paid", "refund_pending", "refunded"], product_receipt_buyer: ["paid"], product_refund_buyer: ["refund_pending", "refunded"] }[m[2] as "product_sale_host"];
   if (!want.includes(o.status)) return { skip: `order is ${o.status}` };
   return renderProductMail(m[2] as "product_sale_host", {
-    hostName: o.host_name, hostEmail: o.host_email, buyerName: o.buyer_name, buyerEmail: o.buyer_email, productTitle: o.title, priceMinor: o.price_minor,
+    hostName: hostDisplayName(o.host_name, o.host_email), hostEmail: o.host_email, buyerName: o.buyer_name, buyerEmail: o.buyer_email, productTitle: o.title, priceMinor: o.price_minor,
     buyerUrl: `${baseUrl}/d/${o.token}`, dashboardUrl: `${baseUrl}/dashboard/products`, hostLocale: o.host_locale,
   });
 }
@@ -783,7 +784,7 @@ export async function processDueNotifications(
         ({ id: providerId } = await sendWhatsApp(opts.whatsapp!, calendarAlertMessage(alert, c.recipient), opts.fetch));
       } else if (c.channel === "whatsapp") {
         const message = templateMessage(c.kind as Parameters<typeof templateMessage>[0], {
-          guestName: r.guest_name as string, hostName: r.host_name as string, eventName: r.event_name as string, startAt: new Date(r.start_at as Date),
+          guestName: r.guest_name as string, hostName: hostDisplayName(r.host_name as string | null, r.host_email as string), eventName: r.event_name as string, startAt: new Date(r.start_at as Date),
           guestTimezone: r.guest_timezone as string, locale: (r.guest_locale as string | null) ?? "en", manageToken: r.manage_token as string,
           ...(c.kind === "cancelled_guest" ? {
             refundMinor: await cancelRefundMinor(pool, r),
@@ -804,7 +805,7 @@ export async function processDueNotifications(
         providerId = out.eventId;
       } else if (c.channel === "sms") {
         providerId = await sendBookingSms(pool, opts.sms!, c, {
-          guestName: r.guest_name as string, hostName: r.host_name as string, eventName: r.event_name as string, startAt: new Date(r.start_at as Date),
+          guestName: r.guest_name as string, hostName: hostDisplayName(r.host_name as string | null, r.host_email as string), eventName: r.event_name as string, startAt: new Date(r.start_at as Date),
           guestTimezone: r.guest_timezone as string, locale: (r.guest_locale as string | null) ?? "en",
         }, opts.baseUrl, opts.fetch);
       } else if (isCalendarJob(c.kind)) {

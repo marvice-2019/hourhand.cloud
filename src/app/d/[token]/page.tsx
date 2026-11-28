@@ -11,7 +11,7 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 const STATUS: Record<OrderStatus, string> = {
   pending: "Waiting for your payment. If you paid, this page updates within a minute or two.",
-  paid: "Paid. It's yours.",
+  paid: "It's yours.",
   failed: "The payment didn't go through, and nothing was charged.",
   refund_pending: "Refunded: your payment is on its way back, and the download has stopped.",
   refunded: "Refunded in full. Banks usually take 5 to 7 working days.",
