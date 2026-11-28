@@ -25,6 +25,7 @@ import { hostPlan } from "@/lib/billing/account";
 import { campaignBanner } from "@/lib/offers/offers";
 import { PracticePage } from "@/components/clinic/PracticePage";
 import { practicePage } from "@/lib/clinic/page";
+import { profileOfferings } from "@/lib/profile-offerings";
 
 /** A Clinic practice's page, when the slug is a practice's rather than a host's. Read once per request. */
 const loadPractice = cache(async (slug: string) => (authEnabled() ? practicePage(getPool(process.env.DATABASE_URL as string), slug) : null));
@@ -79,6 +80,8 @@ export default async function ProfilePage({ params, searchParams }: Props) {
   const campaign = pool ? await campaignBanner(pool, host.id, await hostPlan(pool, host.id), new Date()) : null;
   // Only reviews the guest agreed to show and the host chose to, and only once the host switched reviews on.
   const reviews = pool ? await publicReviews(pool, host.id) : null;
+  // B25: questions and products are listed here too, so guests find them without a separate link.
+  const offerings = pool ? await profileOfferings(pool, host.slug) : null;
   const jsonLd = p && profileJsonLd({ baseUrl: (resolveBaseUrl() ?? "").replace(/\/+$/, ""), slug: host.slug, name: host.name, profile: p, services: eventTypes });
   return (
     <main lang={locale} className="mx-auto max-w-(--hh-booking-max) px-4 py-10">
@@ -126,6 +129,37 @@ export default async function ProfilePage({ params, searchParams }: Props) {
           ))}
         </ul>
       </section>
+      {offerings?.ask && (
+        <section aria-labelledby="ask" className="mt-8">
+          <Link href={`/${host.slug}/ask`} className={`block rounded-lg ${focusRing}`}>
+            <Card className="hover:border-border-input">
+              <h2 id="ask" className="font-display text-lg text-text">{t(locale, "offerAskHeading")}</h2>
+              <p className="mt-1 text-sm text-text-muted">{offerings.ask.priceMinor > 0 ? formatAmount(offerings.ask.priceMinor, "INR") : t(locale, "free")}</p>
+              <p className="mt-2 text-sm text-text">{offerings.ask.responseDays === 1 ? t(locale, "offerAskWithinDay") : t(locale, "offerAskWithin", { n: offerings.ask.responseDays })}</p>
+              <span className="mt-3 inline-block font-semibold text-accent">{t(locale, "offerAskCta")}</span>
+            </Card>
+          </Link>
+        </section>
+      )}
+      {offerings && offerings.products.length > 0 && (
+        <section aria-labelledby="products" className="mt-8">
+          <h2 id="products" className="font-display text-lg text-text">{t(locale, "offerShopHeading")}</h2>
+          <ul className="mt-4 grid gap-4 md:grid-cols-2">
+            {offerings.products.map((pr) => (
+              <li key={pr.id}>
+                <Link href={`/${host.slug}/shop/${pr.slug}`} className={`block rounded-lg ${focusRing}`}>
+                  <Card className="h-full hover:border-border-input">
+                    <h3 className="font-display text-lg text-text">{pr.title}</h3>
+                    <p className="mt-1 text-sm text-text-muted">{pr.priceMinor > 0 ? formatAmount(pr.priceMinor, "INR") : t(locale, "free")}</p>
+                    {pr.description && <p className="mt-2 line-clamp-3 whitespace-pre-line text-sm text-text">{pr.description}</p>}
+                    <span className="mt-3 inline-block font-semibold text-accent">{t(locale, "offerProductCta")}</span>
+                  </Card>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {reviews && (
         <section aria-labelledby="reviews" className="mt-8 max-w-2xl">
           <h2 id="reviews" className="font-display text-lg text-text">{t(locale, "reviewsHeading")}</h2>
