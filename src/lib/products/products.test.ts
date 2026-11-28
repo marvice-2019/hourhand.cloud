@@ -178,6 +178,24 @@ describe.skipIf(!BASE)("digital products (Postgres)", () => {
     expect(await runProductJobs(jobDeps, new Date(Date.now() + 2 * 86_400_000))).toMatchObject({ failed: 1 });
     expect((await orderByToken(pool, unpaid.token))?.status).toBe("failed");
   });
+  it("tells the host's webhooks about a sale, once, and only the endpoints that asked for it", async () => {
+    const add = async (events: string[]) => (await pool.query(
+      "insert into webhook_endpoints (user_id, url, secret_sealed, events) values ($1, 'https://hooks.example.com/x', '\\x00', $2) returning id", [priya.id, events])).rows[0].id as string;
+    const wants = await add(["product.sold"]);
+    const other = await add(["booking.created"]);
+    const found = (await publicProduct(pool, "priya", "guide"))!;
+    const input = buy({ name: "Kavya", email: "kavya@example.in" });
+    const order = await startOrder({ pool, auth: null, orders: null }, found, input, new Date());
+    await startOrder({ pool, auth: null, orders: null }, found, input, new Date());
+    const { rows } = await pool.query("select endpoint_id, event, payload from webhook_deliveries where event = 'product.sold'");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ endpoint_id: wants, event: "product.sold", payload: { event: "product.sold", data: {
+      product_title: "Interview guide", buyer_name: "Kavya", buyer_email: "kavya@example.in", price_minor: 0, currency: "INR" } } });
+    expect(rows[0].payload.data.order_id).toBe((await pool.query("select id from product_orders where token = $1", [order.token])).rows[0].id);
+    expect((await pool.query("select 1 from webhook_deliveries where endpoint_id = $1", [other])).rows).toHaveLength(0);
+    await pool.query("delete from webhook_endpoints where user_id = $1", [priya.id]);
+  });
+
   it("refuses a paid product on the free plan and an unknown product", async () => {
     const fake = fakeRazorpay();
     const deps = { pool, authFor: async () => auth, ordersFor: () => fake.orders, planFor: async () => "free" as const };

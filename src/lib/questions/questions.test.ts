@@ -173,6 +173,22 @@ describe.skipIf(!BASE)("ask a question (Postgres)", () => {
     expect(row).toEqual({ collected_via: "platform", commission_minor: 4_990, transfer_account: "acc_HostQ1234" });
   });
 
+  it("tells the host's webhooks about a new question and its answer", async () => {
+    await saveOffer(pool, priya.id, { active: true, priceMinor: 0, responseDays: 2, intro: "" });
+    const hook = (await pool.query(
+      "insert into webhook_endpoints (user_id, url, secret_sealed, events) values ($1, 'https://hooks.example.com/q', '\\x00', $2) returning id",
+      [priya.id, ["question.received", "question.answered"]])).rows[0].id as string;
+    const now = new Date("2045-06-01T09:00:00Z");
+    const r = await startQuestion({ pool, auth: null, orders: null }, (await publicOffer(pool, "priya"))!, ask({ name: "Ravi", email: "ravi@example.in", question: "Which offer should I take?" }), now);
+    const q = (await questionByToken(pool, r.token))!;
+    expect(await answerQuestion(pool, priya.id, q.id, "The second one.", now)).toBe("answered");
+    const { rows } = await pool.query("select event, payload from webhook_deliveries where endpoint_id = $1 order by event desc", [hook]);
+    expect(rows.map((x) => x.event)).toEqual(["question.received", "question.answered"]);
+    expect(rows[0].payload.data).toMatchObject({ question_id: q.id, guest_name: "Ravi", guest_email: "ravi@example.in", question: "Which offer should I take?", price_minor: 0, due_at: "2045-06-03T09:00:00.000Z" });
+    expect(rows[1].payload.data).toMatchObject({ question_id: q.id, answer: "The second one.", answered_at: now.toISOString() });
+    await pool.query("delete from webhook_endpoints where id = $1", [hook]);
+  });
+
   it("reminds the host a day before a question is due, and closes it a day after, refunding a paid one in full", async () => {
     const DAY = 86_400_000;
     const t0 = new Date("2050-01-01T10:00:00Z");

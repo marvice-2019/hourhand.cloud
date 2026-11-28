@@ -74,3 +74,17 @@ One booking in the shape above, or `404 {"error":"not_found"}` (also for a booki
 ```
 curl -H "Authorization: Bearer $HOURHAND_KEY" "https://hourhand.cloud/api/v1/bookings?status=upcoming&limit=20"
 ```
+
+## Question and product webhooks (B23)
+
+Besides the three booking events, an endpoint can ask for these (Integrations → Webhooks). Each is sent once, signed the
+same way, with the same `{ event, id, created_at, data }` envelope:
+
+- `question.received`: a question was sent (free) or paid for. `data`: `question_id`, `guest_name`, `guest_email`,
+  `question`, `price_minor` (paise), `currency`, `due_at`, `received_at`.
+- `question.answered`: you answered it. `data`: `question_id`, `guest_name`, `guest_email`, `question`, `answer`,
+  `answered_at`.
+- `product.sold`: a digital product was bought (or taken free). `data`: `order_id`, `product_id`, `product_title`,
+  `buyer_name`, `buyer_email`, `price_minor`, `currency`, `paid_at`.
+
+Each is queued in the same transaction as the change, so nothing is sent for a change that didn't happen.

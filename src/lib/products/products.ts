@@ -6,6 +6,7 @@ import { authForPayment, type PaymentCheckDeps } from "../payments/booking-payme
 import type { HostRazorpayAuth } from "../payments/host-razorpay";
 import { collectionTerms } from "../payments/platform";
 import type { RazorpayOrders, RazorpayPayment } from "../payments/razorpay-orders";
+import { queueSaleWebhook } from "../webhooks/webhooks";
 
 // Digital products (B20, like Topmate's). A host sells a file (kept in the database, like profile photos) or a link
 // shown after payment. Guests buy at /<slug>/shop/<product>, pay the host's Razorpay (or Hourhand's, B18) or get it
@@ -225,11 +226,17 @@ async function markPaid(client: Db, id: string, now: Date, paid: { paymentId: st
   const { rows: [o] } = await client.query(
     `update product_orders o set status = 'paid', paid_at = $2, updated_at = $2, provider_payment_id = coalesce($3, o.provider_payment_id), last_error = null
      where o.id = $1 and o.status in ('pending', 'failed')
-     returning o.id, o.host_id, o.buyer_email::text as buyer_email, (select email::text from users where id = o.host_id) as host_email`,
+     returning o.id, o.host_id, o.product_id, o.buyer_name, o.buyer_email::text as buyer_email, o.price_minor, o.currency,
+       (select title from digital_products where id = o.product_id) as product_title,
+       (select email::text from users where id = o.host_id) as host_email`,
     [id, now, paid?.paymentId ?? null]);
   if (!o) return false;
   await notify(client, o, "product_receipt_buyer", o.buyer_email, now);
   await notify(client, o, "product_sale_host", o.host_email, now);
+  await queueSaleWebhook(client, o.host_id, "product.sold", o.id, {
+    order_id: o.id, product_id: o.product_id, product_title: o.product_title, buyer_name: o.buyer_name, buyer_email: o.buyer_email,
+    price_minor: o.price_minor, currency: o.currency, paid_at: now.toISOString(),
+  }, now);
   return true;
 }
 

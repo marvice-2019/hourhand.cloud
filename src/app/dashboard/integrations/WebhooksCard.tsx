@@ -11,6 +11,9 @@ const EVENT_LABEL: Record<WebhookEvent, HostKey> = {
   "booking.created": "integrations.whEventCreated",
   "booking.cancelled": "integrations.whEventCancelled",
   "booking.rescheduled": "integrations.whEventRescheduled",
+  "question.received": "integrations.whEventQuestion",
+  "question.answered": "integrations.whEventAnswered",
+  "product.sold": "integrations.whEventProductSold",
 };
 const NOTICE: Record<string, { key: HostKey; ok: boolean }> = {
   added: { key: "integrations.whAdded", ok: true },
@@ -23,7 +26,7 @@ const NOTICE: Record<string, { key: HostKey; ok: boolean }> = {
   too_many: { key: "integrations.whTooMany", ok: false },
 };
 
-/** Booking webhooks: the host sends new, cancelled and moved bookings to their own n8n, Zapier, Make or CRM. */
+/** Webhooks: the host sends bookings, questions and product sales to their own n8n, Zapier, Make or CRM. */
 export async function WebhooksCard({ pool, hostId, notice }: { pool: pg.Pool | null; hostId: string; notice?: string }) {
   const { t } = await getHostI18n();
   const ready = pool !== null && Boolean(process.env.TOKEN_ENCRYPTION_KEY);

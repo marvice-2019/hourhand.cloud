@@ -14,7 +14,7 @@ type Db = Pick<pg.Pool, "query">;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MIN = 60_000;
 
-export const WEBHOOK_EVENTS = ["booking.created", "booking.cancelled", "booking.rescheduled"] as const;
+export const WEBHOOK_EVENTS = ["booking.created", "booking.cancelled", "booking.rescheduled", "question.received", "question.answered", "product.sold"] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 export const MAX_ENDPOINTS = 5;
 /** Waits after each failed attempt; after the last one the delivery is marked failed. */
@@ -161,4 +161,21 @@ export async function processWebhookDeliveries(pool: pg.Pool, now: Date, send: S
     await pool.query("update webhook_endpoints set last_status = $2, last_error = $3, last_delivery_at = $4 where id = $1", [d.endpoint_id, r.status, error, at]);
   }
   return result;
+}
+
+/** The non-booking events (B23): a paid or free question and a digital product sale. */
+export type SaleWebhookEvent = "question.received" | "question.answered" | "product.sold";
+
+/**
+ * Queues a question or product event for each of the host's endpoints that wants it. Runs inside the transaction that
+ * made the change, so nothing is sent for a change that rolled back; the dedupe key makes a repeat a no-op.
+ */
+export async function queueSaleWebhook(db: Pick<pg.PoolClient, "query">, hostId: string, event: SaleWebhookEvent, refId: string, data: Record<string, unknown>, now: Date): Promise<void> {
+  await db.query(
+    `insert into webhook_deliveries (endpoint_id, event, payload, dedupe_key, next_at)
+     select w.id, $2::text, jsonb_build_object('event', $2::text, 'id', gen_random_uuid(), 'created_at', $4::text, 'data', $3::jsonb),
+       $5::text || ':' || $2::text, $6
+     from webhook_endpoints w where w.user_id = $1 and w.active and $2::text = any(w.events)
+     on conflict (endpoint_id, dedupe_key) do nothing`,
+    [hostId, event, JSON.stringify(data), now.toISOString(), refId, now]);
 }
