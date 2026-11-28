@@ -53,4 +53,5 @@ export const nav = {
   "nav.install": "Install app",
   "nav.dismiss": "Dismiss",
   "nav.questions": "Questions",
+  "nav.products": "Products",
 } as const;

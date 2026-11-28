@@ -54,4 +54,5 @@ export const nav: Record<keyof typeof en, string> = {
   "nav.install": "ஆப்பை இன்ஸ்டால் செய்",
   "nav.dismiss": "மூடு",
   "nav.questions": "கேள்விகள்",
+  "nav.products": "தயாரிப்புகள்",
 };

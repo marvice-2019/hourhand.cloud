@@ -19,6 +19,7 @@ const items: { href: string; label: HostKey }[] = [
   { href: "/dashboard/get-booked", label: "nav.getBooked" },
   { href: "/dashboard/packages", label: "nav.packages" },
   { href: "/dashboard/questions", label: "nav.questions" },
+  { href: "/dashboard/products", label: "nav.products" },
   { href: "/dashboard/offers", label: "nav.offers" },
   { href: "/dashboard/memberships", label: "nav.memberships" },
   { href: "/dashboard/earnings", label: "nav.earnings" },

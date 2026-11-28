@@ -97,7 +97,7 @@ export async function saveProduct(db: Db, hostId: string, input: ProductInput, c
   }
   if (!existing) {
     const { rows: [{ n }] } = await db.query("select count(*)::int as n from digital_products where host_id = $1", [hostId]);
-    if (n >= MAX_PRODUCTS) fields.title = `You can have up to ${MAX_PRODUCTS} products.`;
+    if (n >= MAX_PRODUCTS) fields.limit = `You can have up to ${MAX_PRODUCTS} products.`;
   }
   if (Object.keys(fields).length) throw new ProductInputError(fields);
 
