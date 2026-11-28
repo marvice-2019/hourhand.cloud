@@ -252,6 +252,12 @@ const en = {
   reviewsSummary: "{average} out of 5 · {count} reviews",
   reviewAnon: "A client",
   reviewStars: "{rating} out of 5",
+  offerAskHeading: "Ask a question",
+  offerAskWithin: "Get a written answer by email, usually within {n} days.",
+  offerAskWithinDay: "Get a written answer by email, usually within a day.",
+  offerAskCta: "Ask now",
+  offerShopHeading: "Products",
+  offerProductCta: "See details",
 };
 
 export type GuestKey = keyof typeof en;
@@ -484,6 +490,12 @@ const hi: Catalog = {
   reviewsSummary: "5 में से {average} · {count} रिव्यू",
   reviewAnon: "एक क्लाइंट",
   reviewStars: "5 में से {rating}",
+  offerAskHeading: "सवाल पूछें",
+  offerAskWithin: "ईमेल पर लिखित जवाब पाएँ, आमतौर पर {n} दिनों में।",
+  offerAskWithinDay: "ईमेल पर लिखित जवाब पाएँ, आमतौर पर एक दिन में।",
+  offerAskCta: "अभी पूछें",
+  offerShopHeading: "प्रोडक्ट",
+  offerProductCta: "विवरण देखें",
 };
 
 const ta: Catalog = {
@@ -713,6 +725,12 @@ const ta: Catalog = {
   reviewsSummary: "5-இல் {average} · {count} ரிவ்யூக்கள்",
   reviewAnon: "ஒரு வாடிக்கையாளர்",
   reviewStars: "5-இல் {rating}",
+  offerAskHeading: "கேள்வி கேளுங்கள்",
+  offerAskWithin: "மின்னஞ்சலில் எழுத்துப் பதில் பெறுங்கள், பொதுவாக {n} நாட்களுக்குள்.",
+  offerAskWithinDay: "மின்னஞ்சலில் எழுத்துப் பதில் பெறுங்கள், பொதுவாக ஒரு நாளுக்குள்.",
+  offerAskCta: "இப்போது கேளுங்கள்",
+  offerShopHeading: "தயாரிப்புகள்",
+  offerProductCta: "விவரங்களைப் பாருங்கள்",
 };
 
 const te: Catalog = {
@@ -942,6 +960,12 @@ const te: Catalog = {
   reviewsSummary: "5 లో {average} · {count} రివ్యూలు",
   reviewAnon: "ఒక క్లయింట్",
   reviewStars: "5 లో {rating}",
+  offerAskHeading: "ప్రశ్న అడగండి",
+  offerAskWithin: "ఈమెయిల్‌లో రాతపూర్వక సమాధానం పొందండి, సాధారణంగా {n} రోజుల్లో.",
+  offerAskWithinDay: "ఈమెయిల్‌లో రాతపూర్వక సమాధానం పొందండి, సాధారణంగా ఒక రోజులో.",
+  offerAskCta: "ఇప్పుడే అడగండి",
+  offerShopHeading: "ప్రోడక్ట్‌లు",
+  offerProductCta: "వివరాలు చూడండి",
 };
 
 const kn: Catalog = {
@@ -1171,6 +1195,12 @@ const kn: Catalog = {
   reviewsSummary: "5 ರಲ್ಲಿ {average} · {count} ರಿವ್ಯೂಗಳು",
   reviewAnon: "ಒಬ್ಬ ಕ್ಲೈಂಟ್",
   reviewStars: "5 ರಲ್ಲಿ {rating}",
+  offerAskHeading: "ಪ್ರಶ್ನೆ ಕೇಳಿ",
+  offerAskWithin: "ಇಮೇಲ್‌ನಲ್ಲಿ ಲಿಖಿತ ಉತ್ತರ ಪಡೆಯಿರಿ, ಸಾಮಾನ್ಯವಾಗಿ {n} ದಿನಗಳಲ್ಲಿ.",
+  offerAskWithinDay: "ಇಮೇಲ್‌ನಲ್ಲಿ ಲಿಖಿತ ಉತ್ತರ ಪಡೆಯಿರಿ, ಸಾಮಾನ್ಯವಾಗಿ ಒಂದು ದಿನದಲ್ಲಿ.",
+  offerAskCta: "ಈಗ ಕೇಳಿ",
+  offerShopHeading: "ಪ್ರಾಡಕ್ಟ್‌ಗಳು",
+  offerProductCta: "ವಿವರ ನೋಡಿ",
 };
 
 // Marathi (mr): DRAFT, needs native-speaker review before Hourhand is marketed in Marathi. Written from the English source.
@@ -1401,6 +1431,12 @@ const mr: Catalog = {
   reviewsSummary: "5 पैकी {average} · {count} रिव्ह्यू",
   reviewAnon: "एक क्लायंट",
   reviewStars: "5 पैकी {rating}",
+  offerAskHeading: "प्रश्न विचारा",
+  offerAskWithin: "ईमेलवर लेखी उत्तर मिळवा, साधारणपणे {n} दिवसांत.",
+  offerAskWithinDay: "ईमेलवर लेखी उत्तर मिळवा, साधारणपणे एका दिवसात.",
+  offerAskCta: "आता विचारा",
+  offerShopHeading: "प्रॉडक्ट्स",
+  offerProductCta: "तपशील पाहा",
 };
 
 // Bengali (bn): DRAFT, needs native-speaker review before Hourhand is marketed in Bengali. Written from the English source.
@@ -1631,6 +1667,12 @@ const bn: Catalog = {
   reviewsSummary: "5-এর মধ্যে {average} · {count}টি রিভিউ",
   reviewAnon: "একজন ক্লায়েন্ট",
   reviewStars: "5-এর মধ্যে {rating}",
+  offerAskHeading: "প্রশ্ন করুন",
+  offerAskWithin: "ইমেলে লিখিত উত্তর পান, সাধারণত {n} দিনের মধ্যে।",
+  offerAskWithinDay: "ইমেলে লিখিত উত্তর পান, সাধারণত এক দিনের মধ্যে।",
+  offerAskCta: "এখনই জিজ্ঞাসা করুন",
+  offerShopHeading: "প্রোডাক্ট",
+  offerProductCta: "বিস্তারিত দেখুন",
 };
 
 // Malayalam (ml): DRAFT, needs native-speaker review before Hourhand is marketed in Malayalam. Written from the English source.
@@ -1861,6 +1903,12 @@ const ml: Catalog = {
   reviewsSummary: "5-ൽ {average} · {count} റിവ്യൂകൾ",
   reviewAnon: "ഒരു ക്ലയന്റ്",
   reviewStars: "5-ൽ {rating}",
+  offerAskHeading: "ചോദ്യം ചോദിക്കൂ",
+  offerAskWithin: "ഇമെയിലിൽ എഴുതിയ മറുപടി നേടൂ, സാധാരണയായി {n} ദിവസത്തിനുള്ളിൽ.",
+  offerAskWithinDay: "ഇമെയിലിൽ എഴുതിയ മറുപടി നേടൂ, സാധാരണയായി ഒരു ദിവസത്തിനുള്ളിൽ.",
+  offerAskCta: "ഇപ്പോൾ ചോദിക്കൂ",
+  offerShopHeading: "പ്രോഡക്റ്റുകൾ",
+  offerProductCta: "വിശദാംശങ്ങൾ കാണൂ",
 };
 
 // Gujarati (gu): DRAFT, needs native-speaker review before Hourhand is marketed in Gujarati. Written from the English source.
@@ -2091,6 +2139,12 @@ const gu: Catalog = {
   reviewsSummary: "5 માંથી {average} · {count} રિવ્યૂ",
   reviewAnon: "એક ક્લાયન્ટ",
   reviewStars: "5 માંથી {rating}",
+  offerAskHeading: "પ્રશ્ન પૂછો",
+  offerAskWithin: "ઈમેલ પર લેખિત જવાબ મેળવો, સામાન્ય રીતે {n} દિવસમાં.",
+  offerAskWithinDay: "ઈમેલ પર લેખિત જવાબ મેળવો, સામાન્ય રીતે એક દિવસમાં.",
+  offerAskCta: "હમણાં પૂછો",
+  offerShopHeading: "પ્રોડક્ટ્સ",
+  offerProductCta: "વિગતો જુઓ",
 };
 
 export const CATALOGS: Record<Locale, Catalog> = { en, hi, ta, te, kn, mr, bn, ml, gu };

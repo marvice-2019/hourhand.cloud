@@ -16,6 +16,8 @@ import {
 import { handleStartOrder } from "./handlers";
 import { renderProductMail } from "../mail/templates";
 import { businessReport } from "../reports/report";
+import { profileOfferings } from "../profile-offerings";
+import { saveOffer } from "../questions/questions";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const auth = keyPairAuth("rzp_test_ProductHost1", "p-secret");
@@ -218,5 +220,22 @@ describe.skipIf(!BASE)("digital products (Postgres)", () => {
     // Two paid orders of ₹199 (one later refunded); free orders aren't income.
     expect(r.currencies[0]).toMatchObject({ currency: "INR", productsMinor: 39_800, questionsMinor: 0, refundsMinor: 19_900 });
     expect(r.byEventType.find((l) => l.eventName === "Templates")).toMatchObject({ otherMinor: 19_900 });
+  });
+
+  it("lists a host's question offer and live products on their profile, and nothing they haven't switched on", async () => {
+    expect(await profileOfferings(pool, "arun")).toEqual({ ask: null, products: [] });
+    await saveOffer(pool, arun.id, { active: true, priceMinor: 49_900, responseDays: 3, intro: "" });
+    // A draft product, and a live one with a link to deliver.
+    await saveProduct(pool, arun.id, product({ slug: "draft", title: "Draft" }), true);
+    await saveProduct(pool, arun.id, product({ slug: "notes", title: "Session notes", priceMinor: 9_900, delivery: "link", linkUrl: "https://example.com/n", active: true }), true);
+    const o = await profileOfferings(pool, "arun");
+    expect(o.ask).toEqual({ priceMinor: 49_900, responseDays: 3 });
+    expect(o.products.map((x) => x.slug)).toEqual(["notes"]);
+    await saveOffer(pool, arun.id, { active: false, priceMinor: 49_900, responseDays: 3, intro: "" });
+    expect((await profileOfferings(pool, "arun")).ask).toBeNull();
+    // A host who isn't approved shows nothing, like their ask and shop pages.
+    await pool.query("update users set review_status = 'pending' where id = $1", [arun.id]);
+    expect(await profileOfferings(pool, "arun")).toEqual({ ask: null, products: [] });
+    await pool.query("update users set review_status = 'approved' where id = $1", [arun.id]);
   });
 });
