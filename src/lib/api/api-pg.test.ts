@@ -8,7 +8,7 @@ import { createRateLimiter } from "../rate-limit";
 import { addEndpoint, deleteEndpoint } from "../webhooks/webhooks";
 import { API_LIMIT, handleApiRequest } from "./http";
 import { authenticateApiKey, createApiKey, deleteApiKey, hashApiKey, listApiKeys, MAX_API_KEYS } from "./keys";
-import { getBooking, getMe, listBookings, listEventTypes, type ApiContext } from "./v1";
+import { getBooking, getMe, listBookings, listEventTypes, listOrdersApi, listQuestionsApi, type ApiContext } from "./v1";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const SITE = "https://hourhand.test";
@@ -240,6 +240,32 @@ describe.skipIf(!BASE)("API keys and the read API (TEST_DATABASE_URL)", () => {
       expect(fromApi.body).toEqual(d.payload.data);
       expect(Object.keys(fromApi.body as object).sort()).toEqual(["booking", "event_type", "guest"]);
       await deleteEndpoint(pool, priya.id, ep.id);
+    });
+
+    it("lists the host's questions and product orders, oldest first, by status and a page at a time", async () => {
+      const q = (host: string, status: string, at: string, extra = "") => pool.query(
+        `insert into questions (host_id, idempotency_key, guest_name, guest_email, question, price_minor, status, created_at${extra ? ", answer" : ""})
+         values ($1, gen_random_uuid()::text, 'Asha', 'asha@example.in', 'How?', 49900, $2, $3${extra ? ", $4" : ""}) returning id`,
+        extra ? [host, status, at, extra] : [host, status, at]).then((r) => r.rows[0].id as string);
+      const a = await q(priya.id, "open", "2031-01-01T10:00:00Z");
+      const b = await q(priya.id, "answered", "2031-01-02T10:00:00Z", "Like this.");
+      await q(arun.id, "open", "2031-01-01T11:00:00Z");
+      const first = await listQuestionsApi(ctx(priya.id), new URLSearchParams({ limit: "1" }));
+      const p1 = first.body as { data: { id: string }[]; next_cursor: string };
+      expect(p1.data.map((x) => x.id)).toEqual([a]);
+      const second = (await listQuestionsApi(ctx(priya.id), new URLSearchParams({ limit: "1", cursor: p1.next_cursor }))).body as { data: Record<string, unknown>[]; next_cursor: string | null };
+      expect(second.data).toEqual([expect.objectContaining({ id: b, status: "answered", answer: "Like this.", price_minor: 49900, expired: false, created_at: "2031-01-02T10:00:00.000Z" })]);
+      expect(second.next_cursor).toBeNull();
+      expect(((await listQuestionsApi(ctx(priya.id), new URLSearchParams({ status: "open" }))).body as { data: { id: string }[] }).data.map((x) => x.id)).toEqual([a]);
+      expect((await listQuestionsApi(ctx(priya.id), new URLSearchParams({ status: "lost" }))).body).toMatchObject({ error: "bad_request", param: "status" });
+
+      const product = (await pool.query("insert into digital_products (host_id, slug, title) values ($1, 'api-guide', 'API guide') returning id", [priya.id])).rows[0].id as string;
+      const order = (await pool.query(
+        `insert into product_orders (product_id, host_id, idempotency_key, buyer_name, buyer_email, price_minor, status, paid_at)
+         values ($1, $2, 'k1', 'Ravi', 'ravi@example.in', 19900, 'paid', '2031-02-01T10:00:00Z') returning id`, [product, priya.id])).rows[0].id as string;
+      const orders = (await listOrdersApi(ctx(priya.id), new URLSearchParams({ status: "paid" }))).body as { data: Record<string, unknown>[] };
+      expect(orders.data).toEqual([expect.objectContaining({ id: order, product_title: "API guide", buyer_email: "ravi@example.in", price_minor: 19900, paid_at: "2031-02-01T10:00:00.000Z", downloads: 0 })]);
+      expect(((await listOrdersApi(ctx(arun.id), new URLSearchParams())).body as { data: unknown[] }).data).toEqual([]);
     });
   });
 });

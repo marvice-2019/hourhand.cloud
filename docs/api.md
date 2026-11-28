@@ -88,3 +88,15 @@ same way, with the same `{ event, id, created_at, data }` envelope:
   `buyer_name`, `buyer_email`, `price_minor`, `currency`, `paid_at`.
 
 Each is queued in the same transaction as the change, so nothing is sent for a change that didn't happen.
+
+## Questions and product orders (B24)
+
+- `GET /api/v1/questions`: your questions, oldest first. `status` is `all` (default) or one of `pending`, `open`,
+  `answered`, `declined`, `failed`, `refund_pending`, `refunded`. Each item: `id`, `status`, `guest_name`, `guest_email`,
+  `question`, `answer`, `price_minor`, `currency`, `due_at`, `answered_at`, `expired` (closed for missing its due date),
+  `created_at`.
+- `GET /api/v1/orders`: your digital product orders, oldest first. `status` is `all` or one of `pending`, `paid`,
+  `failed`, `refund_pending`, `refunded`. Each item: `id`, `status`, `product_id`, `product_title`, `buyer_name`,
+  `buyer_email`, `price_minor`, `currency`, `paid_at`, `downloads`, `created_at`. Download links are never returned.
+
+Both take `limit` (1 to 100, default 50) and `cursor` (the previous page's `next_cursor`), like bookings.

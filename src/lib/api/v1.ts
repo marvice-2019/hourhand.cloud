@@ -107,3 +107,65 @@ export async function getBooking({ db, userId }: ApiContext, id: string): Promis
   const { rows: [r] } = await db.query(`select ${BOOKING_PAYLOAD_COLUMNS} from ${BOOKING_PAYLOAD_FROM} where b.id = $1 and b.host_id = $2`, [id, userId]);
   return r ? ok(bookingPayload(r) satisfies BookingPayload) : notFound();
 }
+
+// B24: paid questions (B19) and digital product orders (B20), oldest first, a page at a time, filtered by status.
+export const QUESTION_STATUSES = ["pending", "open", "answered", "declined", "failed", "refund_pending", "refunded"] as const;
+export const ORDER_STATUSES = ["pending", "paid", "failed", "refund_pending", "refunded"] as const;
+
+interface SalesQuery { status: string | null; limit: number; after: { start: Date; id: string } | null }
+
+function readSalesQuery(params: URLSearchParams, statuses: readonly string[]): SalesQuery | ApiAnswer {
+  const raw = params.get("status") ?? "all";
+  if (raw !== "all" && !statuses.includes(raw)) return badRequest("status", `Use all or one of: ${statuses.join(", ")}.`);
+  const rawLimit = params.get("limit");
+  const limit = rawLimit === null ? DEFAULT_LIMIT : Number(rawLimit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) return badRequest("limit", `Use a whole number from 1 to ${MAX_LIMIT}.`);
+  const rawCursor = params.get("cursor");
+  const after = rawCursor === null ? null : decodeCursor(rawCursor);
+  if (rawCursor !== null && !after) return badRequest("cursor", "Pass next_cursor from the previous page as it came.");
+  return { status: raw === "all" ? null : raw, limit, after };
+}
+
+const iso = (d: unknown) => (d ? new Date(d as string).toISOString() : null);
+
+/** One page of the host's rows, oldest first, with the cursor on (created_at, id). */
+async function salesPage(
+  ctx: ApiContext, params: URLSearchParams, statuses: readonly string[],
+  sql: { columns: string; from: string; alias: string }, shape: (r: Record<string, unknown>) => unknown,
+): Promise<ApiAnswer> {
+  const q = readSalesQuery(params, statuses);
+  if ("body" in q) return q;
+  const { alias } = sql;
+  const args: unknown[] = [ctx.userId];
+  const arg = (v: unknown) => { args.push(v); return `$${args.length}`; };
+  const where = [`${alias}.host_id = $1`];
+  if (q.status) where.push(`${alias}.status = ${arg(q.status)}`);
+  if (q.after) where.push(`(${alias}.created_at, ${alias}.id) > (${arg(q.after.start)}, ${arg(q.after.id)}::uuid)`);
+  const { rows } = await ctx.db.query(
+    `select ${sql.columns} from ${sql.from} where ${where.join(" and ")} order by ${alias}.created_at, ${alias}.id limit ${q.limit + 1}`, args);
+  const page = rows.slice(0, q.limit);
+  const last = page.at(-1);
+  const more = rows.length > q.limit && last;
+  return ok({ data: page.map(shape), next_cursor: more ? encodeCursor(new Date(last.created_at), last.id) : null });
+}
+
+export async function listQuestionsApi(ctx: ApiContext, params: URLSearchParams): Promise<ApiAnswer> {
+  return salesPage(ctx, params, QUESTION_STATUSES, {
+    columns: "q.id, q.status, q.guest_name, q.guest_email::text as guest_email, q.question, q.answer, q.price_minor, q.currency, q.due_at, q.answered_at, q.expired_at, q.created_at",
+    from: "questions q", alias: "q",
+  }, (r) => ({
+    id: r.id, status: r.status, guest_name: r.guest_name, guest_email: r.guest_email, question: r.question, answer: r.answer ?? null,
+    price_minor: r.price_minor, currency: r.currency, due_at: iso(r.due_at), answered_at: iso(r.answered_at),
+    expired: r.expired_at != null, created_at: iso(r.created_at),
+  }));
+}
+
+export async function listOrdersApi(ctx: ApiContext, params: URLSearchParams): Promise<ApiAnswer> {
+  return salesPage(ctx, params, ORDER_STATUSES, {
+    columns: "o.id, o.status, o.product_id, p.title as product_title, o.buyer_name, o.buyer_email::text as buyer_email, o.price_minor, o.currency, o.paid_at, o.download_count, o.created_at",
+    from: "product_orders o join digital_products p on p.id = o.product_id", alias: "o",
+  }, (r) => ({
+    id: r.id, status: r.status, product_id: r.product_id, product_title: r.product_title, buyer_name: r.buyer_name, buyer_email: r.buyer_email,
+    price_minor: r.price_minor, currency: r.currency, paid_at: iso(r.paid_at), downloads: r.download_count, created_at: iso(r.created_at),
+  }));
+}
