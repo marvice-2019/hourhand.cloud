@@ -15,6 +15,7 @@ import {
 } from "./products";
 import { handleStartOrder } from "./handlers";
 import { renderProductMail } from "../mail/templates";
+import { businessReport } from "../reports/report";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const auth = keyPairAuth("rzp_test_ProductHost1", "p-secret");
@@ -191,5 +192,13 @@ describe.skipIf(!BASE)("digital products (Postgres)", () => {
     const receipt = renderProductMail("product_receipt_buyer", c);
     expect(receipt.text).toContain("https://h.test/d/abc");
     expect(renderProductMail("product_refund_buyer", c).text).toContain("no longer works");
+  });
+  it("counts product sales and refunds in the earnings report", async () => {
+    const now = new Date();
+    const period = { kind: "custom" as const, from: new Date(now.getTime() - 86_400_000), to: new Date(now.getTime() + 3 * 86_400_000), first: "", last: "", timezone: "Asia/Kolkata", clamped: false };
+    const r = (await businessReport(pool, priya.id, period, now))!;
+    // Two paid orders of ₹199 (one later refunded); free orders aren't income.
+    expect(r.currencies[0]).toMatchObject({ currency: "INR", productsMinor: 39_800, questionsMinor: 0, refundsMinor: 19_900 });
+    expect(r.byEventType.find((l) => l.eventName === "Templates")).toMatchObject({ otherMinor: 19_900 });
   });
 });

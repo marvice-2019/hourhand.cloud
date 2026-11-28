@@ -15,7 +15,7 @@ export const isHostId = (id: string) => UUID.test(id);
  * money later, as a refund doesn't give it back).
  */
 export type MoneyType = "sale" | "refund" | "deposit_kept" | "deposit_held" | "fee";
-export type MoneySource = "booking" | "package" | "deposit" | "membership";
+export type MoneySource = "booking" | "package" | "deposit" | "membership" | "question" | "product";
 
 export interface MoneyEntry {
   type: MoneyType;
@@ -78,6 +78,39 @@ export const MONEY_SOURCES: MoneySourceQuery[] = [
             'plan:' || p.id::text as event_type_id, p.name as event_name, null::bigint as fee_minor, null::bigint as fee_tax_minor
           from membership_grants g join memberships m on m.id = g.membership_id join membership_plans p on p.id = m.plan_id
           where g.host_id = $1 and g.granted_at >= $2 and g.granted_at < $3`,
+  },
+  {
+    // A paid question (B19), counted when its payment is confirmed; all of a host's questions are one line ("questions").
+    type: "sale", source: "question",
+    sql: `select q.currency, q.price_minor::bigint as amount_minor, q.paid_at as at, lower(q.guest_email::text) as client_key, q.guest_name as client_name,
+            'questions'::text as event_type_id, ''::text as event_name, null::bigint as fee_minor, null::bigint as fee_tax_minor
+          from questions q
+          where q.host_id = $1 and q.price_minor > 0 and q.paid_at is not null and q.status in ('open', 'answered', 'refund_pending', 'refunded')
+            and q.paid_at >= $2 and q.paid_at < $3`,
+  },
+  {
+    // A declined paid question, refunded in full, in the month it was declined.
+    type: "refund", source: "question",
+    sql: `select q.currency, q.price_minor::bigint as amount_minor, coalesce(q.declined_at, q.updated_at) as at, lower(q.guest_email::text) as client_key,
+            q.guest_name as client_name, 'questions'::text as event_type_id, ''::text as event_name, null::bigint as fee_minor, null::bigint as fee_tax_minor
+          from questions q
+          where q.host_id = $1 and q.price_minor > 0 and q.status = 'refunded' and coalesce(q.declined_at, q.updated_at) >= $2 and coalesce(q.declined_at, q.updated_at) < $3`,
+  },
+  {
+    // A paid digital product order (B20); each product is its own line.
+    type: "sale", source: "product",
+    sql: `select o.currency, o.price_minor::bigint as amount_minor, o.paid_at as at, lower(o.buyer_email::text) as client_key, o.buyer_name as client_name,
+            'product:' || d.id::text as event_type_id, d.title as event_name, null::bigint as fee_minor, null::bigint as fee_tax_minor
+          from product_orders o join digital_products d on d.id = o.product_id
+          where o.host_id = $1 and o.price_minor > 0 and o.status in ('paid', 'refund_pending', 'refunded') and o.paid_at >= $2 and o.paid_at < $3`,
+  },
+  {
+    // A refunded product order, in the month the host refunded it.
+    type: "refund", source: "product",
+    sql: `select o.currency, o.price_minor::bigint as amount_minor, o.refunded_at as at, lower(o.buyer_email::text) as client_key, o.buyer_name as client_name,
+            'product:' || d.id::text as event_type_id, d.title as event_name, null::bigint as fee_minor, null::bigint as fee_tax_minor
+          from product_orders o join digital_products d on d.id = o.product_id
+          where o.host_id = $1 and o.price_minor > 0 and o.status = 'refunded' and o.refunded_at >= $2 and o.refunded_at < $3`,
   },
   {
     type: "deposit_kept", source: "deposit",

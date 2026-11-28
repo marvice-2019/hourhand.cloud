@@ -22,13 +22,15 @@ export interface MonthlyEarnings {
   bookingsMinor: number;
   /** Session packages paid this month. */
   packagesMinor: number;
+  /** Paid questions (B19) and digital products (B20) sold this month. */
+  otherSalesMinor: number;
   /** Refunds of prices made this month. */
   refundsMinor: number;
   /** Deposits kept for no-shows, for sessions this month. */
   depositsKeptMinor: number;
   /** Deposits paid this month and not yet refunded or kept. */
   depositsHeldMinor: number;
-  /** bookings + packages − refunds + deposits kept. */
+  /** bookings + packages + other sales − refunds + deposits kept. */
   netMinor: number;
   /** GST on this month's invoices, less credit notes; part of net, owed to the government. */
   gstMinor: number;
@@ -58,7 +60,7 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
   const { from, to } = range;
   // Money in one currency only, so totals never add rupees to dollars.
   const args = [hostId, from, to, currency];
-  const [money, refunds, packages, kept, held, gst, sessions, byBooking, byPackage, others, fees] = await Promise.all([
+  const [money, refunds, packages, kept, held, gst, sessions, byBooking, byPackage, others, fees, extraSales, extraRefunds] = await Promise.all([
     db.query(`select coalesce(sum(amount_minor), 0)::bigint as total from payments
               where host_id = $1 and currency = $4 and kind = 'payment' and paid_at >= $2 and paid_at < $3 and status in ('paid', 'refund_pending', 'refunded')`, args),
     // A refund's month is when it was recorded. Some weeks of a paid series refunded on their own are dated in
@@ -113,21 +115,32 @@ export async function monthlyEarnings(db: Db, hostId: string, month: string, now
                   where p.host_id = $1 and p.currency = $4 and p.kind = 'deposit' and p.fee_minor is null and p.status = 'paid' and i.no_show_at is not null
                     and b.start_at >= $2 and b.start_at < $3
               ) f`, args),
+    // Paid questions and digital products (rupees only): sales by payment date, refunds by the date they were made.
+    db.query(`select coalesce(sum(price_minor), 0)::bigint as total from (
+                select price_minor from questions where host_id = $1 and currency = $4 and price_minor > 0 and paid_at is not null
+                  and status in ('open', 'answered', 'refund_pending', 'refunded') and paid_at >= $2 and paid_at < $3
+                union all select price_minor from product_orders where host_id = $1 and currency = $4 and price_minor > 0
+                  and status in ('paid', 'refund_pending', 'refunded') and paid_at >= $2 and paid_at < $3) x`, args),
+    db.query(`select coalesce(sum(price_minor), 0)::bigint as total from (
+                select price_minor from questions where host_id = $1 and currency = $4 and price_minor > 0 and status = 'refunded'
+                  and coalesce(declined_at, updated_at) >= $2 and coalesce(declined_at, updated_at) < $3
+                union all select price_minor from product_orders where host_id = $1 and currency = $4 and price_minor > 0 and status = 'refunded'
+                  and refunded_at >= $2 and refunded_at < $3) x`, args),
   ]);
   const n = (r: { rows: { total: string | number }[] }) => Number(r.rows[0].total);
-  const bookingsMinor = n(money), packagesMinor = n(packages), refundsMinor = n(refunds), depositsKeptMinor = n(kept);
+  const bookingsMinor = n(money), packagesMinor = n(packages), refundsMinor = n(refunds) + n(extraRefunds), depositsKeptMinor = n(kept), otherSalesMinor = n(extraSales);
   const lines = new Map<string, EarningsLine>();
   const line = (id: string, name: string) => lines.get(id) ?? lines.set(id, { eventTypeId: id, eventName: name, bookingsMinor: 0, packagesMinor: 0 }).get(id)!;
   for (const r of byBooking.rows) line(r.id, r.name).bookingsMinor = Number(r.total);
   for (const r of byPackage.rows) line(r.id, r.name).packagesMinor = Number(r.total);
   const s = sessions.rows[0];
-  const received = bookingsMinor + packagesMinor + depositsKeptMinor;
+  const received = bookingsMinor + packagesMinor + otherSalesMinor + depositsKeptMinor;
   const unknownFeeMinor = Number(fees.rows[0].unknown);
   return {
-    month, currency, bookingsMinor, packagesMinor, refundsMinor, depositsKeptMinor, depositsHeldMinor: n(held),
+    month, currency, bookingsMinor, packagesMinor, otherSalesMinor, refundsMinor, depositsKeptMinor, depositsHeldMinor: n(held),
     netMinor: received - refundsMinor, gstMinor: n(gst),
     feesMinor: Number(fees.rows[0].fees),
-    feeEstimateMinor: currency === "INR" ? Math.round((unknownFeeMinor * RAZORPAY_FEE_BP * 1.18) / 10_000) : 0,
+    feeEstimateMinor: currency === "INR" ? Math.round(((unknownFeeMinor + otherSalesMinor) * RAZORPAY_FEE_BP * 1.18) / 10_000) : 0,
     sessions: { held: s.held, noShows: s.no_shows, cancelledByGuest: s.by_guest, cancelledByHost: s.by_host, upcoming: s.upcoming },
     byEventType: [...lines.values()].sort((a, b) => b.bookingsMinor + b.packagesMinor - (a.bookingsMinor + a.packagesMinor)),
     otherCurrencies: others.rows.map((r) => ({ currency: String(r.currency).toUpperCase(), netMinor: Number(r.total) })).filter((o) => o.netMinor !== 0),
@@ -147,6 +160,8 @@ export async function queueMonthlyReports(db: Db, now: Date): Promise<number> {
      from users u where u.deleted_at is null and (
        exists (select 1 from payments p where p.host_id = u.id and p.paid_at >= $1 and p.paid_at < $2)
        or exists (select 1 from package_purchases k where k.host_id = u.id and k.paid_at >= $1 and k.paid_at < $2)
+       or exists (select 1 from questions q where q.host_id = u.id and q.price_minor > 0 and q.paid_at >= $1 and q.paid_at < $2)
+       or exists (select 1 from product_orders o where o.host_id = u.id and o.price_minor > 0 and o.paid_at >= $1 and o.paid_at < $2)
        or exists (select 1 from bookings b where b.host_id = u.id and b.status = 'confirmed' and b.start_at >= $1 and b.start_at < $2))
      on conflict (dedupe_key) do nothing`, [from, to, now, last]);
   return rowCount ?? 0;
@@ -159,7 +174,7 @@ export function earningsCsv(e: MonthlyEarnings): string {
   // Figures we format ourselves stay numbers (a refund is "-12.00"); only text cells get the formula guard.
   const value = (v: string) => (/^-?\d+(\.\d+)?$/.test(v) ? v : cell(v));
   const rows = [
-    ["Month", e.month], ["Currency", e.currency], ["Bookings paid", r(e.bookingsMinor)], ["Packages paid", r(e.packagesMinor)], ["Deposits kept (no-shows)", r(e.depositsKeptMinor)],
+    ["Month", e.month], ["Currency", e.currency], ["Bookings paid", r(e.bookingsMinor)], ["Packages paid", r(e.packagesMinor)], ["Questions and products paid", r(e.otherSalesMinor)], ["Deposits kept (no-shows)", r(e.depositsKeptMinor)],
     ["Refunds", r(-e.refundsMinor)], ["Net received", r(e.netMinor)],
     ...(e.currency === "INR"
       ? [["of which GST", r(e.gstMinor)], ["Razorpay fees (as charged)", r(e.feesMinor)], ["Razorpay fees (estimated until reported)", r(e.feeEstimateMinor)]]

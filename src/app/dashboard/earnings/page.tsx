@@ -61,6 +61,8 @@ export default async function EarningsPage({ searchParams }: { searchParams: Pro
       tile(t("earnings.netSales"), m(c.netSalesMinor), t("earnings.netSalesHint")),
       tile(t("earnings.packages"), m(c.packagesMinor)),
       ...(c.membershipsMinor !== 0 ? [tile(t("earnings.memberships"), m(c.membershipsMinor))] : []),
+      ...(c.questionsMinor !== 0 ? [tile(t("earnings.questions"), m(c.questionsMinor))] : []),
+      ...(c.productsMinor !== 0 ? [tile(t("earnings.products"), m(c.productsMinor))] : []),
       tile(t("earnings.forfeited"), m(c.depositsKeptMinor), t("earnings.forfeitedHint")),
       tile(t("earnings.netIncome"), m(c.netIncomeMinor), t("earnings.netIncomeHint")),
       ...(c.currency === "INR" && r ? [tile(t("earnings.gst"), m(r.gst.outputTaxMinor), t("earnings.gstHint"))] : []),
@@ -170,12 +172,12 @@ export default async function EarningsPage({ searchParams }: { searchParams: Pro
             <section aria-labelledby="by-type" className="mt-8">
               <h2 id="by-type" className="font-semibold text-text">{t("earnings.byEventType")}</h2>
               <table className="mt-2 w-full max-w-2xl text-left text-sm">
-                <thead><tr className="text-text-muted"><th className="py-2 pr-4 font-medium">{t("earnings.eventType")}</th><th className="py-2 pr-4 font-medium">{t("earnings.bookings")}</th><th className="py-2 pr-4 font-medium">{t("earnings.packages")}</th><th className="py-2 pr-4 font-medium">{t("earnings.memberships")}</th><th className="py-2 pr-4 font-medium">{t("earnings.depositsKept")}</th><th className="py-2 font-medium">{t("earnings.sessions")}</th></tr></thead>
+                <thead><tr className="text-text-muted"><th className="py-2 pr-4 font-medium">{t("earnings.eventType")}</th><th className="py-2 pr-4 font-medium">{t("earnings.bookings")}</th><th className="py-2 pr-4 font-medium">{t("earnings.packages")}</th><th className="py-2 pr-4 font-medium">{t("earnings.memberships")}</th>{r.byEventType.some((l) => l.otherMinor !== 0) && <th className="py-2 pr-4 font-medium">{t("earnings.otherSales")}</th>}<th className="py-2 pr-4 font-medium">{t("earnings.depositsKept")}</th><th className="py-2 font-medium">{t("earnings.sessions")}</th></tr></thead>
                 <tbody>
                   {r.byEventType.map((l) => (
                     <tr key={`${l.currency}-${l.eventTypeId}`} className="border-t border-border text-text">
-                      <td className="py-2 pr-4">{l.eventName}</td><td className="py-2 pr-4">{money(l.bookingsMinor, l.currency)}</td>
-                      <td className="py-2 pr-4">{money(l.packagesMinor, l.currency)}</td><td className="py-2 pr-4">{money(l.membershipsMinor, l.currency)}</td><td className="py-2 pr-4">{money(l.depositsKeptMinor, l.currency)}</td><td className="py-2">{l.sessions}</td>
+                      <td className="py-2 pr-4">{l.eventTypeId === "questions" ? t("earnings.questions") : l.eventName}</td><td className="py-2 pr-4">{money(l.bookingsMinor, l.currency)}</td>
+                      <td className="py-2 pr-4">{money(l.packagesMinor, l.currency)}</td><td className="py-2 pr-4">{money(l.membershipsMinor, l.currency)}</td>{r.byEventType.some((x) => x.otherMinor !== 0) && <td className="py-2 pr-4">{money(l.otherMinor, l.currency)}</td>}<td className="py-2 pr-4">{money(l.depositsKeptMinor, l.currency)}</td><td className="py-2">{l.sessions}</td>
                     </tr>
                   ))}
                 </tbody>
