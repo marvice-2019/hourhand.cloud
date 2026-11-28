@@ -1,3 +1,4 @@
+import { hostDisplayName } from "../display-name";
 import { createHash } from "node:crypto";
 import type pg from "pg";
 import { BillingApiError } from "../billing/providers";
@@ -173,20 +174,20 @@ const PUBLIC_WHERE = `u.slug = $1 and p.active and u.deleted_at is null and u.re
 /** A host's live products as guests see them (only for public hosts, and only products with something to deliver). */
 export async function publicProducts(db: Db, slug: string): Promise<{ host: { id: string; name: string; slug: string }; products: Product[] } | null> {
   const { rows } = await db.query(
-    `select ${PRODUCT_COLUMNS}, u.id as host_id, u.name as host_name, u.slug::text as host_slug
+    `select ${PRODUCT_COLUMNS}, u.id as host_id, u.name as host_name, u.email::text as host_email, u.slug::text as host_slug
      from digital_products p join users u on u.id = p.host_id left join product_files f on f.product_id = p.id
      where ${PUBLIC_WHERE} order by p.created_at`, [slug]);
   if (!rows.length) return null;
-  return { host: { id: rows[0].host_id, name: rows[0].host_name, slug: rows[0].host_slug }, products: rows.map(toProduct) };
+  return { host: { id: rows[0].host_id, name: hostDisplayName(rows[0].host_name, rows[0].host_email), slug: rows[0].host_slug }, products: rows.map(toProduct) };
 }
 
 export async function publicProduct(db: Db, slug: string, productSlug: string): Promise<PublicProduct | null> {
   if (!SLUG.test(productSlug)) return null;
   const { rows: [r] } = await db.query(
-    `select ${PRODUCT_COLUMNS}, u.id as host_id, u.name as host_name, u.slug::text as host_slug
+    `select ${PRODUCT_COLUMNS}, u.id as host_id, u.name as host_name, u.email::text as host_email, u.slug::text as host_slug
      from digital_products p join users u on u.id = p.host_id left join product_files f on f.product_id = p.id
      where ${PUBLIC_WHERE} and p.slug = $2`, [slug, productSlug]);
-  return r ? { host: { id: r.host_id, name: r.host_name, slug: r.host_slug }, product: toProduct(r) } : null;
+  return r ? { host: { id: r.host_id, name: hostDisplayName(r.host_name, r.host_email), slug: r.host_slug }, product: toProduct(r) } : null;
 }
 
 type MailKind = "product_sale_host" | "product_receipt_buyer" | "product_refund_buyer";
@@ -418,7 +419,7 @@ export interface BuyerView {
 export async function orderByToken(db: Db, token: string): Promise<BuyerView | null> {
   if (!TOKEN.test(token)) return null;
   const { rows: [r] } = await db.query(
-    `select o.status, o.buyer_name, o.download_count, p.title, p.delivery, p.link_url, f.filename, u.name as host_name, u.slug::text as host_slug
+    `select o.status, o.buyer_name, o.download_count, p.title, p.delivery, p.link_url, f.filename, u.name as host_name, u.email::text as host_email, u.slug::text as host_slug
      from product_orders o join digital_products p on p.id = o.product_id join users u on u.id = o.host_id
      left join product_files f on f.product_id = p.id where o.token = $1`, [token]);
   if (!r) return null;
@@ -426,7 +427,7 @@ export async function orderByToken(db: Db, token: string): Promise<BuyerView | n
   return {
     status: r.status, productTitle: r.title, delivery: r.delivery, linkUrl: paid && r.delivery === "link" ? r.link_url : null,
     hasFile: Boolean(r.filename), filename: r.filename ?? null, downloadsLeft: Math.max(0, MAX_DOWNLOADS - r.download_count),
-    hostName: r.host_name, hostSlug: r.host_slug, buyerName: r.buyer_name,
+    hostName: hostDisplayName(r.host_name, r.host_email), hostSlug: r.host_slug, buyerName: r.buyer_name,
   };
 }
 
