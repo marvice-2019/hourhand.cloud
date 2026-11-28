@@ -52,4 +52,5 @@ export const nav = {
   "nav.installIos": "Add to Home Screen from the Share menu",
   "nav.install": "Install app",
   "nav.dismiss": "Dismiss",
+  "nav.questions": "Questions",
 } as const;

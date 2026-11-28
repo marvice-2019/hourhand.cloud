@@ -142,4 +142,9 @@ export const mail = {
   "mail.vNextRenewal": "Your next renewal",
   "mail.lReferrals": "See your plan and referrals",
   "mail.nReferral": "On Razorpay the renewal still costs ₹1, the least Razorpay can charge. If you pay by UPI AutoPay or eMandate, Razorpay can't discount a renewal, so the month is added as Solo after your paid plan ends. Free months can't be exchanged for cash.",
+  "mail.subjQuestion": "New question from {guest}",
+  "mail.hQuestion": "You have a new question",
+  "mail.iQuestion": "{guest} <{email}> asked you a question. Answer it in Hourhand and they get your answer by email.",
+  "mail.rQuestion": "Question",
+  "mail.rAnswerBy": "Answer by",
 } as const;

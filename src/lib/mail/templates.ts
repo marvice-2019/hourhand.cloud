@@ -597,3 +597,40 @@ export function renderReferralRewardMail(c: { role: "referrer" | "referred"; oth
     footer: h(c, "mail.footerSubscription"),
   });
 }
+
+export interface QuestionMailContext {
+  hostName: string; hostEmail: string; guestName: string; guestEmail: string; question: string; answer: string | null;
+  priceMinor: number; dueAt: Date | null; timezone: string; guestUrl: string; dashboardUrl: string; hostLocale?: string | null;
+}
+
+const excerpt = (s: string, n = 400) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+
+/** Ask a question (B19): the host's note of a new question, and the guest's answer or the news that it was declined. */
+export function renderQuestionMail(kind: "question_host" | "question_answer_guest" | "question_declined_guest", c: QuestionMailContext): RenderedMail {
+  if (kind === "question_host") {
+    const l = hl(c);
+    const rows: Row[] = [[h(c, "mail.rQuestion"), excerpt(c.question)]];
+    if (c.priceMinor > 0) rows.push([h(c, "mail.rPaid"), hostMoney(c.priceMinor, "INR", l)]);
+    if (c.dueAt) rows.push([h(c, "mail.rAnswerBy"), formatDate(c.dueAt, c.timezone, l)]);
+    return render(h(c, "mail.subjQuestion", { guest: c.guestName }), {
+      heading: h(c, "mail.hQuestion"), intro: h(c, "mail.iQuestion", { guest: c.guestName, email: c.guestEmail }),
+      rows, link: { label: h(c, "mail.openInHourhand"), url: c.dashboardUrl }, footer: hostFooter(c),
+    });
+  }
+  if (kind === "question_answer_guest") {
+    return render(`${c.hostName} answered your question`, {
+      heading: "Your answer", intro: `Hi ${c.guestName}, ${c.hostName} has answered your question.`,
+      rows: [["Your question", excerpt(c.question)], ["Answer", c.answer ?? ""]],
+      link: { label: "See it on its own page", url: c.guestUrl },
+      footer: `Sent by Hourhand for ${c.hostName}. Reply to this email to reach them.`,
+    }, { replyTo: c.hostEmail });
+  }
+  return render(`${c.hostName} can't answer your question`, {
+    heading: "Your question was declined",
+    intro: c.priceMinor > 0
+      ? `Hi ${c.guestName}, ${c.hostName} can't answer this one. Your payment of ${formatAmount(c.priceMinor, "INR")} is being refunded in full to the way you paid; banks usually take 5 to 7 working days.`
+      : `Hi ${c.guestName}, ${c.hostName} can't answer this one.`,
+    rows: [["Your question", excerpt(c.question)]],
+    footer: `Sent by Hourhand for ${c.hostName}. Reply to this email to reach them.`,
+  }, { replyTo: c.hostEmail });
+}
