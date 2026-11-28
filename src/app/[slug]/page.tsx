@@ -111,10 +111,12 @@ export default async function ProfilePage({ params, searchParams }: Props) {
           <p className="mt-2 whitespace-pre-line text-text">{p.bio}</p>
         </section>
       )}
+      {/* No public event type: say so, unless a question or a product is on offer below, which is then the page. */}
+      {(eventTypes.length > 0 || !(offerings?.ask || offerings?.products.length)) && (
       <section aria-labelledby="services" className="mt-8">
         <h2 id="services" className="font-display text-lg text-text">{t(locale, p?.bio || p?.headline ? "services" : "bookATime")}</h2>
-        <p className="mt-1 text-text-muted">{t(locale, "pickService")}</p>
-        <ul className="mt-4 grid gap-4 md:grid-cols-2">
+        <p className="mt-1 text-text-muted">{t(locale, eventTypes.length > 0 ? "pickService" : "noTimesLeft")}</p>
+        {eventTypes.length > 0 && <ul className="mt-4 grid gap-4 md:grid-cols-2">
           {eventTypes.map((et) => (
             <li key={et.id}>
               <Link href={`/${host.slug}/${et.slug}${q}`} className={`block rounded-lg ${focusRing}`}>
@@ -127,8 +129,9 @@ export default async function ProfilePage({ params, searchParams }: Props) {
               </Link>
             </li>
           ))}
-        </ul>
+        </ul>}
       </section>
+      )}
       {offerings?.ask && (
         <section aria-labelledby="ask" className="mt-8">
           <Link href={`/${host.slug}/ask`} className={`block rounded-lg ${focusRing}`}>
