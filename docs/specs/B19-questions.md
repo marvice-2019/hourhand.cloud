@@ -45,5 +45,5 @@ longer fits.
 
 ## Not built
 
-Overdue questions are not refunded automatically (the host sees the due date; a late answer still goes out). No attachments,
-no follow-up thread, no public answers, no Stripe for questions.
+No attachments, no follow-up thread, no public answers, no Stripe for questions. Deadlines (reminder and automatic close)
+are in B21.

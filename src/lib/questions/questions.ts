@@ -5,6 +5,7 @@ import { authForPayment, type PaymentCheckDeps } from "../payments/booking-payme
 import type { HostRazorpayAuth } from "../payments/host-razorpay";
 import { collectionTerms } from "../payments/platform";
 import type { RazorpayOrders, RazorpayPayment } from "../payments/razorpay-orders";
+import type { QuestionEmailKind } from "../data/notifications";
 
 // Ask a question (B19, like Topmate's Priority DM). A host offers to answer one written question for a price (or free).
 // The guest sends it from /<slug>/ask, pays the host's Razorpay (or Hourhand's, B18) and gets a private link (/q/<token>).
@@ -27,6 +28,8 @@ export type QuestionStatus = "pending" | "open" | "answered" | "declined" | "fai
 export interface Question {
   id: string; token: string; guestName: string; guestEmail: string; question: string; priceMinor: number; currency: "INR"; status: QuestionStatus;
   dueAt: Date | null; answer: string | null; answeredAt: Date | null; createdAt: Date; paidAt: Date | null;
+  /** Closed because it was still open a day after it was due (declined or refunded for the host). */
+  expired: boolean;
 }
 
 const DEFAULT_OFFER: QuestionOffer = { active: false, priceMinor: 0, currency: "INR", responseDays: 3, intro: null };
@@ -74,8 +77,9 @@ const toQuestion = (r: Record<string, unknown>): Question => ({
   id: r.id as string, token: r.token as string, guestName: r.guest_name as string, guestEmail: r.guest_email as string, question: r.question as string,
   priceMinor: r.price_minor as number, currency: "INR", status: r.status as QuestionStatus, dueAt: (r.due_at as Date | null) ?? null,
   answer: (r.answer as string | null) ?? null, answeredAt: (r.answered_at as Date | null) ?? null, createdAt: r.created_at as Date, paidAt: (r.paid_at as Date | null) ?? null,
+  expired: r.expired_at != null,
 });
-const COLUMNS = "id, token, guest_name, guest_email::text as guest_email, question, price_minor, status, due_at, answer, answered_at, created_at, paid_at";
+const COLUMNS = "id, token, guest_name, guest_email::text as guest_email, question, price_minor, status, due_at, answer, answered_at, created_at, paid_at, expired_at";
 
 /** The guest's own view of their question, by its private token. */
 export async function questionByToken(db: Db, token: string): Promise<(Question & { hostName: string; hostSlug: string }) | null> {
@@ -95,7 +99,7 @@ export async function listQuestions(db: Db, hostId: string, limit = 100): Promis
 }
 
 /** Queues an email for a question (the worker renders it from the question's current state). */
-async function notify(db: Db, q: { id: string; host_id: string }, kind: "question_host" | "question_answer_guest" | "question_declined_guest", to: string, now: Date) {
+async function notify(db: Db, q: { id: string; host_id: string }, kind: QuestionEmailKind, to: string, now: Date) {
   await db.query(
     `insert into notifications (booking_id, user_id, channel, kind, recipient, send_at, dedupe_key)
      values (null, $1, 'email', $2, $3, $4, $5) on conflict (dedupe_key) do nothing`, [q.host_id, kind, to, now, `question:${q.id}:${kind}`]);
@@ -329,5 +333,54 @@ export async function declineQuestion(pool: pg.Pool, hostId: string, id: string,
     return "declined" as const;
   });
   if (result === "declined") kickJobs();
+  return result;
+}
+
+/** How long a question may stay open past its due date before it is closed for the host. */
+export const EXPIRY_GRACE_MS = DAY;
+/** How long before its due date the host is reminded to answer. */
+export const REMINDER_LEAD_MS = DAY;
+
+export interface QuestionDeadlineResult { reminded: number; expired: number }
+
+/**
+ * The job runner's deadline pass (B21): reminds the host a day before an open question is due, and closes a question
+ * still open a day after it was due. A paid one goes to refund_pending, so the refund pass refunds it in full on the
+ * account that took the money; a free one is declined. The guest and the host are both told. Each row is claimed with
+ * a conditional update, so two runners never remind or close the same question twice.
+ */
+export async function runQuestionDeadlines(pool: pg.Pool, now: Date, limit = 50): Promise<QuestionDeadlineResult> {
+  const result: QuestionDeadlineResult = { reminded: 0, expired: 0 };
+  await inTx(pool, async (client) => {
+    const { rows } = await client.query(
+      `with due as (
+         select id from questions
+         where status = 'open' and due_at is not null and due_at <= $1::timestamptz - $3 * interval '1 millisecond'
+         order by due_at limit $2 for update skip locked)
+       update questions q set status = case when q.price_minor > 0 then 'refund_pending' else 'declined' end,
+         declined_at = $1, expired_at = $1, updated_at = $1
+       from due where q.id = due.id
+       returning q.id, q.host_id, q.guest_email::text as guest_email, (select email::text from users where id = q.host_id) as host_email`,
+      [now, limit, EXPIRY_GRACE_MS]);
+    for (const q of rows) {
+      await notify(client, q, "question_expired_guest", q.guest_email, now);
+      await notify(client, q, "question_expired_host", q.host_email, now);
+    }
+    result.expired = rows.length;
+  });
+  await inTx(pool, async (client) => {
+    const { rows } = await client.query(
+      `with due as (
+         select id from questions
+         where status = 'open' and host_reminded_at is null and due_at is not null
+           and due_at > $1::timestamptz and due_at <= $1::timestamptz + $3 * interval '1 millisecond'
+         order by due_at limit $2 for update skip locked)
+       update questions q set host_reminded_at = $1, updated_at = $1
+       from due where q.id = due.id
+       returning q.id, q.host_id, (select email::text from users where id = q.host_id) as host_email`,
+      [now, limit, REMINDER_LEAD_MS]);
+    for (const q of rows) await notify(client, q, "question_due_host", q.host_email, now);
+    result.reminded = rows.length;
+  });
   return result;
 }

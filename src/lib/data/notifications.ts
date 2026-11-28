@@ -35,7 +35,9 @@ export type MembershipEmailKind = "membership_guest" | "membership_host";
 export type EarningsEmailKind = "earnings_host";
 export type NotificationKind = BookingEmailKind | CalendarJobKind | VideoJobKind | PackageEmailKind | InvoiceEmailKind | EarningsEmailKind | "waitlist_guest" | "seat_invite" | ClinicMailKind | "calendar_alert_host" | "zoom_alert_host" | "renewal_reminder_host" | PollEmailKind | "follow_up_guest" | "data_request_host" | MembershipEmailKind | "referral_reward_host" | QuestionEmailKind | ProductEmailKind;
 /** Ask a question (B19): the host hears about a new one, the guest gets the answer or the news it was declined. */
-export type QuestionEmailKind = "question_host" | "question_answer_guest" | "question_declined_guest";
+export type QuestionEmailKind = "question_host" | "question_answer_guest" | "question_declined_guest"
+  /** B21: the host's reminder a day before a question is due, and both sides' note that it was closed for missing it. */
+  | "question_due_host" | "question_expired_guest" | "question_expired_host";
 /** Digital products (B20): the host hears about a sale, the buyer gets a receipt with their link, or a refund notice. */
 export type ProductEmailKind = "product_sale_host" | "product_receipt_buyer" | "product_refund_buyer";
 /** Meeting polls: an invitee's link to change their answers, and the host's nudge to pick a time once voting closes. */

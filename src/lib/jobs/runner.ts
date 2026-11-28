@@ -8,7 +8,7 @@ import { lapseRequests } from "../approval-jobs";
 import { processRefunds, reconcilePayments, releaseDeposits, type PaymentCheckDeps } from "../payments/booking-payments";
 import { reconcilePurchases } from "../packages/packages";
 import { runProductJobs } from "../products/products";
-import { runQuestionJobs } from "../questions/questions";
+import { runQuestionDeadlines, runQuestionJobs } from "../questions/questions";
 import { recordMissingFees, recordMissingStripeFees } from "../payments/fees";
 import { processStripeRefunds, reconcileStripePayments, reconcileStripePurchases, type StripeDeps } from "../payments/stripe-checkout";
 import { queueMonthlyReports } from "../earnings";
@@ -75,6 +75,9 @@ export function startJobRunner(opts: { pool: pg.Pool; mailer: Mailer; baseUrl: s
         if (opts.payments) await releaseDeposits(opts.pool, new Date()).catch((error) => console.error("[jobs] deposit release failed", error));
         if (opts.payments) await processRefunds({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] refunds failed", error));
         if (opts.payments) await reconcilePurchases({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] package check failed", error));
+        // Questions past their due date (B21): remind the host a day before, close them a day after. Runs before the
+        // question pass below, so a paid one closed here is refunded in the same run.
+        await runQuestionDeadlines(opts.pool, new Date()).catch((error) => console.error("[jobs] question deadlines failed", error));
         // Paid questions (B19): payments to settle, and declined ones to refund.
         if (opts.payments) await runQuestionJobs({ pool: opts.pool, ...opts.payments }, new Date()).catch((error) => console.error("[jobs] question check failed", error));
         // Digital products (B20): payments to settle, and refunded orders to pay back.

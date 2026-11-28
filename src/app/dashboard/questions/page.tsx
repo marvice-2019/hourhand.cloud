@@ -25,6 +25,11 @@ const STATUS: Record<QuestionStatus, HostKey> = {
   pending: "questions.sPending", open: "questions.sOpen", answered: "questions.sAnswered", declined: "questions.sDeclined",
   failed: "questions.sFailed", refund_pending: "questions.sRefundPending", refunded: "questions.sRefunded",
 };
+/** A question closed for missing its due date (B21) says so, whichever way it was closed. */
+const EXPIRED: Partial<Record<QuestionStatus, HostKey>> = {
+  declined: "questions.sExpired", refund_pending: "questions.sExpiredRefundPending", refunded: "questions.sExpiredRefunded",
+};
+const statusKey = (q: Question): HostKey => (q.expired && EXPIRED[q.status]) || STATUS[q.status];
 
 /** Ask a question (B19): the host's offer, and the questions guests sent, to answer or decline. */
 export default async function QuestionsPage({ searchParams }: { searchParams: Promise<{ result?: string }> }) {
@@ -53,7 +58,8 @@ export default async function QuestionsPage({ searchParams }: { searchParams: Pr
           <div><Label htmlFor="price">{t("questions.price")}</Label>
             <Input id="price" name="price" inputMode="decimal" defaultValue={String(offer.priceMinor / 100)} className="w-40" /></div>
           <div><Label htmlFor="responseDays">{t("questions.responseDays")}</Label>
-            <Input id="responseDays" name="responseDays" type="number" min={1} max={14} defaultValue={offer.responseDays} className="w-24" /></div>
+            <Input id="responseDays" name="responseDays" type="number" min={1} max={14} defaultValue={offer.responseDays} className="w-24" aria-describedby="responseDays-help" />
+            <p id="responseDays-help" className="mt-1 text-sm text-text-muted">{t("questions.deadlineHelp")}</p></div>
           <div>
             <Label htmlFor="intro">{t("questions.introLabel")}</Label>
             <textarea id="intro" name="intro" maxLength={500} rows={3} defaultValue={offer.intro ?? ""}
@@ -78,7 +84,7 @@ export default async function QuestionsPage({ searchParams }: { searchParams: Pr
               <p className="text-sm text-text-muted">
                 {t("questions.meta", { name: q.guestName, email: q.guestEmail, date: date(q.createdAt, tz) })} · {q.priceMinor > 0 ? t("questions.paid", { amount: money(q.priceMinor, "INR") }) : t("questions.free")}
               </p>
-              <p className="mt-1 text-sm font-semibold text-text">{q.status === "open" && q.dueAt ? t("questions.by", { status: t(STATUS[q.status]), date: date(q.dueAt, tz) }) : t(STATUS[q.status])}</p>
+              <p className="mt-1 text-sm font-semibold text-text">{q.status === "open" && q.dueAt ? t("questions.by", { status: t(STATUS[q.status]), date: date(q.dueAt, tz) }) : t(statusKey(q))}</p>
               <p className="mt-2 whitespace-pre-line text-text">{q.question}</p>
               {q.answer && <p className="mt-3 whitespace-pre-line border-l-2 border-border pl-3 text-text">{q.answer}</p>}
               {q.status === "open" && (
