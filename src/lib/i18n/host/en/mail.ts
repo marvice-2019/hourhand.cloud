@@ -147,4 +147,9 @@ export const mail = {
   "mail.iQuestion": "{guest} <{email}> asked you a question. Answer it in Hourhand and they get your answer by email.",
   "mail.rQuestion": "Question",
   "mail.rAnswerBy": "Answer by",
+  "mail.subjProductSale": "New sale: {product}",
+  "mail.hProductSale": "You made a sale",
+  "mail.iProductSale": "{buyer} bought one of your products. They have their download link.",
+  "mail.rProduct": "Product",
+  "mail.rBuyer": "Buyer",
 } as const;

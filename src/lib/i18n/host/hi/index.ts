@@ -22,6 +22,7 @@ import { offers } from "./offers";
 import { referrals } from "./referrals";
 import { routing } from "./routing";
 import { push } from "./push";
+import { products } from "./products";
 import { questions } from "./questions";
 import { packages } from "./packages";
 import { plan } from "./plan";
@@ -32,5 +33,5 @@ import { settings } from "./settings";
 import { voice } from "./voice";
 
 export const hi: HostCatalog = {
-  ...analytics, ...availability, ...bookings, ...calendars, ...clients, ...common, ...domain, ...earnings, ...eventTypes, ...feedback, ...getBooked, ...intake, ...integrations, ...invoices, ...links, ...mail, ...memberships, ...nav, ...offers, ...packages, ...plan, ...polls, ...profile, ...push, ...questions, ...referrals, ...routing, ...seat, ...settings, ...voice,
+  ...analytics, ...availability, ...bookings, ...calendars, ...clients, ...common, ...domain, ...earnings, ...eventTypes, ...feedback, ...getBooked, ...intake, ...integrations, ...invoices, ...links, ...mail, ...memberships, ...nav, ...offers, ...packages, ...plan, ...polls, ...profile, ...products, ...push, ...questions, ...referrals, ...routing, ...seat, ...settings, ...voice,
 };
